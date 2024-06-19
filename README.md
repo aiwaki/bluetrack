@@ -1,6 +1,9 @@
 # <img src="./assets/icon/icon.svg" width="165" align="right"> Bluetrack
 
-Bluetooth trackpad mobile app.
+<details>
+  <summary>Preview</summary>
+  <img src="./assets/preview/preview.png" width="265px" align="center">
+</details>
 
 ## 👀 Overview
 
