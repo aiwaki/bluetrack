@@ -7,14 +7,13 @@ import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.engine.TranslationEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
 @SuppressLint("MissingPermission")
 class BleHidGateway(private val context: Context, private val engine: TranslationEngine) {
+    private val decryptor = PayloadDecryptor()
     private val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val adapter = btManager.adapter
     private var hid: BluetoothHidDevice? = null
@@ -50,7 +49,9 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     private fun startGatt() {
         val gatt = btManager.openGattServer(context, object : BluetoothGattServerCallback() {
             override fun onCharacteristicWriteRequest(device: BluetoothDevice, requestId: Int, characteristic: BluetoothGattCharacteristic, preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray) {
-                if (value.size == 8) { val b = ByteBuffer.wrap(value).order(ByteOrder.LITTLE_ENDIAN); engine.updateCorrection(b.float, b.float) }
+                decryptor.decryptPayloadTo(value) { correctionX, correctionY ->
+                    engine.updateCorrection(correctionX, correctionY)
+                }
             }
         })
         val service = BluetoothGattService(UUID.fromString("0d03f2a3-b9b2-43f6-90ca-6c4ff67c2263"), BluetoothGattService.SERVICE_TYPE_PRIMARY)
