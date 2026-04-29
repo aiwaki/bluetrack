@@ -1,55 +1,83 @@
 package dev.xd.bluetrack
 
-import androidx.annotation.NonNull
-import dev.xd.bluetrack.bluetooth.BluetoothHandler
-import dev.xd.bluetrack.usb.UsbHidDevice
-import io.flutter.Log
-import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
+import android.Manifest
+import android.os.Build
+import android.os.Bundle
+import android.view.InputDevice
+import android.view.MotionEvent
+import android.widget.FrameLayout
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import dev.xd.bluetrack.ble.BleHidGateway
+import dev.xd.bluetrack.core.AppContainer
+import dev.xd.bluetrack.ui.MainViewModel
 
-class MainActivity : FlutterActivity() {
-    companion object {
-        private val TAG = MainActivity::class.java.simpleName
-        private val CHANNEL = "$TAG/channel"
-
-        private lateinit var methodChannel: MethodChannel
-        private lateinit var bluetoothHandler: BluetoothHandler
-        private lateinit var usbHidDevice: UsbHidDevice
-
-        private fun isInitialized() = ::bluetoothHandler.isInitialized
+class MainActivity : ComponentActivity() {
+    private lateinit var vm: MainViewModel
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        requestBtPermissions()
+        val c = AppContainer(this)
+        vm = MainViewModel(c.bleGateway, c.translationEngine)
+        setContent { AppScreen(vm) }
     }
 
-    override fun configureFlutterEngine(
-        @NonNull flutterEngine: FlutterEngine,
-    ) {
-        super.configureFlutterEngine(flutterEngine)
-
-        methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
-
-        usbHidDevice = UsbHidDevice(this)
-        usbHidDevice.openDevice()
-
-        bluetoothHandler = BluetoothHandler(this, methodChannel, usbHidDevice)
-
-        methodChannel.setMethodCallHandler { call, result ->
-            if (!isInitialized()) result.error("error", "Bluetooth is not initialized", null)
-
-            Log.d(TAG, "Method called: ${call.method}")
-
-            when (call.method) {
-                "connect" -> bluetoothHandler.connect(call.argument<String>("address") ?: "")
-                "disconnect" -> bluetoothHandler.getHidDevice()?.disconnect(call.argument<String>("address") ?: "")
-                else -> result.notImplemented()
-            }
+    private fun requestBtPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){}
+                .launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE))
         }
     }
+}
 
-    override fun cleanUpFlutterEngine(
-        @NonNull flutterEngine: FlutterEngine,
+@Composable
+private fun AppScreen(vm: MainViewModel) {
+    val mode by vm.mode.collectAsState()
+    val state by vm.connection.collectAsState()
+    val telemetry by vm.telemetry.collectAsState()
+
+    Column(
+        modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF030712), Color(0xFF0A1F2E), Color(0xFF00F5A0).copy(alpha = 0.12f)))).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        super.cleanUpFlutterEngine(flutterEngine)
-        methodChannel.setMethodCallHandler(null)
-        usbHidDevice.closeConnection()
+        Row(Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp)).padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Link: $state", color = Color(0xFF00F5A0))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Gamepad", color = Color.White)
+                Switch(checked = mode.name == "GAMEPAD", onCheckedChange = { vm.toggle(it) })
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxWidth().background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(24.dp))) {
+            Canvas(Modifier.fillMaxSize().padding(24.dp)) {
+                val cx = size.width / 2f; val cy = size.height / 2f
+                drawCircle(Color(0x2200E5FF), 180f, Offset(cx, cy))
+                drawLine(Color(0xFF00E5FF), Offset(cx - 220f, cy), Offset(cx + 220f, cy), 2f)
+                drawLine(Color(0xFF00E5FF), Offset(cx, cy - 220f), Offset(cx, cy + 220f), 2f)
+                drawCircle(Color(0xFF00F5A0), 12f, Offset(cx + telemetry.stickX * 1.5f, cy + telemetry.stickY * 1.5f))
+            }
+            AndroidView(factory = { ctx -> FrameLayout(ctx).apply {
+                isFocusableInTouchMode = true
+                setOnGenericMotionListener { _, ev ->
+                    if (ev.action == MotionEvent.ACTION_HOVER_MOVE && ev.isFromSource(InputDevice.SOURCE_MOUSE)) {
+                        vm.processMotion(ev.getAxisValue(MotionEvent.AXIS_RELATIVE_X), ev.getAxisValue(MotionEvent.AXIS_RELATIVE_Y)); true
+                    } else false
+                }
+            } }, modifier = Modifier.fillMaxSize())
+        }
     }
 }
