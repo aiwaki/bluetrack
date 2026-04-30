@@ -1,98 +1,100 @@
-# Bluetrack Pro Engine — Ultra-Low Latency Android MITM HID Controller
+# Bluetrack Pro Engine
 
-![Platform](https://img.shields.io/badge/Platform-Android%2029%2B-3DDC84?logo=android&logoColor=white)
-![Language](https://img.shields.io/badge/Kotlin-Compose-7F52FF?logo=kotlin&logoColor=white)
-![Crypto](https://img.shields.io/badge/Crypto-AES--128--CTR-0A66C2)
-![Python](https://img.shields.io/badge/Python-BLE%20Sender-3776AB?logo=python&logoColor=white)
+![Android CI](https://github.com/aiwaki/bluetrack/actions/workflows/android-ci.yml/badge.svg)
+![Platform](https://img.shields.io/badge/platform-Android%2029%2B-3DDC84?logo=android&logoColor=white)
+![Language](https://img.shields.io/badge/language-Kotlin%20%2B%20Compose-7F52FF?logo=kotlin&logoColor=white)
+![Crypto](https://img.shields.io/badge/crypto-AES--128--CTR-0A66C2)
 
-Bluetrack Pro Engine is a native Android Kotlin system for ultra-low latency mouse-input interception, HID translation, and encrypted BLE feedback processing for competitive tuning workflows.
+Bluetrack Pro Engine is a native Android/Kotlin prototype for low-latency mouse
+input capture, HID report translation, and encrypted BLE feedback experiments.
+The project is aimed at accessibility tooling, input-device research, and
+calibration workflows where deterministic input handling matters.
 
----
+## Status
 
-## Architecture Overview
+This repository is an active prototype. The Android app contains a native
+Compose diagnostic UI, a Bluetooth HID device gateway, an AES-CTR BLE feedback
+decoder, and a small Python reference sender for host-side integration tests.
 
-### Primary Data Path
-1. **Raw Mouse Input (USB OTG)**
-2. **Android Interception Layer** (`OnGenericMotionListener` via Compose bridge)
-3. **Translation Engine** (relative mouse deltas → HID reports)
-4. **BLE HID Output** to host
+## Architecture
 
-### Feedback Loop
-1. **PC-side analysis/tuning loop** produces correction vectors (`dx`, `dy`)
-2. **AES-128-CTR encrypted packet** sent over BLE GATT (12-byte frame)
-3. **Android decrypts** packet and injects correction into next motion frame
+### Input Path
 
----
+1. Raw mouse movement is captured on Android through a Compose-hosted motion
+   listener.
+2. `TranslationEngine` converts relative mouse deltas into HID report bytes.
+3. `BleHidGateway` sends the report to the connected Bluetooth HID host.
+
+### Feedback Path
+
+1. A host-side calibration loop computes a correction vector.
+2. The correction is encrypted as an AES-128-CTR BLE frame:
+   `[0..3]=counter_le`, `[4..11]=ciphertext(float dx, float dy)`.
+3. Android decrypts the frame and applies the correction to the next input
+   reports.
 
 ## Features
 
-- **Native Android architecture** (Kotlin + Coroutines + StateFlow + Compose)
-- **Jetpack Compose diagnostic UI** with modern cyberpunk styling
-- **Dual HID modes**: Native Mouse / Gamepad Emulation
-- **Mouse-to-joystick aim-assist translation pipeline**
-- **Zero-allocation hot-path design** for reduced GC jitter in motion/decryption paths
-- **AES-128-CTR encrypted BLE GATT feedback channel** (12-byte payload format)
+- Native Android app built with Kotlin, Coroutines, StateFlow, and Jetpack Compose.
+- Bluetooth HID mouse and gamepad report descriptors with explicit report IDs.
+- AES-128-CTR compatible BLE feedback decoder.
+- JVM unit tests for packet decryption and HID report formatting.
+- GitHub Actions workflow for Android unit tests and debug APK assembly.
+- Python sender script for encrypted BLE packet generation.
 
----
-
-## Getting Started (Android)
+## Build
 
 ### Requirements
-- Android Studio (latest stable)
-- Android SDK 34
+
 - JDK 17
+- Android SDK 34
+- Android Studio or command-line Android SDK tools
 
-### Open & Build
-1. Clone the repository.
-2. Open **`android/`** as the project root in Android Studio.
-3. Let Gradle sync finish.
-4. Build app module:
-   - Android Studio: **Build > Make Project**
-   - or CLI from repo root (if wrapper exists):
-     - `cd android`
-     - `./gradlew :app:assembleDebug`
+### Command Line
 
-### Run
-- Connect an Android device (API 29+) with OTG + Bluetooth support.
-- Install and launch the app from Android Studio.
-
----
-
-## Getting Started (Python)
-
-Reference sender script:
-- `android/tools/ble_encrypt_sender.py`
-
-### Requirements
-- Python 3.10+
-- BLE adapter on host machine
-
-### Install dependencies
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install --upgrade pip
-pip install bleak cryptography
+cd android
+./gradlew testDebugUnitTest
+./gradlew assembleDebug
 ```
 
-### Configure and run
-1. Edit `DEVICE_ADDRESS` and `CHAR_UUID` in `android/tools/ble_encrypt_sender.py`.
-2. Run:
+### Android Studio
+
+Open the `android/` directory as the project root, let Gradle sync finish, and
+run the `app` configuration on an Android 10+ device with Bluetooth support.
+
+## Python BLE Sender
+
+Reference tool:
+
+```text
+android/tools/ble_encrypt_sender.py
+```
+
+Install and run:
+
 ```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install bleak cryptography
 python android/tools/ble_encrypt_sender.py
 ```
 
----
+Before running, set `DEVICE_ADDRESS` and `CHAR_UUID` in the sender script.
 
 ## Security Notes
 
-- Current key/salt are static for integration bring-up and must be rotated/replaced for production.
-- Use per-session key exchange and authenticated transport in hardened deployments.
-
----
+- The current key and salt are static prototype values.
+- Production use should replace them with per-session key negotiation and
+  authenticated transport.
+- Treat BLE write access as trusted only after explicit pairing and validation.
 
 ## Repository Layout
 
-- `android/app/src/main/kotlin/dev/xd/bluetrack/` — Android app source
-- `android/tools/` — host-side tooling/scripts (Python BLE sender)
-
+```text
+android/app/src/main/kotlin/dev/xd/bluetrack/  Android app source
+android/app/src/test/kotlin/dev/xd/bluetrack/  JVM unit tests
+android/tools/                                      Host-side BLE helper tools
+.github/workflows/android-ci.yml                    Android CI workflow
+```

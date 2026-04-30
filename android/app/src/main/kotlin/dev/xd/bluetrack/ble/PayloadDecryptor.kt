@@ -2,7 +2,6 @@ package dev.xd.bluetrack.ble
 
 import java.security.GeneralSecurityException
 import javax.crypto.Cipher
-import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
@@ -20,10 +19,14 @@ class PayloadDecryptor {
         0x6B, 0x53, 0x61, 0x6C, 0x00, 0x00, 0x00, 0x00
     ) // "BluetrackSal" + dynamic LE counter
 
+    private val keystream = ByteArray(16)
     private val decrypted = ByteArray(8)
     private val keySpec = SecretKeySpec(keyBytes, "AES")
-    private val ivSpec = IvParameterSpec(ivBytes)
-    private val cipher: Cipher = Cipher.getInstance("AES/CTR/NoPadding")
+    private val cipher: Cipher = Cipher.getInstance("AES/ECB/NoPadding")
+
+    init {
+        cipher.init(Cipher.ENCRYPT_MODE, keySpec)
+    }
 
     @Volatile
     private var lastX: Float = 0f
@@ -31,36 +34,32 @@ class PayloadDecryptor {
     @Volatile
     private var lastY: Float = 0f
 
-    /**
-     * Hot-path API: no allocations in this function.
-     */
     fun decryptPayloadTo(bleData: ByteArray, onDecrypted: (Float, Float) -> Unit): Boolean {
         if (bleData.size != 12) return false
 
-        ivBytes[12] = bleData[0]
-        ivBytes[13] = bleData[1]
-        ivBytes[14] = bleData[2]
-        ivBytes[15] = bleData[3]
-
         return try {
+            val x: Float
+            val y: Float
             synchronized(cipher) {
-                cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec)
-                cipher.update(bleData, 4, 8, decrypted, 0)
+                ivBytes[12] = bleData[0]
+                ivBytes[13] = bleData[1]
+                ivBytes[14] = bleData[2]
+                ivBytes[15] = bleData[3]
+
+                val produced = cipher.update(ivBytes, 0, 16, keystream, 0)
+                if (produced != 16) return false
+
+                for (index in 0 until 8) {
+                    decrypted[index] =
+                        (bleData[index + 4].toInt() xor keystream[index].toInt()).toByte()
+                }
+
+                val xBits = readIntLe(decrypted, 0)
+                val yBits = readIntLe(decrypted, 4)
+                x = Float.fromBits(xBits)
+                y = Float.fromBits(yBits)
             }
 
-            val xBits =
-                (decrypted[0].toInt() and 0xFF) or
-                    ((decrypted[1].toInt() and 0xFF) shl 8) or
-                    ((decrypted[2].toInt() and 0xFF) shl 16) or
-                    ((decrypted[3].toInt() and 0xFF) shl 24)
-            val yBits =
-                (decrypted[4].toInt() and 0xFF) or
-                    ((decrypted[5].toInt() and 0xFF) shl 8) or
-                    ((decrypted[6].toInt() and 0xFF) shl 16) or
-                    ((decrypted[7].toInt() and 0xFF) shl 24)
-
-            val x = Float.fromBits(xBits)
-            val y = Float.fromBits(yBits)
             lastX = x
             lastY = y
             onDecrypted(x, y)
@@ -69,6 +68,12 @@ class PayloadDecryptor {
             false
         }
     }
+
+    private fun readIntLe(bytes: ByteArray, offset: Int): Int =
+        (bytes[offset].toInt() and 0xFF) or
+            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+            ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+            ((bytes[offset + 3].toInt() and 0xFF) shl 24)
 
     /**
      * Convenience API when allocations are acceptable.

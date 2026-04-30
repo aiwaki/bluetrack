@@ -23,24 +23,36 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import dev.xd.bluetrack.ble.BleHidGateway
 import dev.xd.bluetrack.core.AppContainer
 import dev.xd.bluetrack.ui.MainViewModel
 
 class MainActivity : ComponentActivity() {
     private lateinit var vm: MainViewModel
+    private lateinit var container: AppContainer
+    private val bluetoothPermissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+            if (grants.values.all { it }) vm.start()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestBtPermissions()
-        val c = AppContainer(this)
-        vm = MainViewModel(c.bleGateway, c.translationEngine)
+        container = AppContainer(this)
+        vm = MainViewModel(container.bleGateway, container.translationEngine)
         setContent { AppScreen(vm) }
+        requestBtPermissions()
+    }
+
+    override fun onDestroy() {
+        if (::vm.isInitialized) vm.shutdown()
+        if (::container.isInitialized) container.shutdown()
+        super.onDestroy()
     }
 
     private fun requestBtPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){}
-                .launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE))
+            bluetoothPermissions.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE))
+        } else {
+            vm.start()
         }
     }
 }

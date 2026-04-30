@@ -16,16 +16,27 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
     val mode: StateFlow<HidMode> = _mode
     val telemetry: StateFlow<Telemetry> = engine.telemetry
     val connection = ble.state
+    private var started = false
 
-    init { ble.initialize(); ble.register(HidMode.MOUSE) }
+    fun start() {
+        if (started) return
+        started = true
+        ble.initialize()
+        ble.register(_mode.value)
+    }
 
     fun toggle(gamepad: Boolean) {
         val mode = if (gamepad) HidMode.GAMEPAD else HidMode.MOUSE
         _mode.value = mode
-        ble.register(mode)
+        if (started) ble.register(mode)
     }
 
     fun processMotion(dx: Float, dy: Float) {
         engine.processMouseToStick(dx, dy, _mode.value) { ble.send(_mode.value, it) }
+    }
+
+    fun shutdown() {
+        ble.shutdown()
+        started = false
     }
 }
