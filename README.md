@@ -17,6 +17,10 @@ Compose diagnostic UI, a Bluetooth HID device gateway, an advertised AES-CTR
 BLE feedback service, and a small Python reference sender for host-side
 integration tests.
 
+Future Codex/agent sessions should start with `AGENTS.md` and
+`docs/CODEX_CONTEXT.md`; those files carry the current project memory,
+hardware caveats, validation commands, and roadmap.
+
 ## Architecture
 
 ### Input Path

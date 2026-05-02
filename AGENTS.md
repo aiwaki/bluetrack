@@ -1,0 +1,77 @@
+# Bluetrack Agent Brief
+
+Start every new coding session here, then read `docs/CODEX_CONTEXT.md`.
+
+## Project Shape
+
+Bluetrack is a native Android/Kotlin prototype that turns an Android device into
+a Bluetooth HID mouse/gamepad bridge with an encrypted BLE feedback channel.
+The Android app is the input device. The PC is the Bluetooth host.
+
+Current work is on branch `codex/harden-android-build-tests` and draft PR #3:
+`https://github.com/aiwaki/bluetrack/pull/3`.
+
+## First Commands
+
+```bash
+git status -sb
+git log --oneline --decorate -5
+gh pr list --head "$(git branch --show-current)" --json number,title,url,state,isDraft
+```
+
+Use Android Studio's bundled runtime on this machine:
+
+```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+```
+
+Primary validation:
+
+```bash
+cd android
+./gradlew testDebugUnitTest assembleDebug
+cd ..
+python3 -m py_compile android/tools/ble_encrypt_sender.py
+```
+
+## Code Map
+
+- `android/app/src/main/kotlin/dev/xd/bluetrack/MainActivity.kt`: Compose UI,
+  Bluetooth permission/enable/discoverability flows, diagnostic surface.
+- `android/app/src/main/kotlin/dev/xd/bluetrack/ble/BleHidGateway.kt`: HID
+  device registration, host connection status, feedback GATT server, BLE
+  advertising.
+- `android/app/src/main/kotlin/dev/xd/bluetrack/ble/PayloadDecryptor.kt`:
+  AES-128-CTR feedback frame decoding.
+- `android/app/src/main/kotlin/dev/xd/bluetrack/engine/TranslationEngine.kt`:
+  mouse/gamepad HID report generation and correction application.
+- `android/tools/ble_encrypt_sender.py`: host-side reference sender for
+  encrypted feedback packets.
+
+## Non-Negotiables
+
+- Do not assume Bluetooth HID Device support exists on every Android device.
+  If unavailable, the app should say so clearly.
+- Keep the UX diagnostic and honest. Hardware-dependent failures are expected;
+  hiding them makes the project worse.
+- Preserve the Android/Kotlin native stack. The old Flutter-style artifacts were
+  intentionally removed.
+- Use explicit file staging. Avoid sweeping unrelated local changes into PRs.
+- Prefer focused tests around translation, crypto packet handling, and stateful
+  Bluetooth edge cases.
+
+## Current Hardware Truth
+
+The app can request Android discoverability and register a HID Device app, but
+the actual pairing path depends on firmware support for `BluetoothProfile.HID_DEVICE`.
+The feedback channel is separate BLE GATT/advertising work; it does not make the
+phone appear as a classic Bluetooth HID device by itself.
+
+## Good Next Bets
+
+- Add instrumentation/logcat-friendly state events for the Bluetooth lifecycle.
+- Add a small Android-side compatibility screen that reports adapter features,
+  HID profile availability, and BLE advertiser availability.
+- Build a host companion utility that verifies both paths: HID pairing plus BLE
+  feedback writes.
+- Improve UI density and controls once the hardware path is verified.
