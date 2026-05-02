@@ -80,7 +80,11 @@ draft PR with CI green.
 The app can request Android discoverability and register a HID Device app, but
 the actual pairing path depends on firmware support for `BluetoothProfile.HID_DEVICE`.
 The feedback channel is separate BLE GATT/advertising work; it does not make the
-phone appear as a classic Bluetooth HID device by itself.
+phone appear as a classic Bluetooth HID device by itself. The app now drives the
+Bluetooth enable, discoverability, compatibility refresh, and bonded-host HID
+connect flow automatically where Android allows it, including a quiet foreground
+maintenance loop for HID reconnect attempts; Android's own confirmation dialogs
+still cannot be skipped.
 
 ## Good Next Bets
 

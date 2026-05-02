@@ -319,7 +319,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                 updateStatus(
                     pairing = "No bonded host",
                     compatibility = snapshotCompatibility(),
-                    error = "Pair the PC first, then connect the HID host.",
+                    error = "Pair the PC first; Bluetrack will connect the HID host automatically.",
                     eventSource = "HID",
                     eventMessage = "No bonded Bluetooth devices are available for HID connect.",
                 )
@@ -401,7 +401,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                 if (now - lastNoHostReportWarningMs > 2000L) {
                     lastNoHostReportWarningMs = now
                     updateStatus(
-                        error = "No HID host connected; pair and connect the host.",
+                        error = "No HID host connected; pair the host and Bluetrack will connect automatically.",
                         eventSource = "HID",
                         eventMessage = "Input was received, but no HID host is connected.",
                     )
@@ -455,13 +455,13 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         ioExecutor.shutdownNow()
     }
 
-    fun refreshCompatibility() {
+    fun refreshCompatibility(announce: Boolean = true) {
         val snapshot = snapshotCompatibility()
         updateStatus(
             pairing = pairingLabel(snapshot),
             compatibility = snapshot,
-            eventSource = "Compatibility",
-            eventMessage = "Compatibility snapshot refreshed.",
+            eventSource = if (announce) "Compatibility" else null,
+            eventMessage = if (announce) "Compatibility snapshot refreshed." else null,
         )
         maybeAutoConnectHost("compatibility refresh")
     }
@@ -508,6 +508,20 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             eventMessage = "Android reports discoverability for ${seconds}s.",
         )
         maybeAutoConnectHost("discoverability result")
+    }
+
+    fun reportDiscoverabilityRequested(auto: Boolean) {
+        updateStatus(
+            pairing = "Opening pairing window",
+            compatibility = snapshotCompatibility(),
+            error = null,
+            eventSource = "Pairing",
+            eventMessage = if (auto) {
+                "Autopilot requested Android discoverability."
+            } else {
+                "Requested Android discoverability."
+            },
+        )
     }
 
     fun reportDiscoverableRejected() {

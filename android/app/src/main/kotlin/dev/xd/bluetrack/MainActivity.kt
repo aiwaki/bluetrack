@@ -22,9 +22,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -41,12 +38,16 @@ import dev.xd.bluetrack.ble.GatewayEvent
 import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.core.AppContainer
 import dev.xd.bluetrack.ui.MainViewModel
+import dev.xd.bluetrack.ui.automationLabel
+import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
     private lateinit var vm: MainViewModel
     private lateinit var container: AppContainer
+    private var autoBluetoothEnableRequested = false
+    private var autoDiscoverabilityRequested = false
     private val bluetoothPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
             if (grants.values.all { it }) {
@@ -58,7 +59,9 @@ class MainActivity : ComponentActivity() {
     private val enableBluetooth =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             if (isBluetoothEnabled()) {
+                autoBluetoothEnableRequested = false
                 vm.start()
+                maybeRequestDiscoverability()
             } else {
                 vm.bluetoothDisabled()
             }
@@ -82,12 +85,7 @@ class MainActivity : ComponentActivity() {
         container = AppContainer(this)
         vm = MainViewModel(container.bleGateway, container.translationEngine)
         setContent {
-            AppScreen(
-                vm = vm,
-                onEnableBluetooth = ::ensureBluetoothReady,
-                onStartPairing = ::requestDiscoverability,
-                onConnectHost = { vm.connectHost() },
-            )
+            AppScreen(vm = vm)
         }
         requestBtPermissions()
     }
@@ -100,7 +98,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::vm.isInitialized) vm.refreshCompatibility()
+        if (::vm.isInitialized) {
+            if (hasBluetoothPermissions()) {
+                ensureBluetoothReady()
+            } else {
+                vm.refreshCompatibility()
+            }
+        }
     }
 
     private fun requestBtPermissions() {
@@ -127,15 +131,22 @@ class MainActivity : ComponentActivity() {
             return
         }
         if (!adapter.isEnabled) {
-            vm.bluetoothEnableRequested()
-            enableBluetooth.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            if (!autoBluetoothEnableRequested) {
+                autoBluetoothEnableRequested = true
+                vm.bluetoothEnableRequested()
+                enableBluetooth.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            } else {
+                vm.bluetoothDisabled()
+            }
             return
         }
+        autoBluetoothEnableRequested = false
         vm.start()
+        maybeRequestDiscoverability()
     }
 
     @SuppressLint("MissingPermission")
-    private fun requestDiscoverability() {
+    private fun requestDiscoverability(auto: Boolean = false) {
         if (!hasBluetoothPermissions()) {
             requestBtPermissions()
             return
@@ -150,7 +161,17 @@ class MainActivity : ComponentActivity() {
         }
         val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
             .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+        vm.discoverabilityRequested(auto)
         discoverableBluetooth.launch(intent)
+    }
+
+    private fun maybeRequestDiscoverability() {
+        if (autoDiscoverabilityRequested || !::vm.isInitialized) return
+        if (!hasBluetoothPermissions() || !isBluetoothEnabled()) return
+        if (!vm.status.value.shouldAutoRequestDiscoverability()) return
+
+        autoDiscoverabilityRequested = true
+        requestDiscoverability(auto = true)
     }
 
     @SuppressLint("MissingPermission")
@@ -171,9 +192,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AppScreen(
     vm: MainViewModel,
-    onEnableBluetooth: () -> Unit,
-    onStartPairing: () -> Unit,
-    onConnectHost: () -> Unit,
 ) {
     val mode by vm.mode.collectAsState()
     val status by vm.status.collectAsState()
@@ -194,13 +212,7 @@ private fun AppScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         HeaderPanel(mode = mode.name, onGamepadChanged = { vm.toggle(it) })
-        ActionPanel(
-            status = status,
-            onStartPairing = onStartPairing,
-            onConnectHost = onConnectHost,
-            onEnableBluetooth = onEnableBluetooth,
-            onRefresh = { vm.refreshCompatibility() },
-        )
+        ActionPanel(status = status)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MetricTile("Reports", status.reportsSent.toString(), Modifier.weight(1f))
             MetricTile("Feedback", status.feedbackPackets.toString(), Modifier.weight(1f))
@@ -267,41 +279,16 @@ private fun HeaderPanel(mode: String, onGamepadChanged: (Boolean) -> Unit) {
 @Composable
 private fun ActionPanel(
     status: GatewayStatus,
-    onStartPairing: () -> Unit,
-    onConnectHost: () -> Unit,
-    onEnableBluetooth: () -> Unit,
-    onRefresh: () -> Unit,
 ) {
     Panel(Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatusLine("Auto", status.automationLabel())
             StatusLine("HID", status.hid)
             StatusLine("Feedback", status.feedback)
             StatusLine("Pairing", status.pairing)
             status.host?.let { StatusLine("Host", it) }
             StatusLine("Input", status.lastInputSource ?: "Waiting")
             status.error?.let { Text(it, color = Color(0xFFFFB4AB)) }
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onStartPairing,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F5A0), contentColor = Color(0xFF031018)),
-            ) {
-                Text("Pair with PC")
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = onConnectHost,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF031018)),
-                ) {
-                    Text("Connect Host")
-                }
-                OutlinedButton(onClick = onEnableBluetooth, modifier = Modifier.weight(1f)) {
-                    Text("Enable Bluetooth")
-                }
-                OutlinedButton(onClick = onRefresh, modifier = Modifier.weight(1f)) {
-                    Text("Refresh")
-                }
-            }
         }
     }
 }
