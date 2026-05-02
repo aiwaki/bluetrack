@@ -37,6 +37,10 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         ble.refreshCompatibility()
     }
 
+    fun connectHost() {
+        ble.connectBondedHost()
+    }
+
     fun bluetoothPermissionMissing() {
         ble.reportPermissionMissing()
     }

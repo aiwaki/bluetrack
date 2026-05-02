@@ -38,6 +38,8 @@ The app now has:
 - Bluetooth permission handling for Android 12+ nearby-device permissions.
 - A Bluetooth enable request flow.
 - A `Pair with PC` action that launches Android's discoverability prompt.
+- A `Connect Host` action that attempts HID connection to the best bonded
+  computer-class host.
 - A cockpit UI with actions, counters, compatibility status, and event timeline.
 - Touchpad input capture in addition to external relative mouse hover motion.
 - Status rows for HID, BLE feedback, pairing, host, input source, and error text.
@@ -135,6 +137,8 @@ On Android:
    - The timeline should show the latest permission, HID, feedback, pairing,
      input, and report events.
 5. Tap `Pair with PC` and accept the Android discoverability prompt.
+6. After pairing/bonding, tap `Connect Host` if the HID row does not become
+   `Connected` automatically.
 
 On PC:
 
@@ -144,6 +148,12 @@ On PC:
 4. Keep the Android app foregrounded.
 5. Move a mouse/trackpad connected to Android or drag inside the app's input
    surface to use the touchpad path.
+
+macOS should behave as a normal Bluetooth HID host. If Android and macOS are
+bonded but the app stays in pairing/discoverable state and HID never reaches
+`Connected`, the missing piece is HID host connection, not the BLE feedback
+path. Use `Connect Host` and inspect the timeline for `connect returned false`
+or connection-state callbacks.
 
 For feedback testing:
 
@@ -162,6 +172,8 @@ python android/tools/ble_encrypt_sender.py --address 00:11:22:33:44:55
 - HID Device profile support is device/firmware-dependent.
 - The app has a diagnostic touchpad path, but it is not yet a polished touchpad
   product surface.
+- If multiple bonded devices exist, `Connect Host` prefers computer-class
+  Bluetooth devices and then falls back by name.
 - Crypto is prototype-only: static key, static salt, no authentication, no
   session negotiation.
 - The feedback writer is a reference loop, not a full host companion app.

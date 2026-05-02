@@ -76,6 +76,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     private var reportsSent = 0
     private var feedbackPackets = 0
     private var rejectedFeedbackPackets = 0
+    private var lastNoHostReportWarningMs = 0L
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val _status = MutableStateFlow(GatewayStatus())
     val status: StateFlow<GatewayStatus> = _status
@@ -250,7 +251,13 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                             else -> "HID ready (${modeAtRegistration.name})"
                         },
                         compatibility = snapshotCompatibility(),
-                        host = host?.safeName(),
+                        pairing = if (state == BluetoothProfile.STATE_CONNECTED) {
+                            "Paired and HID connected"
+                        } else {
+                            pairingLabel(snapshotCompatibility())
+                        },
+                        host = if (state == BluetoothProfile.STATE_CONNECTED) device.safeName() else null,
+                        error = if (state == BluetoothProfile.STATE_CONNECTED) null else _status.value.error,
                         eventSource = "HID",
                         eventMessage = "Host ${device.safeName()} is ${state.connectionStateLabel()}.",
                     )
@@ -270,6 +277,83 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         }
     }
 
+    fun connectBondedHost() {
+        val device = hid ?: run {
+            updateStatus(
+                hid = "Waiting for HID proxy",
+                eventSource = "HID",
+                eventMessage = "Cannot connect host until HID proxy is ready.",
+            )
+            return
+        }
+        val mode = registeredMode ?: run {
+            updateStatus(
+                hid = "Waiting for HID registration",
+                eventSource = "HID",
+                eventMessage = "Cannot connect host until HID app registration finishes.",
+            )
+            return
+        }
+        val bluetoothAdapter = adapter ?: run {
+            updateStatus(
+                hid = "Bluetooth unavailable",
+                eventSource = "Bluetooth",
+                eventMessage = "Cannot connect host without a Bluetooth adapter.",
+            )
+            return
+        }
+
+        try {
+            val candidate = bluetoothAdapter.bondedDevices
+                .sortedWith(
+                    compareByDescending<BluetoothDevice> {
+                        it.bluetoothClass?.majorDeviceClass == BluetoothClass.Device.Major.COMPUTER
+                    }.thenBy { it.safeName() }
+                )
+                .firstOrNull()
+
+            if (candidate == null) {
+                updateStatus(
+                    pairing = "No bonded host",
+                    compatibility = snapshotCompatibility(),
+                    error = "Pair the PC first, then connect the HID host.",
+                    eventSource = "HID",
+                    eventMessage = "No bonded Bluetooth devices are available for HID connect.",
+                )
+                return
+            }
+
+            if (host?.address == candidate.address) {
+                updateStatus(
+                    hid = "Connected",
+                    pairing = "Paired and HID connected",
+                    compatibility = snapshotCompatibility(),
+                    host = candidate.safeName(),
+                    error = null,
+                    eventSource = "HID",
+                    eventMessage = "Already connected to ${candidate.safeName()} as $mode.",
+                )
+                return
+            }
+
+            val accepted = device.connect(candidate)
+            updateStatus(
+                hid = if (accepted) "Connecting to host" else "Host connect rejected",
+                pairing = if (accepted) "Bonded, connecting HID" else pairingLabel(snapshotCompatibility()),
+                compatibility = snapshotCompatibility(),
+                error = if (accepted) null else "Android rejected the HID connect request.",
+                eventSource = "HID",
+                eventMessage = if (accepted) {
+                    "Requested HID connection to ${candidate.safeName()} as $mode."
+                } else {
+                    "BluetoothHidDevice.connect returned false for ${candidate.safeName()}."
+                },
+            )
+        } catch (_: SecurityException) {
+            reportPermissionMissing()
+        }
+    }
+
     fun recordInput(source: String) {
         val previousSource = _status.value.lastInputSource
         updateStatus(
@@ -282,7 +366,18 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
 
     fun send(mode: HidMode, report: ByteArray) {
         try {
-            val target = host ?: return
+            val target = host ?: run {
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastNoHostReportWarningMs > 2000L) {
+                    lastNoHostReportWarningMs = now
+                    updateStatus(
+                        error = "No HID host connected; pair and connect the host.",
+                        eventSource = "HID",
+                        eventMessage = "Input was received, but no HID host is connected.",
+                    )
+                }
+                return
+            }
             val sent = hid?.sendReport(
                 target,
                 if (mode == HidMode.MOUSE) MOUSE_REPORT_ID else GAMEPAD_REPORT_ID,
@@ -331,8 +426,10 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     }
 
     fun refreshCompatibility() {
+        val snapshot = snapshotCompatibility()
         updateStatus(
-            compatibility = snapshotCompatibility(),
+            pairing = pairingLabel(snapshot),
+            compatibility = snapshot,
             eventSource = "Compatibility",
             eventMessage = "Compatibility snapshot refreshed.",
         )
@@ -618,6 +715,13 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                 scanMode = "Permission missing",
             )
         }
+    }
+
+    private fun pairingLabel(snapshot: CompatibilitySnapshot): String = when {
+        host != null -> "Paired and HID connected"
+        snapshot.bondedDevices.isNotEmpty() -> "Bonded, HID disconnected"
+        snapshot.scanMode == "Connectable and discoverable" -> "Discoverable"
+        else -> _status.value.pairing
     }
 
     private fun BluetoothDevice.safeName(): String =

@@ -42,6 +42,7 @@ import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.core.AppContainer
 import dev.xd.bluetrack.ui.MainViewModel
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
     private lateinit var vm: MainViewModel
@@ -85,6 +86,7 @@ class MainActivity : ComponentActivity() {
                 vm = vm,
                 onEnableBluetooth = ::ensureBluetoothReady,
                 onStartPairing = ::requestDiscoverability,
+                onConnectHost = { vm.connectHost() },
             )
         }
         requestBtPermissions()
@@ -94,6 +96,11 @@ class MainActivity : ComponentActivity() {
         if (::vm.isInitialized) vm.shutdown()
         if (::container.isInitialized) container.shutdown()
         super.onDestroy()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::vm.isInitialized) vm.refreshCompatibility()
     }
 
     private fun requestBtPermissions() {
@@ -166,6 +173,7 @@ private fun AppScreen(
     vm: MainViewModel,
     onEnableBluetooth: () -> Unit,
     onStartPairing: () -> Unit,
+    onConnectHost: () -> Unit,
 ) {
     val mode by vm.mode.collectAsState()
     val status by vm.status.collectAsState()
@@ -189,6 +197,7 @@ private fun AppScreen(
         ActionPanel(
             status = status,
             onStartPairing = onStartPairing,
+            onConnectHost = onConnectHost,
             onEnableBluetooth = onEnableBluetooth,
             onRefresh = { vm.refreshCompatibility() },
         )
@@ -200,17 +209,19 @@ private fun AppScreen(
         BoxWithConstraints(Modifier.weight(1f)) {
             if (maxWidth < 620.dp) {
                 Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     TouchpadPanel(
-                        modifier = Modifier.fillMaxWidth().height(280.dp),
+                        modifier = Modifier.fillMaxWidth().weight(1f),
                         telemetryX = telemetry.stickX,
                         telemetryY = telemetry.stickY,
                         onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
                     )
-                    CompatibilityPanel(status.compatibility, Modifier.fillMaxWidth().height(220.dp))
-                    TimelinePanel(status.events, now, Modifier.fillMaxWidth().height(260.dp))
+                    Row(Modifier.fillMaxWidth().height(210.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CompatibilityPanel(status.compatibility, Modifier.weight(1f).fillMaxHeight())
+                        TimelinePanel(status.events, now, Modifier.weight(1f).fillMaxHeight())
+                    }
                 }
             } else {
                 Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -257,6 +268,7 @@ private fun HeaderPanel(mode: String, onGamepadChanged: (Boolean) -> Unit) {
 private fun ActionPanel(
     status: GatewayStatus,
     onStartPairing: () -> Unit,
+    onConnectHost: () -> Unit,
     onEnableBluetooth: () -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -276,6 +288,13 @@ private fun ActionPanel(
                 Text("Pair with PC")
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onConnectHost,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color(0xFF031018)),
+                ) {
+                    Text("Connect Host")
+                }
                 OutlinedButton(onClick = onEnableBluetooth, modifier = Modifier.weight(1f)) {
                     Text("Enable Bluetooth")
                 }
@@ -307,7 +326,10 @@ private fun TouchpadPanel(
             AndroidView(factory = { ctx -> FrameLayout(ctx).apply {
                 var lastX = 0f
                 var lastY = 0f
+                var filteredX = 0f
+                var filteredY = 0f
                 isFocusableInTouchMode = true
+                isClickable = true
                 setOnGenericMotionListener { _, ev ->
                     if (ev.action == MotionEvent.ACTION_HOVER_MOVE && ev.isFromSource(InputDevice.SOURCE_MOUSE)) {
                         onMotion(
@@ -321,20 +343,31 @@ private fun TouchpadPanel(
                 setOnTouchListener { _, ev ->
                     when (ev.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
+                            parent.requestDisallowInterceptTouchEvent(true)
                             requestFocus()
                             lastX = ev.x
                             lastY = ev.y
+                            filteredX = 0f
+                            filteredY = 0f
                             true
                         }
                         MotionEvent.ACTION_MOVE -> {
-                            val dx = ev.x - lastX
-                            val dy = ev.y - lastY
+                            val dx = ((ev.x - lastX) * 0.38f).coerceIn(-18f, 18f)
+                            val dy = ((ev.y - lastY) * 0.38f).coerceIn(-18f, 18f)
                             lastX = ev.x
                             lastY = ev.y
-                            onMotion(dx, dy, "Touchpad")
+                            filteredX = filteredX * 0.45f + dx * 0.55f
+                            filteredY = filteredY * 0.45f + dy * 0.55f
+                            if (abs(filteredX) > 0.25f || abs(filteredY) > 0.25f) {
+                                onMotion(filteredX, filteredY, "Touchpad")
+                            }
                             true
                         }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            parent.requestDisallowInterceptTouchEvent(false)
+                            performClick()
+                            true
+                        }
                         else -> false
                     }
                 }
