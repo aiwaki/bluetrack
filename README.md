@@ -46,8 +46,9 @@ pair with the Android device while the app is open.
 
 - Native Android app built with Kotlin, Coroutines, StateFlow, and Jetpack Compose.
 - Bluetooth HID mouse and gamepad report descriptors with explicit report IDs.
-- In-app Bluetooth enable, pairing/discoverability, HID, host, and feedback
-  service status.
+- In-app cockpit with Bluetooth enable, pairing/discoverability, HID, host,
+  input, compatibility, timeline, and feedback service status.
+- Touchpad input surface for hardware checks without an external mouse.
 - Connectable BLE advertising for host-side feedback discovery.
 - AES-128-CTR compatible BLE feedback decoder.
 - JVM unit tests for packet decryption and HID report formatting.

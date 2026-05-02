@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.widget.FrameLayout
@@ -17,8 +18,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
@@ -30,10 +33,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import dev.xd.bluetrack.ble.CompatibilitySnapshot
+import dev.xd.bluetrack.ble.GatewayEvent
+import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.core.AppContainer
 import dev.xd.bluetrack.ui.MainViewModel
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private lateinit var vm: MainViewModel
@@ -162,53 +170,223 @@ private fun AppScreen(
     val mode by vm.mode.collectAsState()
     val status by vm.status.collectAsState()
     val telemetry by vm.telemetry.collectAsState()
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = SystemClock.elapsedRealtime()
+            delay(1000)
+        }
+    }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF030712), Color(0xFF0A1F2E), Color(0xFF00F5A0).copy(alpha = 0.12f)))).padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFF031018), Color(0xFF102333), Color(0xFF07140F))))
+            .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Row(Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp)).padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Bluetrack", color = Color(0xFF00F5A0))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Gamepad", color = Color.White)
-                Switch(checked = mode.name == "GAMEPAD", onCheckedChange = { vm.toggle(it) })
+        HeaderPanel(mode = mode.name, onGamepadChanged = { vm.toggle(it) })
+        ActionPanel(
+            status = status,
+            onStartPairing = onStartPairing,
+            onEnableBluetooth = onEnableBluetooth,
+            onRefresh = { vm.refreshCompatibility() },
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MetricTile("Reports", status.reportsSent.toString(), Modifier.weight(1f))
+            MetricTile("Feedback", status.feedbackPackets.toString(), Modifier.weight(1f))
+            MetricTile("Rejected", status.rejectedFeedbackPackets.toString(), Modifier.weight(1f))
+        }
+        BoxWithConstraints(Modifier.weight(1f)) {
+            if (maxWidth < 620.dp) {
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    TouchpadPanel(
+                        modifier = Modifier.fillMaxWidth().height(280.dp),
+                        telemetryX = telemetry.stickX,
+                        telemetryY = telemetry.stickY,
+                        onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
+                    )
+                    CompatibilityPanel(status.compatibility, Modifier.fillMaxWidth().height(220.dp))
+                    TimelinePanel(status.events, now, Modifier.fillMaxWidth().height(260.dp))
+                }
+            } else {
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TouchpadPanel(
+                        modifier = Modifier.weight(1.15f).fillMaxHeight(),
+                        telemetryX = telemetry.stickX,
+                        telemetryY = telemetry.stickY,
+                        onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
+                    )
+                    Column(
+                        modifier = Modifier.weight(0.85f).fillMaxHeight(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        CompatibilityPanel(status.compatibility, Modifier.weight(1f))
+                        TimelinePanel(status.events, now, Modifier.weight(1f))
+                    }
+                }
             }
         }
-        Column(Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    }
+}
+
+@Composable
+private fun HeaderPanel(mode: String, onGamepadChanged: (Boolean) -> Unit) {
+    Panel(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Bluetrack Cockpit", color = Color(0xFF00F5A0), fontWeight = FontWeight.Bold)
+                Text("Mode $mode", color = Color.White.copy(alpha = 0.7f))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Gamepad", color = Color.White)
+                Switch(checked = mode == "GAMEPAD", onCheckedChange = onGamepadChanged)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionPanel(
+    status: GatewayStatus,
+    onStartPairing: () -> Unit,
+    onEnableBluetooth: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    Panel(Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             StatusLine("HID", status.hid)
             StatusLine("Feedback", status.feedback)
             StatusLine("Pairing", status.pairing)
             status.host?.let { StatusLine("Host", it) }
+            StatusLine("Input", status.lastInputSource ?: "Waiting")
             status.error?.let { Text(it, color = Color(0xFFFFB4AB)) }
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onStartPairing,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F5A0), contentColor = Color(0xFF031018)),
+            ) {
+                Text("Pair with PC")
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = onStartPairing,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F5A0), contentColor = Color(0xFF031018)),
-                ) {
-                    Text("Pair with PC")
-                }
                 OutlinedButton(onClick = onEnableBluetooth, modifier = Modifier.weight(1f)) {
                     Text("Enable Bluetooth")
                 }
+                OutlinedButton(onClick = onRefresh, modifier = Modifier.weight(1f)) {
+                    Text("Refresh")
+                }
             }
         }
-        Box(Modifier.weight(1f).fillMaxWidth().background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(24.dp))) {
+    }
+}
+
+@Composable
+private fun TouchpadPanel(
+    modifier: Modifier,
+    telemetryX: Int,
+    telemetryY: Int,
+    onMotion: (Float, Float, String) -> Unit,
+) {
+    Panel(modifier) {
+        Box(Modifier.fillMaxSize()) {
             Canvas(Modifier.fillMaxSize().padding(24.dp)) {
                 val cx = size.width / 2f; val cy = size.height / 2f
-                drawCircle(Color(0x2200E5FF), 180f, Offset(cx, cy))
-                drawLine(Color(0xFF00E5FF), Offset(cx - 220f, cy), Offset(cx + 220f, cy), 2f)
-                drawLine(Color(0xFF00E5FF), Offset(cx, cy - 220f), Offset(cx, cy + 220f), 2f)
-                drawCircle(Color(0xFF00F5A0), 12f, Offset(cx + telemetry.stickX * 1.5f, cy + telemetry.stickY * 1.5f))
+                val radius = minOf(size.width, size.height) * 0.27f
+                drawCircle(Color(0x2400E5FF), radius, Offset(cx, cy))
+                drawLine(Color(0xFF00E5FF), Offset(cx - radius * 1.3f, cy), Offset(cx + radius * 1.3f, cy), 2f)
+                drawLine(Color(0xFF00E5FF), Offset(cx, cy - radius * 1.3f), Offset(cx, cy + radius * 1.3f), 2f)
+                drawCircle(Color(0xFF00F5A0), 13f, Offset(cx + telemetryX * 1.5f, cy + telemetryY * 1.5f))
             }
             AndroidView(factory = { ctx -> FrameLayout(ctx).apply {
+                var lastX = 0f
+                var lastY = 0f
                 isFocusableInTouchMode = true
                 setOnGenericMotionListener { _, ev ->
                     if (ev.action == MotionEvent.ACTION_HOVER_MOVE && ev.isFromSource(InputDevice.SOURCE_MOUSE)) {
-                        vm.processMotion(ev.getAxisValue(MotionEvent.AXIS_RELATIVE_X), ev.getAxisValue(MotionEvent.AXIS_RELATIVE_Y)); true
+                        onMotion(
+                            ev.getAxisValue(MotionEvent.AXIS_RELATIVE_X),
+                            ev.getAxisValue(MotionEvent.AXIS_RELATIVE_Y),
+                            "External mouse",
+                        )
+                        true
                     } else false
                 }
+                setOnTouchListener { _, ev ->
+                    when (ev.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            requestFocus()
+                            lastX = ev.x
+                            lastY = ev.y
+                            true
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            val dx = ev.x - lastX
+                            val dy = ev.y - lastY
+                            lastX = ev.x
+                            lastY = ev.y
+                            onMotion(dx, dy, "Touchpad")
+                            true
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                        else -> false
+                    }
+                }
             } }, modifier = Modifier.fillMaxSize())
+            Column(
+                Modifier.align(Alignment.TopStart).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text("Input Surface", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("x $telemetryX  y $telemetryY", color = Color.White.copy(alpha = 0.72f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompatibilityPanel(snapshot: CompatibilitySnapshot, modifier: Modifier) {
+    Panel(modifier) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Compatibility", color = Color.White, fontWeight = FontWeight.Bold)
+            StatusLine("Adapter", yesNo(snapshot.bluetoothAvailable))
+            StatusLine("Enabled", yesNo(snapshot.bluetoothEnabled))
+            StatusLine("Advertiser", optionalYesNo(snapshot.bleAdvertiserAvailable))
+            StatusLine("Multi adv", optionalYesNo(snapshot.multipleAdvertisementSupported))
+            StatusLine("HID", snapshot.hidProfile)
+            StatusLine("Scan", snapshot.scanMode)
+            StatusLine("Bonded", snapshot.bondedDevices.size.toString())
+            snapshot.bondedDevices.take(4).forEach { device ->
+                Text(device, color = Color.White.copy(alpha = 0.72f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimelinePanel(events: List<GatewayEvent>, now: Long, modifier: Modifier) {
+    Panel(modifier) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Timeline", color = Color.White, fontWeight = FontWeight.Bold)
+            if (events.isEmpty()) {
+                Text("No events yet", color = Color.White.copy(alpha = 0.7f))
+            } else {
+                events.forEach { event ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(ageLabel(now, event.timestampMs), color = Color(0xFF00E5FF))
+                            Text(event.source, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                        Text(event.message, color = Color.White.copy(alpha = 0.78f))
+                    }
+                }
+            }
         }
     }
 }
@@ -219,4 +397,37 @@ private fun StatusLine(label: String, value: String) {
         Text(label, color = Color.White.copy(alpha = 0.62f), modifier = Modifier.width(74.dp))
         Text(value, color = Color.White, modifier = Modifier.weight(1f))
     }
+}
+
+@Composable
+private fun MetricTile(label: String, value: String, modifier: Modifier) {
+    Panel(modifier) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, color = Color.White.copy(alpha = 0.62f))
+            Text(value, color = Color.White, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier
+            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+            .padding(14.dp),
+        content = content,
+    )
+}
+
+private fun yesNo(value: Boolean): String = if (value) "Yes" else "No"
+
+private fun optionalYesNo(value: Boolean?): String = when (value) {
+    true -> "Yes"
+    false -> "No"
+    null -> "Unknown"
+}
+
+private fun ageLabel(now: Long, timestampMs: Long): String {
+    val seconds = ((now - timestampMs) / 1000).coerceAtLeast(0)
+    return if (seconds < 60) "${seconds}s" else "${seconds / 60}m"
 }

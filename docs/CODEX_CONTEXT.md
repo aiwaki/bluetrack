@@ -23,8 +23,11 @@ As of 2026-05-02:
 
 - Branch: `codex/harden-android-build-tests`.
 - Draft PR: `https://github.com/aiwaki/bluetrack/pull/3`.
-- Latest local/pushed commit: `899b753 Improve Bluetooth pairing diagnostics`.
-- GitHub Actions for PR #3 passed after the Bluetooth diagnostic changes.
+- Check `git log -1 --oneline` for the current head; this branch carries the
+  build hardening, Bluetooth diagnostics, project context, compatibility
+  cockpit, event timeline, and touchpad input work.
+- GitHub Actions for PR #3 passed after the Bluetooth diagnostic and context
+  changes. Re-check after every push.
 - Local validation passed with Android Studio's bundled Java runtime:
   `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew testDebugUnitTest assembleDebug`.
 - Debug APK path after build:
@@ -35,7 +38,9 @@ The app now has:
 - Bluetooth permission handling for Android 12+ nearby-device permissions.
 - A Bluetooth enable request flow.
 - A `Pair with PC` action that launches Android's discoverability prompt.
-- Status rows for HID, BLE feedback, pairing, host, and error text.
+- A cockpit UI with actions, counters, compatibility status, and event timeline.
+- Touchpad input capture in addition to external relative mouse hover motion.
+- Status rows for HID, BLE feedback, pairing, host, input source, and error text.
 - HID Device registration for mouse/gamepad modes.
 - A feedback GATT server with connectable BLE advertising.
 - A Python sender that can scan for the feedback service UUID.
@@ -99,6 +104,20 @@ cd ..
 python3 -m py_compile android/tools/ble_encrypt_sender.py
 ```
 
+## Expert Continuation Prompt
+
+Use this when you want the next Codex session to operate at full context:
+
+```text
+Continue Bluetrack as a senior Android/Bluetooth engineer and diagnostic-tool
+designer. Read AGENTS.md and docs/CODEX_CONTEXT.md first. Check git status,
+the active branch, and PR #3 before editing. Keep Bluetooth HID and BLE feedback
+separate in your mental model and in the UI. Improve real hardware debuggability
+over speculative features. Make failures visible and actionable. Validate with
+Android Studio's bundled JBR, keep CI green, update the project memory when the
+operating model changes, and push through the existing draft PR.
+```
+
 ## Hardware Validation Script
 
 On Android:
@@ -111,6 +130,10 @@ On Android:
    - `HID profile unavailable` means the device/firmware cannot run this HID
      path as a third-party app.
    - `Advertising feedback service` means the BLE correction channel is visible.
+   - The compatibility panel shows adapter, advertiser, HID proxy, scan mode,
+     and bonded-device state.
+   - The timeline should show the latest permission, HID, feedback, pairing,
+     input, and report events.
 5. Tap `Pair with PC` and accept the Android discoverability prompt.
 
 On PC:
@@ -119,8 +142,8 @@ On PC:
 2. Add a new Bluetooth device.
 3. Pair with `Bluetrack Pro Engine` if it appears.
 4. Keep the Android app foregrounded.
-5. Move a mouse/trackpad connected to Android; touchscreen movement is not the
-   current input source.
+5. Move a mouse/trackpad connected to Android or drag inside the app's input
+   surface to use the touchpad path.
 
 For feedback testing:
 
@@ -137,8 +160,8 @@ python android/tools/ble_encrypt_sender.py --address 00:11:22:33:44:55
 ## Known Limitations
 
 - HID Device profile support is device/firmware-dependent.
-- The app currently captures relative mouse hover motion inside its diagnostic
-  surface; it is not yet a polished touchpad.
+- The app has a diagnostic touchpad path, but it is not yet a polished touchpad
+  product surface.
 - Crypto is prototype-only: static key, static salt, no authentication, no
   session negotiation.
 - The feedback writer is a reference loop, not a full host companion app.
@@ -148,26 +171,22 @@ python android/tools/ble_encrypt_sender.py --address 00:11:22:33:44:55
 
 High leverage:
 
-- Add a compatibility screen:
-  - Bluetooth enabled.
-  - BLE advertiser available.
-  - Multiple advertisement supported, if useful.
-  - HID profile proxy obtainable.
-  - Current bonded hosts.
-- Add structured `Logger` or logcat events for every Bluetooth state transition.
+- Run the cockpit on real Android hardware and capture the first compatibility
+  snapshots for devices that do and do not expose HID Device support.
 - Add Android unit tests around `GatewayStatus` transitions by extracting a
   small state reducer from `BleHidGateway`.
 - Build a simple host companion CLI/UI that:
   - discovers the BLE feedback service,
   - writes correction packets,
   - displays whether HID input is arriving.
+- Add a lightweight hardware report export for compatibility snapshots and
+  event timeline entries.
 
 UX:
 
-- Replace the rough diagnostic UI with a dense operator panel.
 - Add explicit mode cards for mouse vs gamepad.
 - Add live report counters and last packet timestamps.
-- Add an input-source hint if no relative mouse events have been seen.
+- Refine the diagnostic touchpad into a more deliberate control surface.
 
 Security:
 

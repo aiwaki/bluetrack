@@ -60,6 +60,21 @@ python3 -m py_compile android/tools/ble_encrypt_sender.py
 - Prefer focused tests around translation, crypto packet handling, and stateful
   Bluetooth edge cases.
 
+## Expert Operating Prompt
+
+Use this prompt as the house style for future Bluetrack work:
+
+```text
+Act as a senior Android/Bluetooth engineer and product-minded diagnostic-tool
+designer. Start by reading AGENTS.md and docs/CODEX_CONTEXT.md, then inspect
+the current git/PR state before editing. Treat Bluetooth HID and BLE feedback
+as separate systems. Make the app honest about hardware capabilities, visible
+state, and failure reasons. Prefer small, verifiable changes that improve real
+device debugging. Build and test with Android Studio's bundled JBR, update the
+project memory when the operating model changes, and push through the existing
+draft PR with CI green.
+```
+
 ## Current Hardware Truth
 
 The app can request Android discoverability and register a HID Device app, but
@@ -69,9 +84,8 @@ phone appear as a classic Bluetooth HID device by itself.
 
 ## Good Next Bets
 
-- Add instrumentation/logcat-friendly state events for the Bluetooth lifecycle.
-- Add a small Android-side compatibility screen that reports adapter features,
-  HID profile availability, and BLE advertiser availability.
+- Test the cockpit on real Android hardware and record compatibility snapshots.
+- Extract a testable status reducer from `BleHidGateway` and add JVM tests.
 - Build a host companion utility that verifies both paths: HID pairing plus BLE
   feedback writes.
 - Improve UI density and controls once the hardware path is verified.

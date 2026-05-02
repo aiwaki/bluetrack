@@ -28,8 +28,13 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         if (started) ble.register(mode)
     }
 
-    fun processMotion(dx: Float, dy: Float) {
+    fun processMotion(dx: Float, dy: Float, source: String = "External mouse") {
+        ble.recordInput(source)
         engine.processMouseToStick(dx, dy, _mode.value) { ble.send(_mode.value, it) }
+    }
+
+    fun refreshCompatibility() {
+        ble.refreshCompatibility()
     }
 
     fun bluetoothPermissionMissing() {
