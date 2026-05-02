@@ -92,8 +92,8 @@ run the `app` configuration on an Android 10+ device with Bluetooth support.
 3. Tap `Pair with PC` in the app and accept Android's discoverability prompt.
 4. On the PC, open Bluetooth settings and add `Bluetrack Pro Engine` as a mouse
    or gamepad-class input device.
-5. Return to the app and tap `Connect Host` if the HID row does not become
-   `Connected` automatically.
+5. Return to the app. Bluetrack will auto-connect a bonded host when possible;
+   tap `Connect Host` only as a manual fallback.
 6. Keep the app foregrounded and drag inside the input surface, or move a mouse
    or trackpad connected to the Android device.
 
@@ -102,7 +102,9 @@ unavailable` means the Android device firmware does not expose the HID Device
 profile to third-party apps. `Feedback advertising failed` means the BLE
 feedback channel could not be advertised, but HID pairing may still work. A
 bonded phone that never reaches `Connected` is paired at the Bluetooth level but
-not connected as a HID host yet.
+not connected as a HID host yet. If you upgraded from an older mouse-only build,
+forget the old Bluetooth device once and pair again so the host caches the new
+composite mouse/gamepad descriptor.
 
 ## Python BLE Sender
 

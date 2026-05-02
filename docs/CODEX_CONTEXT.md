@@ -38,8 +38,12 @@ The app now has:
 - Bluetooth permission handling for Android 12+ nearby-device permissions.
 - A Bluetooth enable request flow.
 - A `Pair with PC` action that launches Android's discoverability prompt.
-- A `Connect Host` action that attempts HID connection to the best bonded
+- Automatic HID host connection after registration, compatibility refresh, or
+  pairing result, plus a `Connect Host` fallback for the best bonded
   computer-class host.
+- Composite HID registration: mouse and gamepad report descriptors are
+  registered together so mode switching does not unregister the HID app or break
+  the host connection.
 - A cockpit UI with actions, counters, compatibility status, and event timeline.
 - Touchpad input capture in addition to external relative mouse hover motion.
 - Status rows for HID, BLE feedback, pairing, host, input source, and error text.
@@ -137,8 +141,9 @@ On Android:
    - The timeline should show the latest permission, HID, feedback, pairing,
      input, and report events.
 5. Tap `Pair with PC` and accept the Android discoverability prompt.
-6. After pairing/bonding, tap `Connect Host` if the HID row does not become
-   `Connected` automatically.
+6. After pairing/bonding, return to the app. It should auto-connect the bonded
+   host. Tap `Connect Host` only if the HID row does not become `Connected`
+   automatically.
 
 On PC:
 
@@ -153,7 +158,10 @@ macOS should behave as a normal Bluetooth HID host. If Android and macOS are
 bonded but the app stays in pairing/discoverable state and HID never reaches
 `Connected`, the missing piece is HID host connection, not the BLE feedback
 path. Use `Connect Host` and inspect the timeline for `connect returned false`
-or connection-state callbacks.
+or connection-state callbacks. After the composite mouse/gamepad descriptor
+change, macOS may need one manual "Forget This Device" and fresh pairing to drop
+the old mouse-only descriptor cache; subsequent mode switching should not
+require reconnecting.
 
 For feedback testing:
 
@@ -174,6 +182,8 @@ python android/tools/ble_encrypt_sender.py --address 00:11:22:33:44:55
   product surface.
 - If multiple bonded devices exist, `Connect Host` prefers computer-class
   Bluetooth devices and then falls back by name.
+- Mode switching should not call `unregisterApp()`. The gateway now registers a
+  composite descriptor once and only changes the active report path.
 - Crypto is prototype-only: static key, static salt, no authentication, no
   session negotiation.
 - The feedback writer is a reference loop, not a full host companion app.
