@@ -1,21 +1,18 @@
 package dev.xd.bluetrack.ui
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import dev.xd.bluetrack.ble.BleHidGateway
 import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.engine.Telemetry
 import dev.xd.bluetrack.engine.TranslationEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.launch
 
 class MainViewModel(private val ble: BleHidGateway, private val engine: TranslationEngine) : ViewModel() {
     private val _mode = MutableStateFlow(HidMode.MOUSE)
     val mode: StateFlow<HidMode> = _mode
     val telemetry: StateFlow<Telemetry> = engine.telemetry
-    val connection = ble.state
+    val status = ble.status
     private var started = false
 
     fun start() {
@@ -33,6 +30,28 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
 
     fun processMotion(dx: Float, dy: Float) {
         engine.processMouseToStick(dx, dy, _mode.value) { ble.send(_mode.value, it) }
+    }
+
+    fun bluetoothPermissionMissing() {
+        ble.reportPermissionMissing()
+    }
+
+    fun bluetoothEnableRequested() {
+        started = false
+        ble.reportBluetoothEnableRequested()
+    }
+
+    fun bluetoothDisabled() {
+        started = false
+        ble.reportBluetoothDisabled()
+    }
+
+    fun discoverable(seconds: Int) {
+        ble.reportDiscoverable(seconds)
+    }
+
+    fun discoverabilityCancelled() {
+        ble.reportDiscoverableRejected()
     }
 
     fun shutdown() {

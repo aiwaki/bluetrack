@@ -1,6 +1,12 @@
 package dev.xd.bluetrack
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Activity.RESULT_OK
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.view.InputDevice
@@ -13,6 +19,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -31,14 +40,45 @@ class MainActivity : ComponentActivity() {
     private lateinit var container: AppContainer
     private val bluetoothPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-            if (grants.values.all { it }) vm.start()
+            if (grants.values.all { it }) {
+                ensureBluetoothReady()
+            } else {
+                vm.bluetoothPermissionMissing()
+            }
+        }
+    private val enableBluetooth =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            if (isBluetoothEnabled()) {
+                vm.start()
+            } else {
+                vm.bluetoothDisabled()
+            }
+        }
+    private val discoverableBluetooth =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val seconds = when {
+                result.resultCode > 0 -> result.resultCode
+                result.resultCode == RESULT_OK -> 300
+                else -> 0
+            }
+            if (seconds > 0) {
+                vm.discoverable(seconds)
+            } else {
+                vm.discoverabilityCancelled()
+            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         container = AppContainer(this)
         vm = MainViewModel(container.bleGateway, container.translationEngine)
-        setContent { AppScreen(vm) }
+        setContent {
+            AppScreen(
+                vm = vm,
+                onEnableBluetooth = ::ensureBluetoothReady,
+                onStartPairing = ::requestDiscoverability,
+            )
+        }
         requestBtPermissions()
     }
 
@@ -50,17 +90,77 @@ class MainActivity : ComponentActivity() {
 
     private fun requestBtPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            bluetoothPermissions.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE))
+            val permissions = arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_ADVERTISE,
+            )
+            if (permissions.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
+                ensureBluetoothReady()
+            } else {
+                bluetoothPermissions.launch(permissions)
+            }
         } else {
-            vm.start()
+            ensureBluetoothReady()
         }
     }
+
+    @SuppressLint("MissingPermission")
+    private fun ensureBluetoothReady() {
+        val adapter = bluetoothAdapter() ?: run {
+            vm.start()
+            return
+        }
+        if (!adapter.isEnabled) {
+            vm.bluetoothEnableRequested()
+            enableBluetooth.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            return
+        }
+        vm.start()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun requestDiscoverability() {
+        if (!hasBluetoothPermissions()) {
+            requestBtPermissions()
+            return
+        }
+        val adapter = bluetoothAdapter() ?: run {
+            vm.start()
+            return
+        }
+        if (!adapter.isEnabled) {
+            ensureBluetoothReady()
+            return
+        }
+        val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+            .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+        discoverableBluetooth.launch(intent)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun isBluetoothEnabled(): Boolean = bluetoothAdapter()?.isEnabled == true
+
+    private fun hasBluetoothPermissions(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_ADVERTISE,
+            ).all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+
+    private fun bluetoothAdapter(): BluetoothAdapter? =
+        (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
 }
 
 @Composable
-private fun AppScreen(vm: MainViewModel) {
+private fun AppScreen(
+    vm: MainViewModel,
+    onEnableBluetooth: () -> Unit,
+    onStartPairing: () -> Unit,
+) {
     val mode by vm.mode.collectAsState()
-    val state by vm.connection.collectAsState()
+    val status by vm.status.collectAsState()
     val telemetry by vm.telemetry.collectAsState()
 
     Column(
@@ -68,10 +168,29 @@ private fun AppScreen(vm: MainViewModel) {
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp)).padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Link: $state", color = Color(0xFF00F5A0))
+            Text("Bluetrack", color = Color(0xFF00F5A0))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Gamepad", color = Color.White)
                 Switch(checked = mode.name == "GAMEPAD", onCheckedChange = { vm.toggle(it) })
+            }
+        }
+        Column(Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatusLine("HID", status.hid)
+            StatusLine("Feedback", status.feedback)
+            StatusLine("Pairing", status.pairing)
+            status.host?.let { StatusLine("Host", it) }
+            status.error?.let { Text(it, color = Color(0xFFFFB4AB)) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onStartPairing,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F5A0), contentColor = Color(0xFF031018)),
+                ) {
+                    Text("Pair with PC")
+                }
+                OutlinedButton(onClick = onEnableBluetooth, modifier = Modifier.weight(1f)) {
+                    Text("Enable Bluetooth")
+                }
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth().background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(24.dp))) {
@@ -91,5 +210,13 @@ private fun AppScreen(vm: MainViewModel) {
                 }
             } }, modifier = Modifier.fillMaxSize())
         }
+    }
+}
+
+@Composable
+private fun StatusLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = Color.White.copy(alpha = 0.62f), modifier = Modifier.width(74.dp))
+        Text(value, color = Color.White, modifier = Modifier.weight(1f))
     }
 }

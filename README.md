@@ -13,8 +13,9 @@ calibration workflows where deterministic input handling matters.
 ## Status
 
 This repository is an active prototype. The Android app contains a native
-Compose diagnostic UI, a Bluetooth HID device gateway, an AES-CTR BLE feedback
-decoder, and a small Python reference sender for host-side integration tests.
+Compose diagnostic UI, a Bluetooth HID device gateway, an advertised AES-CTR
+BLE feedback service, and a small Python reference sender for host-side
+integration tests.
 
 ## Architecture
 
@@ -25,22 +26,30 @@ decoder, and a small Python reference sender for host-side integration tests.
 2. `TranslationEngine` converts relative mouse deltas into HID report bytes.
 3. `BleHidGateway` sends the report to the connected Bluetooth HID host.
 
+The app acts as the input device. The PC acts as the Bluetooth host and must
+pair with the Android device while the app is open.
+
 ### Feedback Path
 
 1. A host-side calibration loop computes a correction vector.
 2. The correction is encrypted as an AES-128-CTR BLE frame:
    `[0..3]=counter_le`, `[4..11]=ciphertext(float dx, float dy)`.
-3. Android decrypts the frame and applies the correction to the next input
-   reports.
+3. Android advertises the feedback service UUID, accepts writes to the feedback
+   characteristic, decrypts the frame, and applies the correction to the next
+   input reports.
 
 ## Features
 
 - Native Android app built with Kotlin, Coroutines, StateFlow, and Jetpack Compose.
 - Bluetooth HID mouse and gamepad report descriptors with explicit report IDs.
+- In-app Bluetooth enable, pairing/discoverability, HID, host, and feedback
+  service status.
+- Connectable BLE advertising for host-side feedback discovery.
 - AES-128-CTR compatible BLE feedback decoder.
 - JVM unit tests for packet decryption and HID report formatting.
 - GitHub Actions workflow for Android unit tests and debug APK assembly.
-- Python sender script for encrypted BLE packet generation.
+- Python sender script that can scan for the Bluetrack feedback service and send
+  encrypted correction packets.
 
 ## Build
 
@@ -58,10 +67,34 @@ cd android
 ./gradlew assembleDebug
 ```
 
+If the shell cannot find Java but Android Studio is installed on macOS, point
+Gradle at Android Studio's bundled runtime for the current terminal session:
+
+```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+```
+
 ### Android Studio
 
 Open the `android/` directory as the project root, let Gradle sync finish, and
 run the `app` configuration on an Android 10+ device with Bluetooth support.
+
+## Pairing and Runtime
+
+1. Install and open the app on an Android device that supports the Bluetooth HID
+   Device profile.
+2. Grant the nearby-devices Bluetooth permissions when prompted.
+3. Tap `Pair with PC` in the app and accept Android's discoverability prompt.
+4. On the PC, open Bluetooth settings and add `Bluetrack Pro Engine` as a mouse
+   or gamepad-class input device.
+5. Keep the app foregrounded and move a mouse or trackpad connected to the
+   Android device. The app currently listens for relative mouse motion inside
+   its diagnostic surface.
+
+If the PC does not show the phone, check the app status rows. `HID profile
+unavailable` means the Android device firmware does not expose the HID Device
+profile to third-party apps. `Feedback advertising failed` means the BLE
+feedback channel could not be advertised, but HID pairing may still work.
 
 ## Python BLE Sender
 
@@ -81,7 +114,12 @@ pip install bleak cryptography
 python android/tools/ble_encrypt_sender.py
 ```
 
-Before running, set `DEVICE_ADDRESS` and `CHAR_UUID` in the sender script.
+By default the sender scans for the advertised Bluetrack feedback service. You
+can also pass a known BLE address:
+
+```bash
+python android/tools/ble_encrypt_sender.py --address 00:11:22:33:44:55
+```
 
 ## Security Notes
 
