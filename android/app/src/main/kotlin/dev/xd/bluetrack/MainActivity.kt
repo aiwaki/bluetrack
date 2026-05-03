@@ -18,11 +18,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,8 +35,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.xd.bluetrack.ble.GatewayEvent
 import dev.xd.bluetrack.ble.GatewayStatus
+import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.ui.MainViewModel
+import dev.xd.bluetrack.ui.ModeCardState
 import dev.xd.bluetrack.ui.automationLabel
+import dev.xd.bluetrack.ui.modeCardStates
 import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
 import kotlinx.coroutines.delay
 import kotlin.math.abs
@@ -219,10 +222,14 @@ private fun AppScreen(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        HeaderPanel(mode = mode.name, status = status, now = now, onGamepadChanged = { vm.toggle(it) })
+        HeaderPanel(status = status, now = now)
         ConnectionPanel(status = status, now = now)
+        ModeCardsRow(
+            currentMode = mode,
+            hostConnected = status.host != null,
+            onSelect = { selected -> vm.toggle(selected == HidMode.GAMEPAD) },
+        )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricTile("Mode", mode.name.lowercase().replaceFirstChar { it.uppercase() }, Modifier.weight(1f))
             MetricTile("Reports", compactCount(status.reportsSent), Modifier.weight(1f))
             MetricTile("Feedback", status.feedbackPackets.toString(), Modifier.weight(1f))
         }
@@ -267,22 +274,51 @@ private fun AppScreen(
 }
 
 @Composable
-private fun HeaderPanel(mode: String, status: GatewayStatus, now: Long, onGamepadChanged: (Boolean) -> Unit) {
+private fun HeaderPanel(status: GatewayStatus, now: Long) {
     Panel(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Bluetrack", color = Color(0xFF00F5A0), fontWeight = FontWeight.Bold)
-                Text(primaryStatus(status, now), color = primaryStatusColor(status, now))
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Gamepad", color = Color.White)
-                Switch(checked = mode == "GAMEPAD", onCheckedChange = onGamepadChanged)
-            }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Bluetrack", color = Color(0xFF00F5A0), fontWeight = FontWeight.Bold)
+            Text(primaryStatus(status, now), color = primaryStatusColor(status, now))
         }
+    }
+}
+
+@Composable
+private fun ModeCardsRow(
+    currentMode: HidMode,
+    hostConnected: Boolean,
+    onSelect: (HidMode) -> Unit,
+) {
+    val cards = modeCardStates(currentMode = currentMode, hostConnected = hostConnected)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        cards.forEach { card ->
+            ModeCard(
+                state = card,
+                modifier = Modifier.weight(1f),
+                onTap = { onSelect(card.mode) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModeCard(
+    state: ModeCardState,
+    modifier: Modifier,
+    onTap: () -> Unit,
+) {
+    val accent = if (state.isSelected) Color(0xFF00F5A0) else Color.White.copy(alpha = 0.62f)
+    val backgroundAlpha = if (state.isSelected) 0.16f else 0.06f
+    Column(
+        modifier = modifier
+            .background(Color.White.copy(alpha = backgroundAlpha), RoundedCornerShape(8.dp))
+            .clickable(enabled = !state.isSelected, onClick = onTap)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(state.title, color = accent, fontWeight = FontWeight.Bold)
+        Text(state.tagline, color = Color.White.copy(alpha = 0.72f))
+        Text(state.statusLabel, color = accent)
     }
 }
 

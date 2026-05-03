@@ -274,7 +274,6 @@ High leverage:
 
 UX:
 
-- Add explicit mode cards for mouse vs gamepad.
 - Add live report counters and last packet timestamps.
 - Refine the diagnostic touchpad into a more deliberate control surface.
 
