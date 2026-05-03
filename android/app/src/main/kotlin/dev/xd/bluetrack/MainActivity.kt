@@ -33,7 +33,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import dev.xd.bluetrack.ble.CompatibilitySnapshot
 import dev.xd.bluetrack.ble.GatewayEvent
 import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.ui.MainViewModel
@@ -220,12 +219,12 @@ private fun AppScreen(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        HeaderPanel(mode = mode.name, onGamepadChanged = { vm.toggle(it) })
-        ActionPanel(status = status)
+        HeaderPanel(mode = mode.name, status = status, now = now, onGamepadChanged = { vm.toggle(it) })
+        ConnectionPanel(status = status, now = now)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricTile("Reports", status.reportsSent.toString(), Modifier.weight(1f))
+            MetricTile("Mode", mode.name.lowercase().replaceFirstChar { it.uppercase() }, Modifier.weight(1f))
+            MetricTile("Reports", compactCount(status.reportsSent), Modifier.weight(1f))
             MetricTile("Feedback", status.feedbackPackets.toString(), Modifier.weight(1f))
-            MetricTile("Rejected", status.rejectedFeedbackPackets.toString(), Modifier.weight(1f))
         }
         BoxWithConstraints(Modifier.weight(1f)) {
             if (maxWidth < 620.dp) {
@@ -240,8 +239,8 @@ private fun AppScreen(
                         onTouchStart = { vm.beginTouchGesture() },
                         onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
                     )
-                    Row(Modifier.fillMaxWidth().height(210.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        CompatibilityPanel(status.compatibility, Modifier.weight(1f).fillMaxHeight())
+                    Row(Modifier.fillMaxWidth().height(190.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SystemPanel(status, Modifier.weight(1f).fillMaxHeight())
                         TimelinePanel(status.events, now, Modifier.weight(1f).fillMaxHeight())
                     }
                 }
@@ -258,7 +257,7 @@ private fun AppScreen(
                         modifier = Modifier.weight(0.85f).fillMaxHeight(),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        CompatibilityPanel(status.compatibility, Modifier.weight(1f))
+                        SystemPanel(status, Modifier.weight(0.75f))
                         TimelinePanel(status.events, now, Modifier.weight(1f))
                     }
                 }
@@ -268,7 +267,7 @@ private fun AppScreen(
 }
 
 @Composable
-private fun HeaderPanel(mode: String, onGamepadChanged: (Boolean) -> Unit) {
+private fun HeaderPanel(mode: String, status: GatewayStatus, now: Long, onGamepadChanged: (Boolean) -> Unit) {
     Panel(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth(),
@@ -276,8 +275,8 @@ private fun HeaderPanel(mode: String, onGamepadChanged: (Boolean) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Bluetrack Cockpit", color = Color(0xFF00F5A0), fontWeight = FontWeight.Bold)
-                Text("Mode $mode", color = Color.White.copy(alpha = 0.7f))
+                Text("Bluetrack", color = Color(0xFF00F5A0), fontWeight = FontWeight.Bold)
+                Text(primaryStatus(status, now), color = primaryStatusColor(status, now))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Gamepad", color = Color.White)
@@ -288,17 +287,16 @@ private fun HeaderPanel(mode: String, onGamepadChanged: (Boolean) -> Unit) {
 }
 
 @Composable
-private fun ActionPanel(
+private fun ConnectionPanel(
     status: GatewayStatus,
+    now: Long,
 ) {
     Panel(Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatusLine("Auto", status.automationLabel())
-            StatusLine("HID", status.hid)
-            StatusLine("Feedback", status.feedback)
-            StatusLine("Pairing", status.pairing)
-            status.host?.let { StatusLine("Host", it) }
-            StatusLine("Input", status.lastInputSource ?: "Waiting")
+            StatusLine("State", primaryStatus(status, now))
+            StatusLine("Host", status.host ?: hostFallback(status))
+            StatusLine("Input", inputLabel(status, now))
+            StatusLine("Flow", status.automationLabel())
             status.error?.let { Text(it, color = Color(0xFFFFB4AB)) }
         }
     }
@@ -390,32 +388,19 @@ private fun TouchpadPanel(
                     }
                 }
             } }, modifier = Modifier.fillMaxSize())
-            Column(
-                Modifier.align(Alignment.TopStart).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text("Input Surface", color = Color.White, fontWeight = FontWeight.Bold)
-                Text("x $telemetryX  y $telemetryY", color = Color.White.copy(alpha = 0.72f))
-            }
         }
     }
 }
 
 @Composable
-private fun CompatibilityPanel(snapshot: CompatibilitySnapshot, modifier: Modifier) {
+private fun SystemPanel(status: GatewayStatus, modifier: Modifier) {
     Panel(modifier) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Compatibility", color = Color.White, fontWeight = FontWeight.Bold)
-            StatusLine("Adapter", yesNo(snapshot.bluetoothAvailable))
-            StatusLine("Enabled", yesNo(snapshot.bluetoothEnabled))
-            StatusLine("Advertiser", optionalYesNo(snapshot.bleAdvertiserAvailable))
-            StatusLine("Multi adv", optionalYesNo(snapshot.multipleAdvertisementSupported))
-            StatusLine("HID", snapshot.hidProfile)
-            StatusLine("Scan", snapshot.scanMode)
-            StatusLine("Bonded", snapshot.bondedDevices.size.toString())
-            snapshot.bondedDevices.take(4).forEach { device ->
-                Text(device, color = Color.White.copy(alpha = 0.72f))
-            }
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("System", color = Color.White, fontWeight = FontWeight.Bold)
+            StatusLine("BT", if (status.compatibility.bluetoothEnabled) "Ready" else "Off")
+            StatusLine("HID", status.hid)
+            StatusLine("Pair", status.pairing)
+            StatusLine("BLE", status.feedback)
         }
     }
 }
@@ -424,11 +409,11 @@ private fun CompatibilityPanel(snapshot: CompatibilitySnapshot, modifier: Modifi
 private fun TimelinePanel(events: List<GatewayEvent>, now: Long, modifier: Modifier) {
     Panel(modifier) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Timeline", color = Color.White, fontWeight = FontWeight.Bold)
+            Text("Activity", color = Color.White, fontWeight = FontWeight.Bold)
             if (events.isEmpty()) {
-                Text("No events yet", color = Color.White.copy(alpha = 0.7f))
+                Text("Quiet", color = Color.White.copy(alpha = 0.7f))
             } else {
-                events.forEach { event ->
+                events.take(5).forEach { event ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(ageLabel(now, event.timestampMs), color = Color(0xFF00E5FF))
@@ -464,19 +449,52 @@ private fun MetricTile(label: String, value: String, modifier: Modifier) {
 private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier
-            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
             .padding(14.dp),
         content = content,
     )
 }
 
-private fun yesNo(value: Boolean): String = if (value) "Yes" else "No"
-
-private fun optionalYesNo(value: Boolean?): String = when (value) {
-    true -> "Yes"
-    false -> "No"
-    null -> "Unknown"
+private fun primaryStatus(status: GatewayStatus, now: Long): String = when {
+    status.error != null -> "Needs attention"
+    isConnected(status) && isInputLive(status, now) -> "Ready - input live"
+    isConnected(status) -> "Ready"
+    status.hid.contains("connecting", ignoreCase = true) ||
+        status.pairing.contains("connecting", ignoreCase = true) -> "Connecting"
+    status.pairing.contains("discoverable", ignoreCase = true) ||
+        status.pairing.contains("pairing", ignoreCase = true) -> "Pairing"
+    else -> "Preparing"
 }
+
+private fun primaryStatusColor(status: GatewayStatus, now: Long): Color = when {
+    status.error != null -> Color(0xFFFFB4AB)
+    isConnected(status) && isInputLive(status, now) -> Color(0xFF00F5A0)
+    isConnected(status) -> Color(0xFF00E5FF)
+    else -> Color.White.copy(alpha = 0.72f)
+}
+
+private fun hostFallback(status: GatewayStatus): String = when {
+    status.compatibility.bondedDevices.isNotEmpty() -> "Bonded"
+    status.pairing.contains("discoverable", ignoreCase = true) -> "Pairing"
+    else -> "Searching"
+}
+
+private fun inputLabel(status: GatewayStatus, now: Long): String = when {
+    isInputLive(status, now) -> "${status.lastInputSource ?: "Input"} live"
+    status.lastInputSource != null -> status.lastInputSource
+    else -> "Idle"
+}
+
+private fun isConnected(status: GatewayStatus): Boolean =
+    status.host != null ||
+        status.hid.contains("connected", ignoreCase = true) ||
+        status.pairing.contains("HID connected", ignoreCase = true)
+
+private fun isInputLive(status: GatewayStatus, now: Long): Boolean =
+    status.lastInputAtMs?.let { now - it < 1400L } == true
+
+private fun compactCount(value: Int): String =
+    if (value < 1000) value.toString() else "${value / 1000}.${(value % 1000) / 100}k"
 
 private fun ageLabel(now: Long, timestampMs: Long): String {
     val seconds = ((now - timestampMs) / 1000).coerceAtLeast(0)

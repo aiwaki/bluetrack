@@ -50,12 +50,13 @@ The app now has:
   registered together so mode switching does not unregister the HID app or break
   the host connection.
 - A gamepad descriptor that advertises a gamepad usage with 16 buttons, a
-  neutral hat switch/D-pad, and four axes, plus a short button wake pulse on
-  gamepad connect/mode activation/first input to help host software enumerate
-  the controller.
-- A cockpit UI with an automation status row, counters, compatibility status,
-  and event timeline. Manual pairing/connect/refresh buttons were removed from
-  the primary surface; Android system confirmation prompts are still required.
+  neutral hat switch/D-pad, and four axes, plus a visible automatic button wake
+  train on gamepad connect/mode activation/first input to help host software and
+  browser Gamepad API pages enumerate the controller.
+- A calmer primary UI with Ready/Connecting/Input live/Needs attention state,
+  compact counters, and quieter system/activity details. Manual
+  pairing/connect/refresh buttons were removed from the primary surface; Android
+  system confirmation prompts are still required.
 - Touchpad input capture in addition to external relative mouse hover motion.
 - Cursor smoothing improvements: the touchpad consumes coalesced historical
   touch samples and the translation engine preserves fractional mouse deltas
@@ -86,6 +87,7 @@ The app now has:
 - HID Device registration for mouse/gamepad modes.
 - A feedback GATT server with connectable BLE advertising.
 - A Python sender that can scan for the feedback service UUID.
+- Claude handoff files: `CLAUDE.me` and `.claude/rules/`.
 
 ## Mental Model
 
@@ -201,7 +203,10 @@ The latest gamepad descriptor changed from the earlier joystick-like/minimal
 report to a gamepad usage with 16 buttons, a neutral hat switch/D-pad, and four
 axes; forget and re-pair once if macOS still has the old cached descriptor.
 Gamepad mode will not move the macOS cursor; verify it in a game, emulator, or
-browser gamepad tester after switching the app to `Gamepad`.
+browser gamepad tester after switching the app to `Gamepad`. Browser testers
+that say "press any button" should catch the automatic visible wake train, but
+the page may need to be open before switching to `Gamepad` or before the first
+gamepad input.
 
 For feedback testing:
 
