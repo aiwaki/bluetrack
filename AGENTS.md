@@ -91,7 +91,9 @@ intentionally unregister HID. Android's own confirmation dialogs still cannot be
 skipped, and Android requires an ongoing notification for the background
 keep-alive service. Pointer input is paced: touch callbacks enqueue deltas,
 while `MainViewModel` drains them every 8 ms into `TranslationEngine` to avoid
-UI-thread HID bursts.
+UI-thread HID bursts. Hidden input diagnostics log rare touch, pacer, queue, and
+HID-send threshold crossings under `BluetrackInput`; keep this diagnostic layer
+passive unless hardware evidence says what to change.
 
 ## Good Next Bets
 

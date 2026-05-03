@@ -30,6 +30,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
     private var lastRecordedInputAtMs = 0L
     private var lastRecordedInputSource: String? = null
     private var inputPacerJob: Job? = null
+    private val inputDiagnostics = InputDiagnostics()
 
     fun start() {
         started = true
@@ -49,6 +50,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
 
     fun processMotion(dx: Float, dy: Float, source: String = "External mouse") {
         val now = SystemClock.elapsedRealtime()
+        inputDiagnostics.recordTouch(now)
         recordInputThrottled(source, now)
         synchronized(inputLock) {
             pendingDx += dx
@@ -101,6 +103,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
     fun detach() {
         inputPacerJob?.cancel()
         inputPacerJob = null
+        inputDiagnostics.resetPacerClock()
         started = false
     }
 
@@ -109,6 +112,8 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         inputPacerJob = viewModelScope.launch(Dispatchers.Default) {
             while (isActive) {
                 delay(INPUT_TICK_MS)
+                val tickAtMs = SystemClock.elapsedRealtime()
+                inputDiagnostics.recordPacerTick(tickAtMs)
                 val frame = synchronized(inputLock) {
                     val dx = pendingDx
                     val dy = pendingDy
@@ -118,13 +123,22 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
                     } else {
                         pendingDx = 0f
                         pendingDy = 0f
-                        InputFrame(dx = dx, dy = dy, mode = pendingMode)
+                        InputFrame(dx = dx, dy = dy, mode = pendingMode, queuedAtMs = lastQueuedInputAtMs)
                     }
                 }
-                if (frame == InputFrame.STOP) break
+                if (frame == InputFrame.STOP) {
+                    inputDiagnostics.resetPacerClock()
+                    break
+                }
                 frame ?: continue
+                inputDiagnostics.recordFrame(tickAtMs, frame.queuedAtMs)
                 engine.processMouseToStick(frame.dx, frame.dy, frame.mode) { report ->
+                    val sendStartedNs = SystemClock.elapsedRealtimeNanos()
                     ble.send(frame.mode, report)
+                    inputDiagnostics.recordHidSend(
+                        durationNs = SystemClock.elapsedRealtimeNanos() - sendStartedNs,
+                        nowMs = SystemClock.elapsedRealtime(),
+                    )
                 }
             }
             val restart = synchronized(inputLock) {
@@ -150,9 +164,10 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         val dx: Float,
         val dy: Float,
         val mode: HidMode,
+        val queuedAtMs: Long,
     ) {
         companion object {
-            val STOP = InputFrame(0f, 0f, HidMode.MOUSE)
+            val STOP = InputFrame(0f, 0f, HidMode.MOUSE, 0L)
         }
     }
 

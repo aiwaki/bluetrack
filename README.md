@@ -120,6 +120,12 @@ Touchpad input preserves fractional motion and coalesced historical touch
 samples before HID quantization. UI touch callbacks only enqueue motion; a
 background 8 ms input pacer drains accumulated deltas into HID reports so the
 host receives steadier timing instead of bursty touch-event batches.
+Hidden input diagnostics log only when a threshold is crossed, without changing
+motion behavior. During hardware testing, inspect them with:
+
+```bash
+adb logcat -s BluetrackInput Bluetrack
+```
 
 ## Python BLE Sender
 

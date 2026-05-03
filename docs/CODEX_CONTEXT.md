@@ -61,6 +61,9 @@ The app now has:
   between HID reports before integer quantization. UI callbacks enqueue motion
   only; a background 8 ms input pacer drains accumulated deltas into HID reports
   to avoid bursty touch-event batches and reduce visible stutter.
+- Hidden input diagnostics around touch enqueue, pacer ticks, queue latency, and
+  HID send duration. They do not alter movement and only emit throttled logcat
+  warnings under tag `BluetrackInput` when thresholds are crossed.
 - Status rows for HID, BLE feedback, pairing, host, input source, and error text.
 - HID Device registration for mouse/gamepad modes.
 - A feedback GATT server with connectable BLE advertising.
@@ -192,6 +195,12 @@ Or with a known BLE address:
 
 ```bash
 python android/tools/ble_encrypt_sender.py --address 00:11:22:33:44:55
+```
+
+For input jank diagnostics while reproducing rare cursor pauses:
+
+```bash
+adb logcat -s BluetrackInput Bluetrack
 ```
 
 ## Known Limitations
