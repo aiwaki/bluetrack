@@ -1,17 +1,12 @@
 package dev.xd.bluetrack.ui
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import dev.xd.bluetrack.ble.BleHidGateway
 import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.engine.Telemetry
 import dev.xd.bluetrack.engine.TranslationEngine
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
 class MainViewModel(private val ble: BleHidGateway, private val engine: TranslationEngine) : ViewModel() {
     private val _mode = MutableStateFlow(HidMode.MOUSE)
@@ -19,14 +14,10 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
     val telemetry: StateFlow<Telemetry> = engine.telemetry
     val status = ble.status
     private var started = false
-    private var autopilotJob: Job? = null
 
     fun start() {
-        if (started) return
         started = true
-        ble.initialize()
-        ble.register(_mode.value)
-        startAutopilot()
+        ble.maintainRegistration(_mode.value)
     }
 
     fun toggle(gamepad: Boolean) {
@@ -75,19 +66,11 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
     }
 
     fun shutdown() {
-        autopilotJob?.cancel()
-        autopilotJob = null
+        detach()
         ble.shutdown()
-        started = false
     }
 
-    private fun startAutopilot() {
-        if (autopilotJob != null) return
-        autopilotJob = viewModelScope.launch {
-            while (isActive) {
-                delay(5000)
-                if (started) ble.refreshCompatibility(announce = false)
-            }
-        }
+    fun detach() {
+        started = false
     }
 }

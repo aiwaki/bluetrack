@@ -11,7 +11,7 @@ import kotlinx.coroutines.cancel
 class AppContainer(context: Context) {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val translationEngine = TranslationEngine(appScope)
-    val bleGateway = BleHidGateway(context, translationEngine)
+    val bleGateway = BleHidGateway(context.applicationContext, translationEngine)
 
     fun shutdown() {
         appScope.cancel()

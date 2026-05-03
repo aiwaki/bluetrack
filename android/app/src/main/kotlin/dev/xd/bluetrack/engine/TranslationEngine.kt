@@ -15,7 +15,7 @@ class TranslationEngine(private val scope: CoroutineScope) {
     private val _telemetry = MutableStateFlow(Telemetry())
     val telemetry: StateFlow<Telemetry> = _telemetry
     private var deadmanJob: Job? = null
-    private val gamepadReport = byteArrayOf(0, 0, 0, 0)
+    private val gamepadReport = byteArrayOf(0, 0, 0, 0, 0, 0)
     private val mouseReport = byteArrayOf(0, 0, 0, 0)
     @Volatile var sensitivity: Float = 2.0f
 
@@ -34,11 +34,13 @@ class TranslationEngine(private val scope: CoroutineScope) {
 
         if (mode == HidMode.GAMEPAD) {
             gamepadReport[2] = sx.toByte(); gamepadReport[3] = sy.toByte()
+            gamepadReport[4] = 0; gamepadReport[5] = 0
             send(gamepadReport)
             deadmanJob?.cancel()
             deadmanJob = scope.launch {
                 delay(20)
                 gamepadReport[2] = 0; gamepadReport[3] = 0
+                gamepadReport[4] = 0; gamepadReport[5] = 0
                 send(gamepadReport)
             }
         } else {

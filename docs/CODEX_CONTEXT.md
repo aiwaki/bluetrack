@@ -39,12 +39,18 @@ The app now has:
 - A Bluetooth enable request flow.
 - Autopilot pairing: when Bluetooth is enabled and no bonded host exists,
   Bluetrack asks Android to open the discoverability window automatically.
+- Application-scoped Bluetooth ownership plus a foreground HID keep-alive
+  service, so Activity destruction/backgrounding does not intentionally
+  unregister the HID app.
 - Automatic HID host connection after registration, pairing result, foreground
   compatibility refresh, or a quiet 5-second maintenance refresh, preferring the
   best bonded computer-class host.
 - Composite HID registration: mouse and gamepad report descriptors are
   registered together so mode switching does not unregister the HID app or break
   the host connection.
+- A gamepad descriptor that advertises a gamepad usage with 16 buttons and four
+  axes, plus a short button wake pulse on gamepad connect/mode activation/first
+  input to help host software enumerate the controller.
 - A cockpit UI with an automation status row, counters, compatibility status,
   and event timeline. Manual pairing/connect/refresh buttons were removed from
   the primary surface; Android system confirmation prompts are still required.
@@ -144,9 +150,9 @@ On Android:
    - The timeline should show the latest permission, HID, feedback, pairing,
      input, and report events.
 5. Accept the Android discoverability prompt when Bluetrack opens it.
-6. After pairing/bonding, return to the app. It should refresh compatibility,
-   keep retrying foreground HID connection quietly, and auto-connect the bonded
-   host.
+6. After pairing/bonding, return to the app. It should run the HID keep-alive
+   service, refresh compatibility, and auto-connect the bonded host. Minimize
+   the Activity to verify the HID host remains connected.
 
 On PC:
 
@@ -164,8 +170,11 @@ path. Inspect the timeline for `connect returned false` or connection-state
 callbacks. After the composite mouse/gamepad descriptor change, macOS may need
 one manual "Forget This Device" and fresh pairing to drop the old mouse-only
 descriptor cache; subsequent mode switching should not require reconnecting.
-Gamepad mode will not move the macOS cursor; verify it in a game, emulator, or
-browser gamepad tester after switching the app to `Gamepad`.
+The latest gamepad descriptor changed from the earlier joystick-like report to a
+gamepad usage with 16 buttons and four axes; forget and re-pair once if macOS
+still has the old cached descriptor. Gamepad mode will not move the macOS
+cursor; verify it in a game, emulator, or browser gamepad tester after switching
+the app to `Gamepad`.
 
 For feedback testing:
 
@@ -188,6 +197,8 @@ python android/tools/ble_encrypt_sender.py --address 00:11:22:33:44:55
   computer-class Bluetooth devices and then falls back by name.
 - Android does not allow third-party apps to bypass system confirmation dialogs
   for Bluetooth enable/discoverability/pairing.
+- Android requires an ongoing foreground-service notification for the background
+  HID keep-alive path.
 - Mode switching should not call `unregisterApp()`. The gateway now registers a
   composite descriptor once and only changes the active report path.
 - Crypto is prototype-only: static key, static salt, no authentication, no

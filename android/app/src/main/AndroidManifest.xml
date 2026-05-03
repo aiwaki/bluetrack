@@ -8,11 +8,19 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
 
     <application
+        android:name=".BluetrackApplication"
         android:allowBackup="false"
         android:label="Bluetrack Pro Engine"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+        <service
+            android:name=".HidKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice"/>
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

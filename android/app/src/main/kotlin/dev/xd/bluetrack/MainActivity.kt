@@ -36,7 +36,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import dev.xd.bluetrack.ble.CompatibilitySnapshot
 import dev.xd.bluetrack.ble.GatewayEvent
 import dev.xd.bluetrack.ble.GatewayStatus
-import dev.xd.bluetrack.core.AppContainer
 import dev.xd.bluetrack.ui.MainViewModel
 import dev.xd.bluetrack.ui.automationLabel
 import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
@@ -45,7 +44,6 @@ import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
     private lateinit var vm: MainViewModel
-    private lateinit var container: AppContainer
     private var autoBluetoothEnableRequested = false
     private var autoDiscoverabilityRequested = false
     private val bluetoothPermissions =
@@ -60,6 +58,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             if (isBluetoothEnabled()) {
                 autoBluetoothEnableRequested = false
+                ensureKeepAliveService()
                 vm.start()
                 maybeRequestDiscoverability()
             } else {
@@ -82,7 +81,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        container = AppContainer(this)
+        val container = (application as BluetrackApplication).container
         vm = MainViewModel(container.bleGateway, container.translationEngine)
         setContent {
             AppScreen(vm = vm)
@@ -91,8 +90,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        if (::vm.isInitialized) vm.shutdown()
-        if (::container.isInitialized) container.shutdown()
+        if (::vm.isInitialized) vm.detach()
         super.onDestroy()
     }
 
@@ -141,6 +139,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         autoBluetoothEnableRequested = false
+        ensureKeepAliveService()
         vm.start()
         maybeRequestDiscoverability()
     }
@@ -187,6 +186,16 @@ class MainActivity : ComponentActivity() {
 
     private fun bluetoothAdapter(): BluetoothAdapter? =
         (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
+
+    private fun ensureKeepAliveService() {
+        val intent = Intent(this, HidKeepAliveService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            @Suppress("DEPRECATION")
+            startService(intent)
+        }
+    }
 }
 
 @Composable

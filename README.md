@@ -93,10 +93,9 @@ run the `app` configuration on an Android 10+ device with Bluetooth support.
    Bluetrack opens the pairing window automatically when no bonded host exists.
 4. On the PC, open Bluetooth settings and add `Bluetrack Pro Engine` as a mouse
    or gamepad-class input device.
-5. Return to the app. Bluetrack will refresh compatibility, keep retrying the
-   foreground HID connection quietly, and auto-connect a bonded host when
-   possible.
-6. Keep the app foregrounded and drag inside the input surface, or move a mouse
+5. Return to the app. Bluetrack will keep a foreground HID keep-alive service
+   running, refresh compatibility, and auto-connect a bonded host when possible.
+6. Keep the app open or backgrounded and drag inside the input surface, or move a mouse
    or trackpad connected to the Android device.
 
 If the PC does not show the phone, check the app status rows. `HID profile
@@ -108,9 +107,12 @@ not connected as a HID host yet. If you upgraded from an older mouse-only build,
 forget the old Bluetooth device once and pair again so the host caches the new
 composite mouse/gamepad descriptor.
 
-Gamepad mode sends controller-style HID axis reports, so it will not move the
-macOS cursor. Verify it in a game, emulator, or browser-based gamepad tester and
-move inside the Bluetrack input surface after switching the app to `Gamepad`.
+Gamepad mode sends controller-style HID reports, so it will not move the macOS
+cursor. Bluetrack exposes a gamepad usage with 16 buttons and four axes, then
+sends a short button wake pulse when gamepad mode connects or receives first
+input so browser testers, games, and emulators are more likely to enumerate it.
+After this descriptor change, forget and re-pair `Bluetrack Pro Engine` once if
+the host still has the older mouse/gamepad descriptor cached.
 
 ## Python BLE Sender
 

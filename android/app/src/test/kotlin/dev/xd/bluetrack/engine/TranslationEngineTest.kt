@@ -33,11 +33,11 @@ class TranslationEngineTest {
             reports += report.copyOf()
         }
 
-        assertArrayEquals(byteArrayOf(0, 0, 6, (-8).toByte()), reports.single())
+        assertArrayEquals(byteArrayOf(0, 0, 6, (-8).toByte(), 0, 0), reports.single())
 
         advanceTimeBy(20)
         runCurrent()
 
-        assertArrayEquals(byteArrayOf(0, 0, 0, 0), reports.last())
+        assertArrayEquals(byteArrayOf(0, 0, 0, 0, 0, 0), reports.last())
     }
 }

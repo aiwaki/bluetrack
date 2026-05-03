@@ -75,6 +75,9 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     private var advertiseCallback: AdvertiseCallback? = null
     private var pendingMode = HidMode.MOUSE
     private var registeredMode: HidMode? = null
+    private var registrationInFlight = false
+    private var hasRegisteredOnce = false
+    private var gamepadWakeArmed = false
     private var profileProxyRequested = false
     private var reportsSent = 0
     private var feedbackPackets = 0
@@ -104,6 +107,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             hid = null
             host = null
             registeredMode = null
+            registrationInFlight = false
             profileProxyRequested = false
             updateStatus(
                 hid = "HID proxy disconnected",
@@ -124,17 +128,18 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         0x81.toByte(), 0x06, 0xC0.toByte(), 0xC0.toByte(),
     )
     private val gamepadDesc = byteArrayOf(
-        0x05, 0x01, 0x09, 0x04, 0xA1.toByte(), 0x01, 0x85.toByte(), GAMEPAD_REPORT_ID.toByte(),
-        0xA1.toByte(), 0x00, 0x05, 0x09, 0x19, 0x01, 0x29, 0x0A, 0x15, 0x00, 0x25, 0x01,
-        0x95.toByte(), 0x0A, 0x75, 0x01, 0x81.toByte(), 0x02, 0x95.toByte(), 0x01, 0x75,
-        0x06, 0x81.toByte(), 0x01, 0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x15,
-        0x81.toByte(), 0x25, 0x7F, 0x75, 0x08, 0x95.toByte(), 0x02, 0x81.toByte(), 0x02,
-        0xC0.toByte(), 0xC0.toByte(),
+        0x05, 0x01, 0x09, 0x05, 0xA1.toByte(), 0x01, 0x85.toByte(), GAMEPAD_REPORT_ID.toByte(),
+        0x05, 0x09, 0x19, 0x01, 0x29, 0x10, 0x15, 0x00, 0x25, 0x01,
+        0x95.toByte(), 0x10, 0x75, 0x01, 0x81.toByte(), 0x02,
+        0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x32, 0x09, 0x35,
+        0x15, 0x81.toByte(), 0x25, 0x7F, 0x75, 0x08, 0x95.toByte(), 0x04, 0x81.toByte(), 0x02,
+        0xC0.toByte(),
     )
     private val compositeDesc = mouseDesc + gamepadDesc
 
-    fun initialize() {
-        refreshCompatibility()
+    @Synchronized
+    fun initialize(announceCompatibility: Boolean = true) {
+        refreshCompatibility(announce = announceCompatibility)
         val bluetoothAdapter = adapter ?: run {
             updateStatus(
                 hid = "Bluetooth unavailable",
@@ -186,6 +191,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         }
     }
 
+    @Synchronized
     fun register(mode: HidMode) {
         pendingMode = mode
         val device = hid ?: run {
@@ -197,6 +203,9 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             if (registeredMode != null) {
                 val previousMode = registeredMode
                 registeredMode = mode
+                if (previousMode != HidMode.GAMEPAD && mode == HidMode.GAMEPAD) {
+                    gamepadWakeArmed = true
+                }
                 sendNeutralReports()
                 updateStatus(
                     hid = if (host == null) "HID ready (${mode.name})" else "Connected (${mode.name})",
@@ -207,6 +216,19 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                     } else {
                         "Switched active mode from ${previousMode?.name} to ${mode.name} without reconnecting."
                     },
+                )
+                if (previousMode != HidMode.GAMEPAD && mode == HidMode.GAMEPAD) {
+                    sendGamepadWakePulse("mode switch")
+                    gamepadWakeArmed = true
+                }
+                maybeAutoConnectHost("mode check")
+                return
+            }
+
+            if (registrationInFlight) {
+                updateStatus(
+                    hid = "Registering HID (${mode.name})",
+                    compatibility = snapshotCompatibility(),
                 )
                 return
             }
@@ -229,14 +251,26 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             val modeAtRegistration = mode
             val accepted = device.registerApp(sdp, null, q, ioExecutor, object : BluetoothHidDevice.Callback() {
                 override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
+                    registrationInFlight = false
+                    val hadRegisteredBefore = hasRegisteredOnce
+                    if (registered) {
+                        hasRegisteredOnce = true
+                        if (modeAtRegistration == HidMode.GAMEPAD) gamepadWakeArmed = true
+                    }
                     registeredMode = if (registered) modeAtRegistration else null
                     updateStatus(
-                        hid = if (registered) "HID ready (${modeAtRegistration.name})" else "HID registration failed",
+                        hid = if (registered) "HID ready (${modeAtRegistration.name})" else "HID app inactive",
                         compatibility = snapshotCompatibility(),
-                        error = if (registered) null else "Android rejected the HID app registration.",
+                        error = when {
+                            registered -> null
+                            hadRegisteredBefore -> "HID registration stopped; Bluetrack will retry automatically."
+                            else -> "Android rejected the HID app registration."
+                        },
                         eventSource = "HID",
                         eventMessage = if (registered) {
                             "Composite HID app registered with mouse and gamepad reports; active mode ${modeAtRegistration.name}."
+                        } else if (hadRegisteredBefore) {
+                            "HID app registration became inactive; maintenance will retry."
                         } else {
                             "HID app registration failed."
                         },
@@ -246,6 +280,9 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
 
                 override fun onConnectionStateChanged(device: BluetoothDevice, state: Int) {
                     host = if (state == BluetoothProfile.STATE_CONNECTED) device else null
+                    if (state == BluetoothProfile.STATE_CONNECTED && registeredMode == HidMode.GAMEPAD) {
+                        gamepadWakeArmed = true
+                    }
                     updateStatus(
                         hid = when (state) {
                             BluetoothProfile.STATE_CONNECTING -> "Connecting"
@@ -264,13 +301,18 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                         eventSource = "HID",
                         eventMessage = "Host ${device.safeName()} is ${state.connectionStateLabel()}.",
                     )
+                    if (state == BluetoothProfile.STATE_CONNECTED && registeredMode == HidMode.GAMEPAD) {
+                        sendGamepadWakePulse("host connected")
+                        gamepadWakeArmed = true
+                    }
                 }
             })
+            registrationInFlight = accepted
             if (!accepted) {
                 updateStatus(
                     hid = "HID registration rejected",
                     compatibility = snapshotCompatibility(),
-                    error = "Another app or the device firmware may already own the HID Device profile.",
+                    error = "HID registration request was rejected; Bluetrack will retry automatically.",
                     eventSource = "HID",
                     eventMessage = "BluetoothHidDevice.registerApp returned false.",
                 )
@@ -280,6 +322,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         }
     }
 
+    @Synchronized
     fun connectBondedHost() {
         val device = hid ?: run {
             updateStatus(
@@ -378,7 +421,28 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         val device = hid ?: return
         try {
             device.sendReport(target, MOUSE_REPORT_ID, byteArrayOf(0, 0, 0, 0))
-            device.sendReport(target, GAMEPAD_REPORT_ID, byteArrayOf(0, 0, 0, 0))
+            device.sendReport(target, GAMEPAD_REPORT_ID, byteArrayOf(0, 0, 0, 0, 0, 0))
+        } catch (_: SecurityException) {
+            reportPermissionMissing()
+        }
+    }
+
+    private fun sendGamepadWakePulse(reason: String) {
+        val target = host ?: return
+        val device = hid ?: return
+        try {
+            val sentDown = device.sendReport(target, GAMEPAD_REPORT_ID, byteArrayOf(1, 0, 0, 0, 0, 0))
+            val sentUp = device.sendReport(target, GAMEPAD_REPORT_ID, byteArrayOf(0, 0, 0, 0, 0, 0))
+            if (sentDown && sentUp) {
+                gamepadWakeArmed = false
+                reportsSent += 2
+                updateStatus(
+                    reportsSent = reportsSent,
+                    lastReportAtMs = SystemClock.elapsedRealtime(),
+                    eventSource = "Gamepad",
+                    eventMessage = "Sent a gamepad wake pulse after $reason.",
+                )
+            }
         } catch (_: SecurityException) {
             reportPermissionMissing()
         }
@@ -394,6 +458,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         )
     }
 
+    @Synchronized
     fun send(mode: HidMode, report: ByteArray) {
         try {
             val target = host ?: run {
@@ -407,6 +472,9 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                     )
                 }
                 return
+            }
+            if (mode == HidMode.GAMEPAD && gamepadWakeArmed) {
+                sendGamepadWakePulse("first gamepad input")
             }
             val sent = hid?.sendReport(
                 target,
@@ -437,6 +505,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         }
     }
 
+    @Synchronized
     fun shutdown() {
         updateStatus(eventSource = "Lifecycle", eventMessage = "Shutting down Bluetooth gateway.")
         stopFeedbackAdvertising()
@@ -451,10 +520,19 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         hid = null
         host = null
         registeredMode = null
+        registrationInFlight = false
         profileProxyRequested = false
         ioExecutor.shutdownNow()
     }
 
+    @Synchronized
+    fun maintainRegistration(mode: HidMode = pendingMode) {
+        initialize(announceCompatibility = false)
+        register(mode)
+        refreshCompatibility(announce = false)
+    }
+
+    @Synchronized
     fun refreshCompatibility(announce: Boolean = true) {
         val snapshot = snapshotCompatibility()
         updateStatus(

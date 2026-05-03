@@ -83,8 +83,11 @@ The feedback channel is separate BLE GATT/advertising work; it does not make the
 phone appear as a classic Bluetooth HID device by itself. The app now drives the
 Bluetooth enable, discoverability, compatibility refresh, and bonded-host HID
 connect flow automatically where Android allows it, including a quiet foreground
-maintenance loop for HID reconnect attempts; Android's own confirmation dialogs
-still cannot be skipped.
+maintenance loop for HID reconnect attempts. Bluetooth ownership is
+application-scoped and backed by a foreground keep-alive service so minimizing
+the Activity does not intentionally unregister HID. Android's own confirmation
+dialogs still cannot be skipped, and Android requires an ongoing notification
+for the background keep-alive service.
 
 ## Good Next Bets
 
