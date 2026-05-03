@@ -40,6 +40,7 @@ import dev.xd.bluetrack.ui.MainViewModel
 import dev.xd.bluetrack.ui.ModeCardState
 import dev.xd.bluetrack.ui.automationLabel
 import dev.xd.bluetrack.ui.modeCardStates
+import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
 import kotlinx.coroutines.delay
 import kotlin.math.abs
@@ -230,8 +231,18 @@ private fun AppScreen(
             onSelect = { selected -> vm.toggle(selected == HidMode.GAMEPAD) },
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricTile("Reports", compactCount(status.reportsSent), Modifier.weight(1f))
-            MetricTile("Feedback", status.feedbackPackets.toString(), Modifier.weight(1f))
+            MetricTile(
+                label = "Reports",
+                value = compactCount(status.reportsSent),
+                modifier = Modifier.weight(1f),
+                subtitle = relativeAgeLabel(now, status.lastReportAtMs),
+            )
+            MetricTile(
+                label = "Feedback",
+                value = status.feedbackPackets.toString(),
+                modifier = Modifier.weight(1f),
+                subtitle = relativeAgeLabel(now, status.lastFeedbackAtMs),
+            )
         }
         BoxWithConstraints(Modifier.weight(1f)) {
             if (maxWidth < 620.dp) {
@@ -472,11 +483,19 @@ private fun StatusLine(label: String, value: String) {
 }
 
 @Composable
-private fun MetricTile(label: String, value: String, modifier: Modifier) {
+private fun MetricTile(
+    label: String,
+    value: String,
+    modifier: Modifier,
+    subtitle: String? = null,
+) {
     Panel(modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(label, color = Color.White.copy(alpha = 0.62f))
             Text(value, color = Color.White, fontWeight = FontWeight.Bold)
+            subtitle?.let {
+                Text(it, color = Color.White.copy(alpha = 0.5f))
+            }
         }
     }
 }
