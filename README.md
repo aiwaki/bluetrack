@@ -1,98 +1,181 @@
-# Bluetrack Pro Engine — Ultra-Low Latency Android MITM HID Controller
+# Bluetrack Pro Engine
 
-![Platform](https://img.shields.io/badge/Platform-Android%2029%2B-3DDC84?logo=android&logoColor=white)
-![Language](https://img.shields.io/badge/Kotlin-Compose-7F52FF?logo=kotlin&logoColor=white)
-![Crypto](https://img.shields.io/badge/Crypto-AES--128--CTR-0A66C2)
-![Python](https://img.shields.io/badge/Python-BLE%20Sender-3776AB?logo=python&logoColor=white)
+![Android CI](https://github.com/aiwaki/bluetrack/actions/workflows/android-ci.yml/badge.svg)
+![Platform](https://img.shields.io/badge/platform-Android%2029%2B-3DDC84?logo=android&logoColor=white)
+![Language](https://img.shields.io/badge/language-Kotlin%20%2B%20Compose-7F52FF?logo=kotlin&logoColor=white)
+![Crypto](https://img.shields.io/badge/crypto-AES--128--CTR-0A66C2)
 
-Bluetrack Pro Engine is a native Android Kotlin system for ultra-low latency mouse-input interception, HID translation, and encrypted BLE feedback processing for competitive tuning workflows.
+Bluetrack Pro Engine is a native Android/Kotlin prototype for low-latency mouse
+input capture, HID report translation, and encrypted BLE feedback experiments.
+The project is aimed at accessibility tooling, input-device research, and
+calibration workflows where deterministic input handling matters.
 
----
+## Status
 
-## Architecture Overview
+This repository is an active prototype. The Android app contains a native
+Compose diagnostic UI, a Bluetooth HID device gateway, an advertised AES-CTR
+BLE feedback service, and a small Python reference sender for host-side
+integration tests.
 
-### Primary Data Path
-1. **Raw Mouse Input (USB OTG)**
-2. **Android Interception Layer** (`OnGenericMotionListener` via Compose bridge)
-3. **Translation Engine** (relative mouse deltas → HID reports)
-4. **BLE HID Output** to host
+Future Codex/agent sessions should start with `AGENTS.md` and
+`docs/CODEX_CONTEXT.md`; those files carry the current project memory,
+hardware caveats, validation commands, and roadmap. Claude sessions can start
+with `CLAUDE.me` and `.claude/rules/`.
 
-### Feedback Loop
-1. **PC-side analysis/tuning loop** produces correction vectors (`dx`, `dy`)
-2. **AES-128-CTR encrypted packet** sent over BLE GATT (12-byte frame)
-3. **Android decrypts** packet and injects correction into next motion frame
+## Architecture
 
----
+### Input Path
+
+1. Raw mouse movement is captured on Android through a Compose-hosted motion
+   listener.
+2. `TranslationEngine` converts relative mouse deltas into HID report bytes.
+3. `BleHidGateway` sends the report to the connected Bluetooth HID host.
+
+The app acts as the input device. The PC acts as the Bluetooth host and must
+pair with the Android device while the app is open.
+
+### Feedback Path
+
+1. A host-side calibration loop computes a correction vector.
+2. The correction is encrypted as an AES-128-CTR BLE frame:
+   `[0..3]=counter_le`, `[4..11]=ciphertext(float dx, float dy)`.
+3. Android advertises the feedback service UUID, accepts writes to the feedback
+   characteristic, decrypts the frame, and applies the correction to the next
+   input reports.
 
 ## Features
 
-- **Native Android architecture** (Kotlin + Coroutines + StateFlow + Compose)
-- **Jetpack Compose diagnostic UI** with modern cyberpunk styling
-- **Dual HID modes**: Native Mouse / Gamepad Emulation
-- **Mouse-to-joystick aim-assist translation pipeline**
-- **Zero-allocation hot-path design** for reduced GC jitter in motion/decryption paths
-- **AES-128-CTR encrypted BLE GATT feedback channel** (12-byte payload format)
+- Native Android app built with Kotlin, Coroutines, StateFlow, and Jetpack Compose.
+- Bluetooth HID mouse and gamepad report descriptors with explicit report IDs.
+- In-app cockpit with Bluetooth enable, pairing/discoverability, HID, host,
+  input, compatibility, timeline, and feedback service status.
+- Touchpad input surface for hardware checks without an external mouse.
+- Connectable BLE advertising for host-side feedback discovery.
+- AES-128-CTR compatible BLE feedback decoder.
+- JVM unit tests for packet decryption and HID report formatting.
+- GitHub Actions workflow for Android unit tests and debug APK assembly.
+- Python sender script that can scan for the Bluetrack feedback service and send
+  encrypted correction packets.
 
----
-
-## Getting Started (Android)
+## Build
 
 ### Requirements
-- Android Studio (latest stable)
-- Android SDK 34
+
 - JDK 17
+- Android SDK 34
+- Android Studio or command-line Android SDK tools
 
-### Open & Build
-1. Clone the repository.
-2. Open **`android/`** as the project root in Android Studio.
-3. Let Gradle sync finish.
-4. Build app module:
-   - Android Studio: **Build > Make Project**
-   - or CLI from repo root (if wrapper exists):
-     - `cd android`
-     - `./gradlew :app:assembleDebug`
+### Command Line
 
-### Run
-- Connect an Android device (API 29+) with OTG + Bluetooth support.
-- Install and launch the app from Android Studio.
-
----
-
-## Getting Started (Python)
-
-Reference sender script:
-- `android/tools/ble_encrypt_sender.py`
-
-### Requirements
-- Python 3.10+
-- BLE adapter on host machine
-
-### Install dependencies
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install --upgrade pip
-pip install bleak cryptography
+cd android
+./gradlew testDebugUnitTest
+./gradlew assembleDebug
 ```
 
-### Configure and run
-1. Edit `DEVICE_ADDRESS` and `CHAR_UUID` in `android/tools/ble_encrypt_sender.py`.
-2. Run:
+If the shell cannot find Java but Android Studio is installed on macOS, point
+Gradle at Android Studio's bundled runtime for the current terminal session:
+
 ```bash
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+```
+
+### Android Studio
+
+Open the `android/` directory as the project root, let Gradle sync finish, and
+run the `app` configuration on an Android 10+ device with Bluetooth support.
+
+## Pairing and Runtime
+
+1. Install and open the app on an Android device that supports the Bluetooth HID
+   Device profile.
+2. Grant the nearby-devices Bluetooth permissions when prompted.
+3. Accept Android's Bluetooth enable and discoverability prompts if they appear.
+   Bluetrack opens the pairing window automatically when no bonded host exists.
+4. On the PC, open Bluetooth settings and add `Bluetrack Pro Engine` as a mouse
+   or gamepad-class input device.
+5. Return to the app. Bluetrack will keep a foreground HID keep-alive service
+   running, refresh compatibility, and auto-connect a bonded host when possible.
+6. Keep the app open or backgrounded and drag inside the input surface, or move a mouse
+   or trackpad connected to the Android device.
+
+If the PC does not show the phone, check the app status rows. `HID profile
+unavailable` means the Android device firmware does not expose the HID Device
+profile to third-party apps. `Feedback advertising failed` means the BLE
+feedback channel could not be advertised, but HID pairing may still work. A
+bonded phone that never reaches `Connected` is paired at the Bluetooth level but
+not connected as a HID host yet. If you upgraded from an older mouse-only build,
+forget the old Bluetooth device once and pair again so the host caches the new
+composite mouse/gamepad descriptor. Bluetrack ignores bonded audio/accessory
+devices such as AirPods, headphones, speakers, keyboards, mice, and trackpads
+when choosing an automatic HID host.
+
+Gamepad mode sends controller-style HID reports, so it will not move the macOS
+cursor. Bluetrack exposes a gamepad usage with 16 buttons, a neutral hat
+switch/D-pad, and four axes, then sends a visible automatic button wake train
+when gamepad mode connects or receives first input so browser testers, games,
+and emulators are more likely to enumerate it. After this descriptor change, forget and
+re-pair `Bluetrack Pro Engine` once if the host still has the older mouse/gamepad
+descriptor cached.
+
+Touchpad input preserves fractional motion and coalesced historical touch
+samples before HID quantization. UI touch callbacks only enqueue motion; a
+background 8 ms input pacer drains accumulated deltas into HID reports so the
+host receives steadier timing instead of bursty touch-event batches. High-rate
+HID report counters and telemetry are throttled before reaching Compose so the
+diagnostic UI does not compete with touch delivery during active movement.
+HID transport is also decoupled from the pacer: mouse deltas are coalesced in a
+small output buffer and sent from a dedicated sender so short Bluetooth stalls
+do not stop the input clock. When Android's Bluetooth stack shows backpressure,
+the sender briefly lowers its catch-up rate so it can coalesce more mouse motion
+instead of hammering `sendReport` into another stall.
+The touchpad path also predicts very short gaps between Android touch events and
+reconciles that predicted motion against the next real event, which keeps the
+cursor moving through small touch-delivery holes without adding long drift.
+Hidden input diagnostics log only when a threshold is crossed, without changing
+motion behavior. During hardware testing, inspect them with:
+
+```bash
+adb logcat -s BluetrackInput Bluetrack
+```
+
+## Python BLE Sender
+
+Reference tool:
+
+```text
+android/tools/ble_encrypt_sender.py
+```
+
+Install and run:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install bleak cryptography
 python android/tools/ble_encrypt_sender.py
 ```
 
----
+By default the sender scans for the advertised Bluetrack feedback service. You
+can also pass a known BLE address:
+
+```bash
+python android/tools/ble_encrypt_sender.py --address 00:11:22:33:44:55
+```
 
 ## Security Notes
 
-- Current key/salt are static for integration bring-up and must be rotated/replaced for production.
-- Use per-session key exchange and authenticated transport in hardened deployments.
-
----
+- The current key and salt are static prototype values.
+- Production use should replace them with per-session key negotiation and
+  authenticated transport.
+- Treat BLE write access as trusted only after explicit pairing and validation.
 
 ## Repository Layout
 
-- `android/app/src/main/kotlin/dev/xd/bluetrack/` — Android app source
-- `android/tools/` — host-side tooling/scripts (Python BLE sender)
-
+```text
+android/app/src/main/kotlin/dev/xd/bluetrack/  Android app source
+android/app/src/test/kotlin/dev/xd/bluetrack/  JVM unit tests
+android/tools/                                      Host-side BLE helper tools
+.github/workflows/android-ci.yml                    Android CI workflow
+```
