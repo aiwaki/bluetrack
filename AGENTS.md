@@ -90,8 +90,9 @@ and backed by a foreground keep-alive service so minimizing the Activity does no
 intentionally unregister HID. Android's own confirmation dialogs still cannot be
 skipped, and Android requires an ongoing notification for the background
 keep-alive service. Pointer input is paced: touch callbacks enqueue deltas,
-while `MainViewModel` drains them every 8 ms into `TranslationEngine` to avoid
-UI-thread HID bursts.
+while `MainViewModel` drains them on a dedicated display-priority 8 ms input
+thread. `InputPacerState` detects scheduling gaps and splits accumulated motion
+into microframes to avoid UI-thread HID bursts and visible catch-up jumps.
 
 ## Good Next Bets
 
