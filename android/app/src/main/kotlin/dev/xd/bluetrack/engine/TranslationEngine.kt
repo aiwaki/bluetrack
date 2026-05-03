@@ -18,7 +18,7 @@ class TranslationEngine(
     private val _telemetry = MutableStateFlow(Telemetry())
     val telemetry: StateFlow<Telemetry> = _telemetry
     private var deadmanJob: Job? = null
-    private val gamepadReport = byteArrayOf(0, 0, 0, 0, 0, 0)
+    private val gamepadReport = GamepadReportFormat.neutralReport()
     private val mouseReport = byteArrayOf(0, 0, 0, 0)
     private var mouseCarryX = 0f
     private var mouseCarryY = 0f
@@ -39,14 +39,20 @@ class TranslationEngine(
         val sy = (((dy + cy) * sensitivity).roundToInt()).coerceIn(-127, 127)
 
         if (mode == HidMode.GAMEPAD) {
-            gamepadReport[2] = sx.toByte(); gamepadReport[3] = sy.toByte()
-            gamepadReport[4] = 0; gamepadReport[5] = 0
+            gamepadReport[GamepadReportFormat.HAT_INDEX] = GamepadReportFormat.HAT_NEUTRAL
+            gamepadReport[GamepadReportFormat.LEFT_X_INDEX] = sx.toByte()
+            gamepadReport[GamepadReportFormat.LEFT_Y_INDEX] = sy.toByte()
+            gamepadReport[GamepadReportFormat.RIGHT_X_INDEX] = 0
+            gamepadReport[GamepadReportFormat.RIGHT_Y_INDEX] = 0
             send(gamepadReport)
             deadmanJob?.cancel()
             deadmanJob = scope.launch {
                 delay(20)
-                gamepadReport[2] = 0; gamepadReport[3] = 0
-                gamepadReport[4] = 0; gamepadReport[5] = 0
+                gamepadReport[GamepadReportFormat.HAT_INDEX] = GamepadReportFormat.HAT_NEUTRAL
+                gamepadReport[GamepadReportFormat.LEFT_X_INDEX] = 0
+                gamepadReport[GamepadReportFormat.LEFT_Y_INDEX] = 0
+                gamepadReport[GamepadReportFormat.RIGHT_X_INDEX] = 0
+                gamepadReport[GamepadReportFormat.RIGHT_Y_INDEX] = 0
                 send(gamepadReport)
             }
         } else {

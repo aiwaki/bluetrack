@@ -110,11 +110,12 @@ devices such as AirPods, headphones, speakers, keyboards, mice, and trackpads
 when choosing an automatic HID host.
 
 Gamepad mode sends controller-style HID reports, so it will not move the macOS
-cursor. Bluetrack exposes a gamepad usage with 16 buttons and four axes, then
-sends a short button wake pulse when gamepad mode connects or receives first
-input so browser testers, games, and emulators are more likely to enumerate it.
-After this descriptor change, forget and re-pair `Bluetrack Pro Engine` once if
-the host still has the older mouse/gamepad descriptor cached.
+cursor. Bluetrack exposes a gamepad usage with 16 buttons, a neutral hat
+switch/D-pad, and four axes, then sends a short button wake pulse when gamepad
+mode connects or receives first input so browser testers, games, and emulators
+are more likely to enumerate it. After this descriptor change, forget and
+re-pair `Bluetrack Pro Engine` once if the host still has the older mouse/gamepad
+descriptor cached.
 
 Touchpad input preserves fractional motion and coalesced historical touch
 samples before HID quantization. UI touch callbacks only enqueue motion; a

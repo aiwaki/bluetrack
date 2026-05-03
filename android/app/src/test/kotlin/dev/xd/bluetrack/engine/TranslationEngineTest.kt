@@ -67,7 +67,7 @@ class TranslationEngineTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun gamepadModeWritesAxesAfterButtonBytesAndResetsDeadman() = runTest {
+    fun gamepadModeWritesAxesAfterHatByteAndResetsDeadman() = runTest {
         val engine = TranslationEngine(this)
         val reports = mutableListOf<ByteArray>()
 
@@ -76,11 +76,11 @@ class TranslationEngineTest {
             reports += report.copyOf()
         }
 
-        assertArrayEquals(byteArrayOf(0, 0, 6, (-8).toByte(), 0, 0), reports.single())
+        assertArrayEquals(byteArrayOf(0, 0, 8, 6, (-8).toByte(), 0, 0), reports.single())
 
         advanceTimeBy(20)
         runCurrent()
 
-        assertArrayEquals(byteArrayOf(0, 0, 0, 0, 0, 0), reports.last())
+        assertArrayEquals(byteArrayOf(0, 0, 8, 0, 0, 0, 0), reports.last())
     }
 }

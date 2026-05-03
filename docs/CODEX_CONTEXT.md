@@ -49,9 +49,10 @@ The app now has:
 - Composite HID registration: mouse and gamepad report descriptors are
   registered together so mode switching does not unregister the HID app or break
   the host connection.
-- A gamepad descriptor that advertises a gamepad usage with 16 buttons and four
-  axes, plus a short button wake pulse on gamepad connect/mode activation/first
-  input to help host software enumerate the controller.
+- A gamepad descriptor that advertises a gamepad usage with 16 buttons, a
+  neutral hat switch/D-pad, and four axes, plus a short button wake pulse on
+  gamepad connect/mode activation/first input to help host software enumerate
+  the controller.
 - A cockpit UI with an automation status row, counters, compatibility status,
   and event timeline. Manual pairing/connect/refresh buttons were removed from
   the primary surface; Android system confirmation prompts are still required.
@@ -196,11 +197,11 @@ path. Inspect the timeline for `connect returned false` or connection-state
 callbacks. After the composite mouse/gamepad descriptor change, macOS may need
 one manual "Forget This Device" and fresh pairing to drop the old mouse-only
 descriptor cache; subsequent mode switching should not require reconnecting.
-The latest gamepad descriptor changed from the earlier joystick-like report to a
-gamepad usage with 16 buttons and four axes; forget and re-pair once if macOS
-still has the old cached descriptor. Gamepad mode will not move the macOS
-cursor; verify it in a game, emulator, or browser gamepad tester after switching
-the app to `Gamepad`.
+The latest gamepad descriptor changed from the earlier joystick-like/minimal
+report to a gamepad usage with 16 buttons, a neutral hat switch/D-pad, and four
+axes; forget and re-pair once if macOS still has the old cached descriptor.
+Gamepad mode will not move the macOS cursor; verify it in a game, emulator, or
+browser gamepad tester after switching the app to `Gamepad`.
 
 For feedback testing:
 

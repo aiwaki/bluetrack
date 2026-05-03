@@ -10,6 +10,7 @@ import android.content.Context
 import android.os.ParcelUuid
 import android.os.SystemClock
 import android.util.Log
+import dev.xd.bluetrack.engine.GamepadReportFormat
 import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.engine.TranslationEngine
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -135,7 +136,12 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         0x05, 0x01, 0x09, 0x05, 0xA1.toByte(), 0x01, 0x85.toByte(), GAMEPAD_REPORT_ID.toByte(),
         0x05, 0x09, 0x19, 0x01, 0x29, 0x10, 0x15, 0x00, 0x25, 0x01,
         0x95.toByte(), 0x10, 0x75, 0x01, 0x81.toByte(), 0x02,
+        0x05, 0x01, 0x09, 0x39, 0x15, 0x00, 0x25, 0x07, 0x35, 0x00,
+        0x46, 0x3B, 0x01, 0x65, 0x14, 0x75, 0x04, 0x95.toByte(), 0x01,
+        0x81.toByte(), 0x42, 0x65, 0x00, 0x75, 0x04, 0x95.toByte(), 0x01,
+        0x81.toByte(), 0x01,
         0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x32, 0x09, 0x35,
+        0x35, 0x81.toByte(), 0x45, 0x7F,
         0x15, 0x81.toByte(), 0x25, 0x7F, 0x75, 0x08, 0x95.toByte(), 0x04, 0x81.toByte(), 0x02,
         0xC0.toByte(),
     )
@@ -453,7 +459,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         val device = hid ?: return
         try {
             device.sendReport(target, MOUSE_REPORT_ID, byteArrayOf(0, 0, 0, 0))
-            device.sendReport(target, GAMEPAD_REPORT_ID, byteArrayOf(0, 0, 0, 0, 0, 0))
+            device.sendReport(target, GAMEPAD_REPORT_ID, GamepadReportFormat.neutralReport())
         } catch (_: SecurityException) {
             reportPermissionMissing()
         }
@@ -463,8 +469,8 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         val target = host ?: return
         val device = hid ?: return
         try {
-            val sentDown = device.sendReport(target, GAMEPAD_REPORT_ID, byteArrayOf(1, 0, 0, 0, 0, 0))
-            val sentUp = device.sendReport(target, GAMEPAD_REPORT_ID, byteArrayOf(0, 0, 0, 0, 0, 0))
+            val sentDown = device.sendReport(target, GAMEPAD_REPORT_ID, GamepadReportFormat.buttonAWakeReport())
+            val sentUp = device.sendReport(target, GAMEPAD_REPORT_ID, GamepadReportFormat.neutralReport())
             if (sentDown && sentUp) {
                 gamepadWakeArmed = false
                 reportsSent += 2
