@@ -84,6 +84,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     private var rejectedFeedbackPackets = 0
     private var lastNoHostReportWarningMs = 0L
     private var lastAutoConnectAttemptMs = 0L
+    private var lastNoComputerHostWarningMs = 0L
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val _status = MutableStateFlow(GatewayStatus())
     val status: StateFlow<GatewayStatus> = _status
@@ -350,21 +351,27 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         }
 
         try {
-            val candidate = bluetoothAdapter.bondedDevices
-                .sortedWith(
-                    compareByDescending<BluetoothDevice> {
-                        it.bluetoothClass?.majorDeviceClass == BluetoothClass.Device.Major.COMPUTER
-                    }.thenBy { it.safeName() }
-                )
-                .firstOrNull()
+            val bondedDevices = bluetoothAdapter.bondedDevices
+            val candidate = bondedDevices.bestHidHost()
 
             if (candidate == null) {
+                val ignoredDevices = bondedDevices
+                    .map { it.safeName() }
+                    .sorted()
                 updateStatus(
-                    pairing = "No bonded host",
+                    pairing = if (ignoredDevices.isEmpty()) "No bonded host" else "No computer HID host",
                     compatibility = snapshotCompatibility(),
-                    error = "Pair the PC first; Bluetrack will connect the HID host automatically.",
+                    error = if (ignoredDevices.isEmpty()) {
+                        "Pair the PC first; Bluetrack will connect the HID host automatically."
+                    } else {
+                        "Ignoring bonded devices that do not look like computer HID hosts."
+                    },
                     eventSource = "HID",
-                    eventMessage = "No bonded Bluetooth devices are available for HID connect.",
+                    eventMessage = if (ignoredDevices.isEmpty()) {
+                        "No bonded Bluetooth devices are available for HID connect."
+                    } else {
+                        "Ignored non-host bonded devices: ${ignoredDevices.joinToString()}."
+                    },
                 )
                 return
             }
@@ -406,12 +413,34 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         val now = SystemClock.elapsedRealtime()
         if (hid == null || registeredMode == null || host != null || snapshot.bondedDevices.isEmpty()) return
         if (now - lastAutoConnectAttemptMs < 4000L) return
+        val bluetoothAdapter = adapter ?: return
+        val candidate = try {
+            bluetoothAdapter.bondedDevices.bestHidHost()
+        } catch (_: SecurityException) {
+            reportPermissionMissing()
+            return
+        }
+        if (candidate == null) {
+            updateStatus(
+                pairing = "No computer HID host",
+                compatibility = snapshot,
+                error = "Bonded devices exist, but none look like a computer HID host.",
+                eventSource = if (now - lastNoComputerHostWarningMs > 30000L) "HID" else null,
+                eventMessage = if (now - lastNoComputerHostWarningMs > 30000L) {
+                    lastNoComputerHostWarningMs = now
+                    "Skipped auto-connect because no bonded device looks like a computer HID host."
+                } else {
+                    null
+                },
+            )
+            return
+        }
 
         updateStatus(
             pairing = "Bonded, auto-connecting HID",
             compatibility = snapshot,
             eventSource = "HID",
-            eventMessage = "Auto-connecting bonded HID host after $reason.",
+            eventMessage = "Auto-connecting bonded HID host ${candidate.safeName()} after $reason.",
         )
         connectBondedHost()
     }
@@ -855,6 +884,21 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         } catch (_: SecurityException) {
             "Host"
         }
+
+    private fun Set<BluetoothDevice>.bestHidHost(): BluetoothDevice? =
+        mapNotNull { device ->
+            val candidate = HidHostCandidate(
+                name = device.safeName(),
+                majorDeviceClass = device.bluetoothClass?.majorDeviceClass,
+            )
+            candidate.hidHostRank()?.let { rank -> rank to device }
+        }
+            .sortedWith(
+                compareByDescending<Pair<Int, BluetoothDevice>> { it.first }
+                    .thenBy { it.second.safeName() }
+            )
+            .firstOrNull()
+            ?.second
 
     private fun Int.connectionStateLabel(): String = when (this) {
         BluetoothProfile.STATE_CONNECTING -> "connecting"

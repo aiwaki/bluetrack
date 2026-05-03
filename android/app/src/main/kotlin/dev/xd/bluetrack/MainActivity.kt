@@ -337,6 +337,17 @@ private fun TouchpadPanel(
                     } else false
                 }
                 setOnTouchListener { _, ev ->
+                    fun processPoint(x: Float, y: Float) {
+                        val dx = ((x - lastX) * 0.42f).coerceIn(-22f, 22f)
+                        val dy = ((y - lastY) * 0.42f).coerceIn(-22f, 22f)
+                        lastX = x
+                        lastY = y
+                        filteredX = filteredX * 0.18f + dx * 0.82f
+                        filteredY = filteredY * 0.18f + dy * 0.82f
+                        if (abs(filteredX) > 0.04f || abs(filteredY) > 0.04f) {
+                            onMotion(filteredX, filteredY, "Touchpad")
+                        }
+                    }
                     when (ev.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
                             parent.requestDisallowInterceptTouchEvent(true)
@@ -348,15 +359,10 @@ private fun TouchpadPanel(
                             true
                         }
                         MotionEvent.ACTION_MOVE -> {
-                            val dx = ((ev.x - lastX) * 0.38f).coerceIn(-18f, 18f)
-                            val dy = ((ev.y - lastY) * 0.38f).coerceIn(-18f, 18f)
-                            lastX = ev.x
-                            lastY = ev.y
-                            filteredX = filteredX * 0.45f + dx * 0.55f
-                            filteredY = filteredY * 0.45f + dy * 0.55f
-                            if (abs(filteredX) > 0.25f || abs(filteredY) > 0.25f) {
-                                onMotion(filteredX, filteredY, "Touchpad")
+                            for (i in 0 until ev.historySize) {
+                                processPoint(ev.getHistoricalX(i), ev.getHistoricalY(i))
                             }
+                            processPoint(ev.x, ev.y)
                             true
                         }
                         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {

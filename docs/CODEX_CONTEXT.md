@@ -44,7 +44,8 @@ The app now has:
   unregister the HID app.
 - Automatic HID host connection after registration, pairing result, foreground
   compatibility refresh, or a quiet 5-second maintenance refresh, preferring the
-  best bonded computer-class host.
+  best bonded computer-class host and ignoring bonded audio/accessory devices
+  such as AirPods, headphones, speakers, keyboards, mice, and trackpads.
 - Composite HID registration: mouse and gamepad report descriptors are
   registered together so mode switching does not unregister the HID app or break
   the host connection.
@@ -55,6 +56,9 @@ The app now has:
   and event timeline. Manual pairing/connect/refresh buttons were removed from
   the primary surface; Android system confirmation prompts are still required.
 - Touchpad input capture in addition to external relative mouse hover motion.
+- Cursor smoothing improvements: the touchpad consumes coalesced historical
+  touch samples and the translation engine preserves fractional mouse deltas
+  between HID reports before integer quantization.
 - Status rows for HID, BLE feedback, pairing, host, input source, and error text.
 - HID Device registration for mouse/gamepad modes.
 - A feedback GATT server with connectable BLE advertising.
@@ -194,7 +198,8 @@ python android/tools/ble_encrypt_sender.py --address 00:11:22:33:44:55
 - The app has a diagnostic touchpad path, but it is not yet a polished touchpad
   product surface.
 - If multiple bonded devices exist, the automatic HID connect path prefers
-  computer-class Bluetooth devices and then falls back by name.
+  computer-class Bluetooth devices and then falls back by computer-like names.
+  It should not try to connect bonded audio/accessory devices such as AirPods.
 - Android does not allow third-party apps to bypass system confirmation dialogs
   for Bluetooth enable/discoverability/pairing.
 - Android requires an ongoing foreground-service notification for the background

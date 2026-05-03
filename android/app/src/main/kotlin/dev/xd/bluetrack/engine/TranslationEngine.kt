@@ -17,6 +17,8 @@ class TranslationEngine(private val scope: CoroutineScope) {
     private var deadmanJob: Job? = null
     private val gamepadReport = byteArrayOf(0, 0, 0, 0, 0, 0)
     private val mouseReport = byteArrayOf(0, 0, 0, 0)
+    private var mouseCarryX = 0f
+    private var mouseCarryY = 0f
     @Volatile var sensitivity: Float = 2.0f
 
     fun updateCorrection(x: Float, y: Float) {
@@ -25,12 +27,12 @@ class TranslationEngine(private val scope: CoroutineScope) {
     }
 
     fun processMouseToStick(dx: Float, dy: Float, mode: HidMode, send: (ByteArray) -> Unit) {
-        val rx = dx.toInt()
-        val ry = dy.toInt()
+        val rx = dx.roundToInt()
+        val ry = dy.roundToInt()
         val cx = correctionX.get()
         val cy = correctionY.get()
-        val sx = (((rx + cx) * sensitivity).toInt()).coerceIn(-127, 127)
-        val sy = (((ry + cy) * sensitivity).toInt()).coerceIn(-127, 127)
+        val sx = (((dx + cx) * sensitivity).roundToInt()).coerceIn(-127, 127)
+        val sy = (((dy + cy) * sensitivity).roundToInt()).coerceIn(-127, 127)
 
         if (mode == HidMode.GAMEPAD) {
             gamepadReport[2] = sx.toByte(); gamepadReport[3] = sy.toByte()
@@ -44,11 +46,26 @@ class TranslationEngine(private val scope: CoroutineScope) {
                 send(gamepadReport)
             }
         } else {
-            mouseReport[1] = (rx + cx).coerceIn(-127, 127).toByte()
-            mouseReport[2] = (ry + cy).coerceIn(-127, 127).toByte()
+            val mouseX = quantizeMouseDelta(dx + cx, isX = true)
+            val mouseY = quantizeMouseDelta(dy + cy, isX = false)
+            mouseReport[1] = mouseX.toByte()
+            mouseReport[2] = mouseY.toByte()
             send(mouseReport)
         }
         _telemetry.value = Telemetry(rx, ry, sx, sy)
+    }
+
+    private fun quantizeMouseDelta(delta: Float, isX: Boolean): Int {
+        val carried = delta + if (isX) mouseCarryX else mouseCarryY
+        val rounded = carried.roundToInt()
+        val clamped = rounded.coerceIn(-127, 127)
+        val nextCarry = if (rounded == clamped) carried - rounded else 0f
+        if (isX) {
+            mouseCarryX = nextCarry
+        } else {
+            mouseCarryY = nextCarry
+        }
+        return clamped
     }
 }
 

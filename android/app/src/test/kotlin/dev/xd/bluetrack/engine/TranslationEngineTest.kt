@@ -22,6 +22,20 @@ class TranslationEngineTest {
         assertArrayEquals(byteArrayOf(0, 127.toByte(), (-127).toByte(), 0), reports.single())
     }
 
+    @Test
+    fun mouseModeAccumulatesFractionalDeltas() {
+        val engine = TranslationEngine(TestScope())
+        val reports = mutableListOf<ByteArray>()
+
+        engine.processMouseToStick(0.4f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
+        engine.processMouseToStick(0.4f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
+        engine.processMouseToStick(0.4f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
+
+        assertArrayEquals(byteArrayOf(0, 0, 0, 0), reports[0])
+        assertArrayEquals(byteArrayOf(0, 1, 0, 0), reports[1])
+        assertArrayEquals(byteArrayOf(0, 0, 0, 0), reports[2])
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun gamepadModeWritesAxesAfterButtonBytesAndResetsDeadman() = runTest {

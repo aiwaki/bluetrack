@@ -105,7 +105,9 @@ feedback channel could not be advertised, but HID pairing may still work. A
 bonded phone that never reaches `Connected` is paired at the Bluetooth level but
 not connected as a HID host yet. If you upgraded from an older mouse-only build,
 forget the old Bluetooth device once and pair again so the host caches the new
-composite mouse/gamepad descriptor.
+composite mouse/gamepad descriptor. Bluetrack ignores bonded audio/accessory
+devices such as AirPods, headphones, speakers, keyboards, mice, and trackpads
+when choosing an automatic HID host.
 
 Gamepad mode sends controller-style HID reports, so it will not move the macOS
 cursor. Bluetrack exposes a gamepad usage with 16 buttons and four axes, then
@@ -113,6 +115,10 @@ sends a short button wake pulse when gamepad mode connects or receives first
 input so browser testers, games, and emulators are more likely to enumerate it.
 After this descriptor change, forget and re-pair `Bluetrack Pro Engine` once if
 the host still has the older mouse/gamepad descriptor cached.
+
+Touchpad input preserves fractional motion and coalesced historical touch
+samples before HID quantization, which makes slow cursor movement less steppy
+than the initial prototype path.
 
 ## Python BLE Sender
 
