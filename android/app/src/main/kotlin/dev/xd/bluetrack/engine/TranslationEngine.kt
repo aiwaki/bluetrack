@@ -9,7 +9,10 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
-class TranslationEngine(private val scope: CoroutineScope) {
+class TranslationEngine(
+    private val scope: CoroutineScope,
+    private val nowMs: () -> Long = { System.nanoTime() / NANOS_PER_MS },
+) {
     private val correctionX = AtomicInteger(0)
     private val correctionY = AtomicInteger(0)
     private val _telemetry = MutableStateFlow(Telemetry())
@@ -19,6 +22,7 @@ class TranslationEngine(private val scope: CoroutineScope) {
     private val mouseReport = byteArrayOf(0, 0, 0, 0)
     private var mouseCarryX = 0f
     private var mouseCarryY = 0f
+    private var lastTelemetryAtMs = -1L
     @Volatile var sensitivity: Float = 2.0f
 
     fun updateCorrection(x: Float, y: Float) {
@@ -52,7 +56,7 @@ class TranslationEngine(private val scope: CoroutineScope) {
             mouseReport[2] = mouseY.toByte()
             send(mouseReport)
         }
-        _telemetry.value = Telemetry(rx, ry, sx, sy)
+        publishTelemetry(Telemetry(rx, ry, sx, sy))
     }
 
     private fun quantizeMouseDelta(delta: Float, isX: Boolean): Int {
@@ -66,6 +70,18 @@ class TranslationEngine(private val scope: CoroutineScope) {
             mouseCarryY = nextCarry
         }
         return clamped
+    }
+
+    private fun publishTelemetry(telemetry: Telemetry) {
+        val now = nowMs()
+        if (lastTelemetryAtMs >= 0L && now - lastTelemetryAtMs < TELEMETRY_INTERVAL_MS) return
+        lastTelemetryAtMs = now
+        _telemetry.value = telemetry
+    }
+
+    private companion object {
+        const val NANOS_PER_MS = 1_000_000L
+        const val TELEMETRY_INTERVAL_MS = 100L
     }
 }
 

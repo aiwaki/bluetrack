@@ -66,6 +66,10 @@ internal class InputDiagnostics(
         lastPacerAtMs = -1L
     }
 
+    fun resetTouchClock() {
+        lastTouchAtMs = -1L
+    }
+
     fun snapshot(): InputDiagnosticsSnapshot = InputDiagnosticsSnapshot(
         frames = frames,
         touchGapWarnings = touchGapWarnings,

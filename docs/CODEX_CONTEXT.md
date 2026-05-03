@@ -19,7 +19,7 @@ unsupported.
 
 ## Current State
 
-As of 2026-05-02:
+As of 2026-05-03:
 
 - Branch: `codex/harden-android-build-tests`.
 - Draft PR: `https://github.com/aiwaki/bluetrack/pull/3`.
@@ -60,10 +60,16 @@ The app now has:
   touch samples and the translation engine preserves fractional mouse deltas
   between HID reports before integer quantization. UI callbacks enqueue motion
   only; a background 8 ms input pacer drains accumulated deltas into HID reports
-  to avoid bursty touch-event batches and reduce visible stutter.
+  to avoid bursty touch-event batches and reduce visible stutter. Historical
+  touch samples are batched per Android motion event before entering the
+  ViewModel, and high-rate HID report counters/telemetry are throttled before
+  Compose observes them so the diagnostic UI does not compete with touch
+  delivery.
 - Hidden input diagnostics around touch enqueue, pacer ticks, queue latency, and
   HID send duration. They do not alter movement and only emit throttled logcat
-  warnings under tag `BluetrackInput` when thresholds are crossed.
+  warnings under tag `BluetrackInput` when thresholds are crossed. Touch
+  diagnostics reset at gesture start so long pauses between gestures do not
+  pollute micro-jank readings.
 - Status rows for HID, BLE feedback, pairing, host, input source, and error text.
 - HID Device registration for mouse/gamepad modes.
 - A feedback GATT server with connectable BLE advertising.

@@ -6,6 +6,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class TranslationEngineTest {
@@ -46,6 +47,22 @@ class TranslationEngineTest {
 
         assertArrayEquals(byteArrayOf(0, 127.toByte(), 0, 0), reports[0])
         assertArrayEquals(byteArrayOf(0, 73, 0, 0), reports[1])
+    }
+
+    @Test
+    fun telemetryIsThrottledWithoutDroppingReports() {
+        var now = 0L
+        val engine = TranslationEngine(TestScope(), nowMs = { now })
+        val reports = mutableListOf<ByteArray>()
+
+        engine.processMouseToStick(1f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
+        now = 40L
+        engine.processMouseToStick(2f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
+        now = 100L
+        engine.processMouseToStick(3f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
+
+        assertEquals(3, reports.size)
+        assertEquals(Telemetry(rawX = 3, rawY = 0, stickX = 6, stickY = 0), engine.telemetry.value)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

@@ -53,4 +53,22 @@ class InputDiagnosticsTest {
         assertEquals(1, logs.size)
         assertEquals(2, diagnostics.snapshot().touchGapWarnings)
     }
+
+    @Test
+    fun resetTouchClockIgnoresIdleGapBetweenGestures() {
+        val logs = mutableListOf<String>()
+        val diagnostics = InputDiagnostics(
+            logger = { logs += it },
+            touchGapWarningMs = 10L,
+            warningCooldownMs = 0L,
+        )
+
+        diagnostics.recordTouch(0L)
+        diagnostics.resetTouchClock()
+        diagnostics.recordTouch(1_000L)
+
+        assertEquals(0, logs.size)
+        assertEquals(0, diagnostics.snapshot().touchGapWarnings)
+        assertEquals(0L, diagnostics.snapshot().maxTouchGapMs)
+    }
 }

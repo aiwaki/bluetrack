@@ -237,6 +237,7 @@ private fun AppScreen(
                         modifier = Modifier.fillMaxWidth().weight(1f),
                         telemetryX = telemetry.stickX,
                         telemetryY = telemetry.stickY,
+                        onTouchStart = { vm.beginTouchGesture() },
                         onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
                     )
                     Row(Modifier.fillMaxWidth().height(210.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -250,6 +251,7 @@ private fun AppScreen(
                         modifier = Modifier.weight(1.15f).fillMaxHeight(),
                         telemetryX = telemetry.stickX,
                         telemetryY = telemetry.stickY,
+                        onTouchStart = { vm.beginTouchGesture() },
                         onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
                     )
                     Column(
@@ -307,6 +309,7 @@ private fun TouchpadPanel(
     modifier: Modifier,
     telemetryX: Int,
     telemetryY: Int,
+    onTouchStart: () -> Unit,
     onMotion: (Float, Float, String) -> Unit,
 ) {
     Panel(modifier) {
@@ -337,6 +340,9 @@ private fun TouchpadPanel(
                     } else false
                 }
                 setOnTouchListener { _, ev ->
+                    var batchX = 0f
+                    var batchY = 0f
+
                     fun processPoint(x: Float, y: Float) {
                         val dx = ((x - lastX) * 0.42f).coerceIn(-22f, 22f)
                         val dy = ((y - lastY) * 0.42f).coerceIn(-22f, 22f)
@@ -345,13 +351,22 @@ private fun TouchpadPanel(
                         filteredX = filteredX * 0.18f + dx * 0.82f
                         filteredY = filteredY * 0.18f + dy * 0.82f
                         if (abs(filteredX) > 0.04f || abs(filteredY) > 0.04f) {
-                            onMotion(filteredX, filteredY, "Touchpad")
+                            batchX += filteredX
+                            batchY += filteredY
                         }
                     }
+
+                    fun emitBatch() {
+                        if (abs(batchX) > 0.04f || abs(batchY) > 0.04f) {
+                            onMotion(batchX, batchY, "Touchpad")
+                        }
+                    }
+
                     when (ev.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
                             parent.requestDisallowInterceptTouchEvent(true)
                             requestFocus()
+                            onTouchStart()
                             lastX = ev.x
                             lastY = ev.y
                             filteredX = 0f
@@ -363,6 +378,7 @@ private fun TouchpadPanel(
                                 processPoint(ev.getHistoricalX(i), ev.getHistoricalY(i))
                             }
                             processPoint(ev.x, ev.y)
+                            emitBatch()
                             true
                         }
                         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {

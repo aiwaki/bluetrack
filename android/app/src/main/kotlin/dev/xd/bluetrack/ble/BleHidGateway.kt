@@ -58,6 +58,8 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         const val MOUSE_REPORT_ID = 1
         const val GAMEPAD_REPORT_ID = 2
         const val MAX_EVENTS = 24
+        const val REPORT_STATUS_INTERVAL_MS = 250L
+        const val REPORT_EVENT_INTERVAL = 50
         val COMPOSITE_HID_SUBCLASS: Byte = (
             BluetoothHidDevice.SUBCLASS1_COMBO.toInt() or BluetoothHidDevice.SUBCLASS2_GAMEPAD.toInt()
         ).toByte()
@@ -85,6 +87,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     private var lastNoHostReportWarningMs = 0L
     private var lastAutoConnectAttemptMs = 0L
     private var lastNoComputerHostWarningMs = 0L
+    private var lastReportStatusAtMs = 0L
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val _status = MutableStateFlow(GatewayStatus())
     val status: StateFlow<GatewayStatus> = _status
@@ -512,16 +515,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             ) == true
             if (sent) {
                 reportsSent += 1
-                updateStatus(
-                    reportsSent = reportsSent,
-                    lastReportAtMs = SystemClock.elapsedRealtime(),
-                    eventSource = if (reportsSent == 1 || reportsSent % 50 == 0) "HID" else null,
-                    eventMessage = if (reportsSent == 1 || reportsSent % 50 == 0) {
-                        "Sent $reportsSent HID reports."
-                    } else {
-                        null
-                    },
-                )
+                publishReportStatusIfDue()
             } else {
                 updateStatus(
                     error = "Android rejected a HID report send.",
@@ -532,6 +526,24 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         } catch (_: SecurityException) {
             reportPermissionMissing()
         }
+    }
+
+    private fun publishReportStatusIfDue() {
+        val now = SystemClock.elapsedRealtime()
+        if (reportsSent != 1 && now - lastReportStatusAtMs < REPORT_STATUS_INTERVAL_MS) return
+
+        lastReportStatusAtMs = now
+        val shouldLogEvent = reportsSent == 1 || reportsSent % REPORT_EVENT_INTERVAL == 0
+        updateStatus(
+            reportsSent = reportsSent,
+            lastReportAtMs = now,
+            eventSource = if (shouldLogEvent) "HID" else null,
+            eventMessage = if (shouldLogEvent) {
+                "Sent $reportsSent HID reports."
+            } else {
+                null
+            },
+        )
     }
 
     @Synchronized

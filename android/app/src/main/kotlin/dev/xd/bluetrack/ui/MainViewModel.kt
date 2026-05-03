@@ -48,8 +48,15 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         if (started) ble.register(mode)
     }
 
+    fun beginTouchGesture() {
+        inputDiagnostics.resetTouchClock()
+    }
+
     fun processMotion(dx: Float, dy: Float, source: String = "External mouse") {
         val now = SystemClock.elapsedRealtime()
+        if (lastQueuedInputAtMs <= 0L || now - lastQueuedInputAtMs > INPUT_GESTURE_RESET_MS) {
+            inputDiagnostics.resetTouchClock()
+        }
         inputDiagnostics.recordTouch(now)
         recordInputThrottled(source, now)
         synchronized(inputLock) {
@@ -104,6 +111,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         inputPacerJob?.cancel()
         inputPacerJob = null
         inputDiagnostics.resetPacerClock()
+        inputDiagnostics.resetTouchClock()
         started = false
     }
 
@@ -174,6 +182,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
     private companion object {
         const val INPUT_TICK_MS = 8L
         const val INPUT_IDLE_STOP_MS = 120L
+        const val INPUT_GESTURE_RESET_MS = 1000L
         const val INPUT_STATUS_INTERVAL_MS = 250L
         const val INPUT_EPSILON = 0.005f
     }
