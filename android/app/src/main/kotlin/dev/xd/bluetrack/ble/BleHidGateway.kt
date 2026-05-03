@@ -58,7 +58,6 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         const val TAG = "Bluetrack"
         const val MOUSE_REPORT_ID = 1
         const val GAMEPAD_REPORT_ID = 2
-        const val MAX_EVENTS = 24
         const val REPORT_STATUS_INTERVAL_MS = 250L
         const val REPORT_EVENT_INTERVAL = 50
         const val GAMEPAD_WAKE_PRIME_MS = 40L
@@ -1007,29 +1006,26 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         eventSource: String? = null,
         eventMessage: String? = null,
     ) {
-        val current = _status.value
-        val event = if (!eventSource.isNullOrBlank() && !eventMessage.isNullOrBlank()) {
-            val next = GatewayEvent(SystemClock.elapsedRealtime(), eventSource, eventMessage)
-            Log.i(TAG, "${next.source}: ${next.message}")
-            next
-        } else {
-            null
-        }
-        _status.value = current.copy(
-            hid = hid ?: current.hid,
-            feedback = feedback ?: current.feedback,
-            pairing = pairing ?: current.pairing,
-            compatibility = compatibility ?: current.compatibility,
+        val reduction = reduceGatewayStatus(
+            current = _status.value,
+            nowMs = SystemClock.elapsedRealtime(),
+            hid = hid,
+            feedback = feedback,
+            pairing = pairing,
+            compatibility = compatibility,
             host = host,
             error = error,
-            reportsSent = reportsSent ?: current.reportsSent,
-            feedbackPackets = feedbackPackets ?: current.feedbackPackets,
-            rejectedFeedbackPackets = rejectedFeedbackPackets ?: current.rejectedFeedbackPackets,
+            reportsSent = reportsSent,
+            feedbackPackets = feedbackPackets,
+            rejectedFeedbackPackets = rejectedFeedbackPackets,
             lastInputSource = lastInputSource,
             lastInputAtMs = lastInputAtMs,
             lastReportAtMs = lastReportAtMs,
             lastFeedbackAtMs = lastFeedbackAtMs,
-            events = if (event == null) current.events else (listOf(event) + current.events).take(MAX_EVENTS),
+            eventSource = eventSource,
+            eventMessage = eventMessage,
         )
+        reduction.event?.let { Log.i(TAG, "${it.source}: ${it.message}") }
+        _status.value = reduction.status
     }
 }

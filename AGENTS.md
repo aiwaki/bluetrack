@@ -42,6 +42,10 @@ python3 -m py_compile android/tools/ble_encrypt_sender.py
 - `android/app/src/main/kotlin/dev/xd/bluetrack/ble/BleHidGateway.kt`: HID
   device registration, host connection status, feedback GATT server, BLE
   advertising.
+- `android/app/src/main/kotlin/dev/xd/bluetrack/ble/GatewayStatusReducer.kt`:
+  pure-Kotlin reducer that produces the next `GatewayStatus` plus an optional
+  `GatewayEvent`; the gateway only owns the StateFlow write and the logcat
+  emit. Tests live in `GatewayStatusReducerTest`.
 - `android/app/src/main/kotlin/dev/xd/bluetrack/ble/PayloadDecryptor.kt`:
   AES-128-CTR feedback frame decoding.
 - `android/app/src/main/kotlin/dev/xd/bluetrack/engine/TranslationEngine.kt`:
@@ -120,7 +124,6 @@ passive unless hardware evidence says what to change.
 ## Good Next Bets
 
 - Test the cockpit on real Android hardware and record compatibility snapshots.
-- Extract a testable status reducer from `BleHidGateway` and add JVM tests.
 - Build a host companion utility that verifies both paths: HID pairing plus BLE
   feedback writes.
 - Keep extending the macOS HID inspector into a cross-platform host validation

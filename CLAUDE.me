@@ -62,6 +62,10 @@ The HID path is hardware/firmware dependent. If Android does not expose
   permission prompts, Bluetooth readiness flow, touchpad surface.
 - `android/app/src/main/kotlin/dev/xd/bluetrack/ble/BleHidGateway.kt`: HID
   registration, host auto-connect, descriptor, feedback GATT server.
+- `android/app/src/main/kotlin/dev/xd/bluetrack/ble/GatewayStatusReducer.kt`:
+  pure-Kotlin status/event reducer used by `BleHidGateway.updateStatus`. Side
+  effects (logcat, StateFlow write) stay in the gateway; the reducer is
+  covered by JVM tests in `GatewayStatusReducerTest`.
 - `android/app/src/main/kotlin/dev/xd/bluetrack/engine/TranslationEngine.kt`:
   mouse and gamepad report generation.
 - `android/app/src/main/kotlin/dev/xd/bluetrack/engine/GamepadReportFormat.kt`:
