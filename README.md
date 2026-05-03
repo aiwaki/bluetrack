@@ -118,9 +118,8 @@ the host still has the older mouse/gamepad descriptor cached.
 
 Touchpad input preserves fractional motion and coalesced historical touch
 samples before HID quantization. UI touch callbacks only enqueue motion; a
-dedicated display-priority input thread drains accumulated deltas every 8 ms.
-The pacer detects scheduling gaps and splits accumulated motion into microframes
-so the host receives steadier timing instead of bursty touch-event batches.
+background 8 ms input pacer drains accumulated deltas into HID reports so the
+host receives steadier timing instead of bursty touch-event batches.
 
 ## Python BLE Sender
 

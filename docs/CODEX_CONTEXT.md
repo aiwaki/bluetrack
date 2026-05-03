@@ -59,10 +59,8 @@ The app now has:
 - Cursor smoothing improvements: the touchpad consumes coalesced historical
   touch samples and the translation engine preserves fractional mouse deltas
   between HID reports before integer quantization. UI callbacks enqueue motion
-  only; a dedicated display-priority 8 ms input thread drains accumulated deltas
-  into HID reports. The pacer detects scheduling gaps and splits accumulated
-  motion into microframes to avoid bursty touch-event batches and reduce visible
-  stutter.
+  only; a background 8 ms input pacer drains accumulated deltas into HID reports
+  to avoid bursty touch-event batches and reduce visible stutter.
 - Status rows for HID, BLE feedback, pairing, host, input source, and error text.
 - HID Device registration for mouse/gamepad modes.
 - A feedback GATT server with connectable BLE advertising.
