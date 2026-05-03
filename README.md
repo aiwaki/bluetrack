@@ -52,6 +52,8 @@ pair with the Android device while the app is open.
 - Touchpad input surface for hardware checks without an external mouse.
 - Connectable BLE advertising for host-side feedback discovery.
 - AES-128-CTR compatible BLE feedback decoder.
+- macOS SwiftPM HID inspector for verifying host-side descriptor and live
+  report delivery below browsers/games.
 - JVM unit tests for packet decryption and HID report formatting.
 - GitHub Actions workflow for Android unit tests and debug APK assembly.
 - Python sender script that can scan for the Bluetrack feedback service and send
@@ -104,7 +106,9 @@ unavailable` means the Android device firmware does not expose the HID Device
 profile to third-party apps. `Feedback advertising failed` means the BLE
 feedback channel could not be advertised, but HID pairing may still work. A
 bonded phone that never reaches `Connected` is paired at the Bluetooth level but
-not connected as a HID host yet. If you upgraded from an older mouse-only build,
+not connected as a HID host yet. Some hosts show the Bluetooth device as the
+phone name rather than `Bluetrack Pro Engine`; what matters is that the HID
+service underneath is connected. If you upgraded from an older mouse-only build,
 forget the old Bluetooth device once and pair again so the host caches the new
 composite mouse/gamepad descriptor. Bluetrack ignores bonded audio/accessory
 devices such as AirPods, headphones, speakers, keyboards, mice, and trackpads
@@ -113,10 +117,21 @@ when choosing an automatic HID host.
 Gamepad mode sends controller-style HID reports, so it will not move the macOS
 cursor. Bluetrack exposes a gamepad usage with 16 buttons, a neutral hat
 switch/D-pad, and four axes, then sends a visible automatic button wake train
-when gamepad mode connects or receives first input so browser testers, games,
-and emulators are more likely to enumerate it. After this descriptor change, forget and
-re-pair `Bluetrack Pro Engine` once if the host still has the older mouse/gamepad
-descriptor cached.
+when gamepad mode connects and a rate-limited discovery wake at the start of
+Gamepad touch gestures. This helps browser testers, games, and emulators see a
+real gamepad user gesture after the target page/app is already focused. After a
+descriptor change, forget and re-pair the phone/Bluetrack device once if the host
+still has the older mouse/gamepad descriptor cached.
+
+On macOS, use the host inspector to separate raw HID delivery from browser
+Gamepad API behavior:
+
+```bash
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector scan --name Bluetrack --no-bluetooth
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector watch --name Bluetrack --seconds 15 --no-bluetooth --no-elements
+```
+
+See `docs/GAMEPAD_DEBUGGING.md` for interpretation.
 
 Touchpad input preserves fractional motion and coalesced historical touch
 samples before HID quantization. UI touch callbacks only enqueue motion; a
@@ -177,5 +192,6 @@ python android/tools/ble_encrypt_sender.py --address 00:11:22:33:44:55
 android/app/src/main/kotlin/dev/xd/bluetrack/  Android app source
 android/app/src/test/kotlin/dev/xd/bluetrack/  JVM unit tests
 android/tools/                                      Host-side BLE helper tools
+host/macos-hid-inspector/                           macOS IOHID inspection CLI
 .github/workflows/android-ci.yml                    Android CI workflow
 ```

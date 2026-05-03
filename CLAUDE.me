@@ -16,8 +16,8 @@ and smooth input that hides platform jitter when it can do so honestly.
 
 ## Current Branch And PR
 
-- Branch: `codex/harden-android-build-tests`
-- PR: `https://github.com/aiwaki/bluetrack/pull/3`
+- PR #3 was merged into `main`.
+- Current gamepad visibility work may be on `codex/add-macos-hid-inspector`.
 - Build root: `android/`
 - Debug APK: `android/app/build/outputs/apk/debug/app-debug.apk`
 
@@ -72,6 +72,9 @@ The HID path is hardware/firmware dependent. If Android does not expose
   adaptive sender backpressure governor.
 - `android/app/src/main/kotlin/dev/xd/bluetrack/ui/TouchMotionPredictor.kt`:
   short-horizon touch gap filler with debt reconciliation.
+- `host/macos-hid-inspector/`: SwiftPM IOHID inspector for seeing what macOS
+  receives below browsers/games.
+- `docs/GAMEPAD_DEBUGGING.md`: host-side gamepad debugging workflow.
 
 ## Current Input Truth
 
@@ -111,8 +114,21 @@ The current gamepad report is 7 bytes:
 
 The descriptor advertises Game Pad, 16 buttons, neutral hat switch/D-pad, and
 four signed 8-bit axes. Browser Gamepad API pages often require an actual button
-press after the page is open, so Bluetrack sends an automatic visible wake train
-in gamepad mode rather than a too-short down/up pulse.
+press or axis gesture after the page is open, so Bluetrack sends an automatic
+visible wake train in gamepad mode rather than a too-short down/up pulse. It also
+sends a rate-limited discovery wake at the start of Gamepad touch gestures so a
+browser page opened after mode activation can still enumerate the controller.
+The discovery wake uses a high-numbered button instead of Button 1 to reduce
+accidental in-game actions.
+
+On tested macOS hardware, the host may show the Bluetooth device as the phone
+name, such as `aiwaki`, with primary usage `Mouse`. The same IOHID device still
+contains the Game Pad collection and report 2. Use:
+
+```bash
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector scan --name Bluetrack --no-bluetooth
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector watch --name Bluetrack --seconds 15 --no-bluetooth --no-elements
+```
 
 After any descriptor change, macOS usually needs one host-side "Forget This
 Device" and fresh pairing because it caches HID report maps.

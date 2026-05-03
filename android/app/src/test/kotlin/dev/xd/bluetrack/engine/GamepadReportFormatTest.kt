@@ -15,12 +15,12 @@ class GamepadReportFormatTest {
     }
 
     @Test
-    fun wakeReportPressesOnlyPrimaryButton() {
-        val report = GamepadReportFormat.buttonAWakeReport()
+    fun discoveryWakeReportPressesOnlyHighDiscoveryButton() {
+        val report = GamepadReportFormat.discoveryWakeReport()
 
-        assertEquals(1, report[GamepadReportFormat.BUTTON_LOW_INDEX].toInt())
-        assertEquals(0, report[GamepadReportFormat.BUTTON_HIGH_INDEX].toInt())
+        assertEquals(0, report[GamepadReportFormat.BUTTON_LOW_INDEX].toInt())
+        assertEquals(0x80, report[GamepadReportFormat.BUTTON_HIGH_INDEX].toInt() and 0xFF)
         assertEquals(GamepadReportFormat.HAT_NEUTRAL, report[GamepadReportFormat.HAT_INDEX])
-        assertArrayEquals(byteArrayOf(1, 0, 8, 0, 0, 0, 0), report)
+        assertArrayEquals(byteArrayOf(0, 0x80.toByte(), 8, 0, 0, 0, 0), report)
     }
 }

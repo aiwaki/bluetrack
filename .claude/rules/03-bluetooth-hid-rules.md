@@ -21,7 +21,13 @@
 [6] right Y
 ```
 
-- Browser Gamepad API pages usually need a real button press after the page is
-  open. Keep the automatic visible gamepad wake train unless real hardware
-  evidence shows a better activation strategy.
+- Hosts may show Bluetrack as the Android phone name. The HID service underneath
+  can still expose Bluetrack's composite mouse/gamepad report map.
+- Browser Gamepad API pages usually need a real button or axis gesture after the
+  page is open. Keep the automatic visible gamepad wake train and the
+  rate-limited touch-gesture discovery wake unless real hardware evidence shows
+  a better activation strategy.
+- Use `host/macos-hid-inspector` before changing descriptors. If macOS receives
+  report 2, the Android HID path is alive and the issue is browser/GameController
+  activation or host mapping.
 - After descriptor changes, tell testers to forget and re-pair the host device.

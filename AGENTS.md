@@ -8,8 +8,9 @@ Bluetrack is a native Android/Kotlin prototype that turns an Android device into
 a Bluetooth HID mouse/gamepad bridge with an encrypted BLE feedback channel.
 The Android app is the input device. The PC is the Bluetooth host.
 
-Current work is on branch `codex/harden-android-build-tests` and draft PR #3:
-`https://github.com/aiwaki/bluetrack/pull/3`.
+PR #3 was merged into `main`. Current follow-up work may be on
+`codex/add-macos-hid-inspector` while gamepad visibility is verified with a
+host-side macOS IOHID inspector.
 
 ## First Commands
 
@@ -47,6 +48,9 @@ python3 -m py_compile android/tools/ble_encrypt_sender.py
   mouse/gamepad HID report generation and correction application.
 - `android/tools/ble_encrypt_sender.py`: host-side reference sender for
   encrypted feedback packets.
+- `host/macos-hid-inspector/`: SwiftPM IOHID inspector for macOS descriptor and
+  live report verification.
+- `docs/GAMEPAD_DEBUGGING.md`: host-side gamepad debugging workflow.
 
 ## Non-Negotiables
 
@@ -102,8 +106,13 @@ predictor that fills small Android touch-delivery gaps and reconciles predicted
 motion against the next real touch event to avoid long drift. The current
 gamepad report is 7 bytes: 16 buttons, a neutral hat switch/D-pad, and four
 signed 8-bit axes. Gamepad activation sends a visible automatic button wake
-train so browser Gamepad API pages can catch a real button press. Descriptor
-changes still require one host-side forget/re-pair.
+train so browser Gamepad API pages can catch a real gamepad gesture, and
+Gamepad touch gestures send a rate-limited discovery wake if the page opened
+after mode activation. macOS may show the device as the phone name with primary
+usage Mouse while still exposing Game Pad report 2; use
+`host/macos-hid-inspector` to distinguish raw HID delivery from browser
+Gamepad API activation/mapping. Descriptor changes still require one host-side
+forget/re-pair.
 Hidden input diagnostics log rare touch, pacer, queue, output-queue, and
 HID-send threshold crossings under `BluetrackInput`; keep this diagnostic layer
 passive unless hardware evidence says what to change.
@@ -114,4 +123,6 @@ passive unless hardware evidence says what to change.
 - Extract a testable status reducer from `BleHidGateway` and add JVM tests.
 - Build a host companion utility that verifies both paths: HID pairing plus BLE
   feedback writes.
+- Keep extending the macOS HID inspector into a cross-platform host validation
+  companion.
 - Improve UI density and controls once the hardware path is verified.

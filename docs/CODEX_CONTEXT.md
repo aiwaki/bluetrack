@@ -21,13 +21,12 @@ unsupported.
 
 As of 2026-05-03:
 
-- Branch: `codex/harden-android-build-tests`.
-- Draft PR: `https://github.com/aiwaki/bluetrack/pull/3`.
-- Check `git log -1 --oneline` for the current head; this branch carries the
-  build hardening, Bluetooth diagnostics, project context, compatibility
-  cockpit, event timeline, and touchpad input work.
-- GitHub Actions for PR #3 passed after the Bluetooth diagnostic and context
-  changes. Re-check after every push.
+- PR #3 was merged into `main`.
+- Current follow-up work may be on `codex/add-macos-hid-inspector`.
+- Check `git log -1 --oneline` for the current head; `main` carries the build
+  hardening, Bluetooth diagnostics, project context, compatibility cockpit,
+  event timeline, touchpad input work, and HID reconnect/input flow.
+- Re-check GitHub Actions after every push.
 - Local validation passed with Android Studio's bundled Java runtime:
   `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew testDebugUnitTest assembleDebug`.
 - Debug APK path after build:
@@ -51,8 +50,10 @@ The app now has:
   the host connection.
 - A gamepad descriptor that advertises a gamepad usage with 16 buttons, a
   neutral hat switch/D-pad, and four axes, plus a visible automatic button wake
-  train on gamepad connect/mode activation/first input to help host software and
-  browser Gamepad API pages enumerate the controller.
+  train on gamepad connect/mode activation/first input and a rate-limited
+  discovery wake at the start of Gamepad touch gestures to help host software
+  and browser Gamepad API pages enumerate the controller after the target page
+  is already focused.
 - A calmer primary UI with Ready/Connecting/Input live/Needs attention state,
   compact counters, and quieter system/activity details. Manual
   pairing/connect/refresh buttons were removed from the primary surface; Android
@@ -88,6 +89,8 @@ The app now has:
 - A feedback GATT server with connectable BLE advertising.
 - A Python sender that can scan for the feedback service UUID.
 - Claude handoff files: `CLAUDE.me` and `.claude/rules/`.
+- A macOS SwiftPM IOHID inspector under `host/macos-hid-inspector/` and the
+  workflow in `docs/GAMEPAD_DEBUGGING.md`.
 
 ## Mental Model
 
@@ -155,11 +158,11 @@ Use this when you want the next Codex session to operate at full context:
 ```text
 Continue Bluetrack as a senior Android/Bluetooth engineer and diagnostic-tool
 designer. Read AGENTS.md and docs/CODEX_CONTEXT.md first. Check git status,
-the active branch, and PR #3 before editing. Keep Bluetooth HID and BLE feedback
-separate in your mental model and in the UI. Improve real hardware debuggability
-over speculative features. Make failures visible and actionable. Validate with
-Android Studio's bundled JBR, keep CI green, update the project memory when the
-operating model changes, and push through the existing draft PR.
+the active branch, and any open PR before editing. Keep Bluetooth HID and BLE
+feedback separate in your mental model and in the UI. Improve real hardware
+debuggability over speculative features. Make failures visible and actionable.
+Validate with Android Studio's bundled JBR, keep CI green, update the project
+memory when the operating model changes, and push through the active PR.
 ```
 
 ## Hardware Validation Script
@@ -206,7 +209,18 @@ Gamepad mode will not move the macOS cursor; verify it in a game, emulator, or
 browser gamepad tester after switching the app to `Gamepad`. Browser testers
 that say "press any button" should catch the automatic visible wake train, but
 the page may need to be open before switching to `Gamepad` or before the first
-gamepad input.
+gamepad input. Bluetrack now also sends a rate-limited discovery wake at the
+start of Gamepad touch gestures so a page opened after activation can still
+observe a real button gesture. On macOS, the device may appear as the phone name
+with primary usage Mouse while still exposing Game Pad report 2. Use:
+
+```bash
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector scan --name Bluetrack --no-bluetooth
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector watch --name Bluetrack --seconds 15 --no-bluetooth --no-elements
+```
+
+If report 2 events arrive, Android HID delivery is working and the remaining
+problem is browser Gamepad API activation or host game-controller mapping.
 
 For feedback testing:
 

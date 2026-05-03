@@ -20,6 +20,10 @@ keystore.properties
 # --- Kotlin/Java temp ---
 out/
 
+# --- SwiftPM ---
+.build/
+**/.build/
+
 # --- Python ---
 __pycache__/
 *.py[cod]
