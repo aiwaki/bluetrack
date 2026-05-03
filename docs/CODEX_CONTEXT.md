@@ -265,8 +265,6 @@ High leverage:
 
 - Run the cockpit on real Android hardware and capture the first compatibility
   snapshots for devices that do and do not expose HID Device support.
-- Add Android unit tests around `GatewayStatus` transitions by extracting a
-  small state reducer from `BleHidGateway`.
 - Build a simple host companion CLI/UI that:
   - discovers the BLE feedback service,
   - writes correction packets,
