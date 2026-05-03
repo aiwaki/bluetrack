@@ -59,7 +59,7 @@ class TranslationEngine(private val scope: CoroutineScope) {
         val carried = delta + if (isX) mouseCarryX else mouseCarryY
         val rounded = carried.roundToInt()
         val clamped = rounded.coerceIn(-127, 127)
-        val nextCarry = if (rounded == clamped) carried - rounded else 0f
+        val nextCarry = carried - clamped
         if (isX) {
             mouseCarryX = nextCarry
         } else {

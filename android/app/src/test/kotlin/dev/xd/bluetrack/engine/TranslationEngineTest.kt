@@ -36,6 +36,18 @@ class TranslationEngineTest {
         assertArrayEquals(byteArrayOf(0, 0, 0, 0), reports[2])
     }
 
+    @Test
+    fun mouseModeCarriesOverflowAfterClamp() {
+        val engine = TranslationEngine(TestScope())
+        val reports = mutableListOf<ByteArray>()
+
+        engine.processMouseToStick(200f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
+        engine.processMouseToStick(0f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
+
+        assertArrayEquals(byteArrayOf(0, 127.toByte(), 0, 0), reports[0])
+        assertArrayEquals(byteArrayOf(0, 73, 0, 0), reports[1])
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun gamepadModeWritesAxesAfterButtonBytesAndResetsDeadman() = runTest {

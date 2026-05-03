@@ -117,8 +117,9 @@ After this descriptor change, forget and re-pair `Bluetrack Pro Engine` once if
 the host still has the older mouse/gamepad descriptor cached.
 
 Touchpad input preserves fractional motion and coalesced historical touch
-samples before HID quantization, which makes slow cursor movement less steppy
-than the initial prototype path.
+samples before HID quantization. UI touch callbacks only enqueue motion; a
+background 8 ms input pacer drains accumulated deltas into HID reports so the
+host receives steadier timing instead of bursty touch-event batches.
 
 ## Python BLE Sender
 

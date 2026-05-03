@@ -89,7 +89,9 @@ computer-class or computer-named hosts. Bluetooth ownership is application-scope
 and backed by a foreground keep-alive service so minimizing the Activity does not
 intentionally unregister HID. Android's own confirmation dialogs still cannot be
 skipped, and Android requires an ongoing notification for the background
-keep-alive service.
+keep-alive service. Pointer input is paced: touch callbacks enqueue deltas,
+while `MainViewModel` drains them every 8 ms into `TranslationEngine` to avoid
+UI-thread HID bursts.
 
 ## Good Next Bets
 
