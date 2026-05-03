@@ -127,6 +127,9 @@ small output buffer and sent from a dedicated sender so short Bluetooth stalls
 do not stop the input clock. When Android's Bluetooth stack shows backpressure,
 the sender briefly lowers its catch-up rate so it can coalesce more mouse motion
 instead of hammering `sendReport` into another stall.
+The touchpad path also predicts very short gaps between Android touch events and
+reconciles that predicted motion against the next real event, which keeps the
+cursor moving through small touch-delivery holes without adding long drift.
 Hidden input diagnostics log only when a threshold is crossed, without changing
 motion behavior. During hardware testing, inspect them with:
 

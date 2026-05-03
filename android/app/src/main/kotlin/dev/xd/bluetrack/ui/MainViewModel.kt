@@ -34,6 +34,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
     private var hidSenderJob: Job? = null
     private val hidOutputBuffer = HidOutputBuffer()
     private val hidTransportGovernor = HidTransportGovernor()
+    private val touchMotionPredictor = TouchMotionPredictor()
     private val inputDiagnostics = InputDiagnostics()
 
     fun start() {
@@ -51,11 +52,15 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         }
         hidOutputBuffer.clear()
         hidTransportGovernor.reset()
+        touchMotionPredictor.reset()
         if (started) ble.register(mode)
     }
 
     fun beginTouchGesture() {
         inputDiagnostics.resetTouchClock()
+        synchronized(inputLock) {
+            touchMotionPredictor.reset()
+        }
     }
 
     fun processMotion(dx: Float, dy: Float, source: String = "External mouse") {
@@ -66,8 +71,14 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         inputDiagnostics.recordTouch(now)
         recordInputThrottled(source, now)
         synchronized(inputLock) {
-            pendingDx += dx
-            pendingDy += dy
+            val motion = if (source == TOUCHPAD_SOURCE) {
+                touchMotionPredictor.recordTouch(dx, dy, now)
+            } else {
+                touchMotionPredictor.reset()
+                TouchMotionPredictor.MotionDelta(dx, dy)
+            }
+            pendingDx += motion.dx
+            pendingDy += motion.dy
             pendingMode = _mode.value
             lastQueuedInputAtMs = now
         }
@@ -123,6 +134,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         }
         hidOutputBuffer.clear()
         hidTransportGovernor.reset()
+        touchMotionPredictor.reset()
         inputDiagnostics.resetPacerClock()
         inputDiagnostics.resetTouchClock()
     }
@@ -145,6 +157,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
                         pendingDy = 0f
                         InputFrame(dx = dx, dy = dy, mode = pendingMode, queuedAtMs = lastQueuedInputAtMs)
                     }
+                    ?: predictedInputFrame(tickAtMs, idle)
                 }
                 if (frame == InputFrame.STOP) {
                     inputDiagnostics.resetPacerClock()
@@ -231,5 +244,17 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         const val INPUT_STATUS_INTERVAL_MS = 250L
         const val INPUT_EPSILON = 0.005f
         const val NANOS_PER_MS = 1_000_000L
+        const val TOUCHPAD_SOURCE = "Touchpad"
+    }
+
+    private fun predictedInputFrame(tickAtMs: Long, idle: Boolean): InputFrame? {
+        if (idle || pendingMode != HidMode.MOUSE) return null
+        val predicted = touchMotionPredictor.predict(tickAtMs) ?: return null
+        return InputFrame(
+            dx = predicted.dx,
+            dy = predicted.dy,
+            mode = pendingMode,
+            queuedAtMs = tickAtMs,
+        )
     }
 }

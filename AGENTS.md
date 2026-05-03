@@ -97,7 +97,9 @@ Compose sees them so the UI does not starve touch delivery. HID transport is
 decoupled from the pacer with a small output buffer and a dedicated sender; mouse
 deltas coalesce there instead of being dropped during short Bluetooth stalls. The
 sender has a small adaptive governor that briefly slows catch-up sends after
-measured `sendReport` backpressure.
+measured `sendReport` backpressure. Touchpad movement also uses a short-horizon
+predictor that fills small Android touch-delivery gaps and reconciles predicted
+motion against the next real touch event to avoid long drift.
 Hidden input diagnostics log rare touch, pacer, queue, output-queue, and
 HID-send threshold crossings under `BluetrackInput`; keep this diagnostic layer
 passive unless hardware evidence says what to change.

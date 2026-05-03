@@ -77,6 +77,10 @@ The app now has:
   diagnostics reset at gesture start so long pauses between gestures do not
   pollute micro-jank readings. Output queue latency is also logged so Bluetooth
   transport stalls can be separated from touch or pacer stalls.
+- A short-horizon touch motion predictor fills small gaps between Android touch
+  events. Predicted mouse motion is tracked as debt and reconciled against the
+  next real touch event, so brief touch-delivery holes feel smoother without
+  long runaway drift.
 - Status rows for HID, BLE feedback, pairing, host, input source, and error text.
 - HID Device registration for mouse/gamepad modes.
 - A feedback GATT server with connectable BLE advertising.
