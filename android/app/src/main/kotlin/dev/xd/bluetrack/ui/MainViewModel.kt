@@ -21,8 +21,9 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
     val mode: StateFlow<HidMode> = _mode
     val telemetry: StateFlow<Telemetry> = engine.telemetry
     val status = ble.status
-    private var started = false
+    @Volatile private var started = false
     private val inputLock = Any()
+    private val hidSenderLock = Any()
     private var pendingDx = 0f
     private var pendingDy = 0f
     private var pendingMode = HidMode.MOUSE
@@ -30,6 +31,8 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
     private var lastRecordedInputAtMs = 0L
     private var lastRecordedInputSource: String? = null
     private var inputPacerJob: Job? = null
+    private var hidSenderJob: Job? = null
+    private val hidOutputBuffer = HidOutputBuffer()
     private val inputDiagnostics = InputDiagnostics()
 
     fun start() {
@@ -45,6 +48,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
             pendingDy = 0f
             pendingMode = mode
         }
+        hidOutputBuffer.clear()
         if (started) ble.register(mode)
     }
 
@@ -108,11 +112,16 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
     }
 
     fun detach() {
+        started = false
         inputPacerJob?.cancel()
         inputPacerJob = null
+        synchronized(hidSenderLock) {
+            hidSenderJob?.cancel()
+            hidSenderJob = null
+        }
+        hidOutputBuffer.clear()
         inputDiagnostics.resetPacerClock()
         inputDiagnostics.resetTouchClock()
-        started = false
     }
 
     private fun ensureInputPacer() {
@@ -141,12 +150,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
                 frame ?: continue
                 inputDiagnostics.recordFrame(tickAtMs, frame.queuedAtMs)
                 engine.processMouseToStick(frame.dx, frame.dy, frame.mode) { report ->
-                    val sendStartedNs = SystemClock.elapsedRealtimeNanos()
-                    ble.send(frame.mode, report)
-                    inputDiagnostics.recordHidSend(
-                        durationNs = SystemClock.elapsedRealtimeNanos() - sendStartedNs,
-                        nowMs = SystemClock.elapsedRealtime(),
-                    )
+                    enqueueHidReport(frame.mode, report)
                 }
             }
             val restart = synchronized(inputLock) {
@@ -158,6 +162,40 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
                 }
             }
             if (restart && started) ensureInputPacer()
+        }
+    }
+
+    private fun enqueueHidReport(mode: HidMode, report: ByteArray) {
+        if (!started) return
+        hidOutputBuffer.enqueue(mode, report, queuedAtMs = SystemClock.elapsedRealtime())
+        ensureHidSender()
+    }
+
+    private fun ensureHidSender() {
+        synchronized(hidSenderLock) {
+            if (hidSenderJob?.isActive == true) return
+            hidSenderJob = viewModelScope.launch(Dispatchers.IO) {
+                while (isActive) {
+                    val output = hidOutputBuffer.poll() ?: break
+                    val sendStartedMs = SystemClock.elapsedRealtime()
+                    inputDiagnostics.recordOutputFrame(sendStartedMs, output.queuedAtMs)
+                    val sendStartedNs = SystemClock.elapsedRealtimeNanos()
+                    ble.send(output.mode, output.report)
+                    inputDiagnostics.recordHidSend(
+                        durationNs = SystemClock.elapsedRealtimeNanos() - sendStartedNs,
+                        nowMs = SystemClock.elapsedRealtime(),
+                    )
+                }
+                val restart = synchronized(hidSenderLock) {
+                    if (hidSenderJob == this@launch.coroutineContext[Job]) {
+                        hidSenderJob = null
+                        hidOutputBuffer.hasPending() && started
+                    } else {
+                        false
+                    }
+                }
+                if (restart) ensureHidSender()
+            }
         }
     }
 

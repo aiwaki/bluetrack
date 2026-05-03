@@ -93,10 +93,12 @@ keep-alive service. Pointer input is paced: touch callbacks enqueue deltas,
 while `MainViewModel` drains them every 8 ms into `TranslationEngine` to avoid
 UI-thread HID bursts. Historical touch samples are batched once per Android
 motion event, and high-rate report counters/telemetry are throttled before
-Compose sees them so the UI does not starve touch delivery. Hidden input
-diagnostics log rare touch, pacer, queue, and HID-send threshold crossings under
-`BluetrackInput`; keep this diagnostic layer passive unless hardware evidence
-says what to change.
+Compose sees them so the UI does not starve touch delivery. HID transport is
+decoupled from the pacer with a small output buffer and a dedicated sender; mouse
+deltas coalesce there instead of being dropped during short Bluetooth stalls.
+Hidden input diagnostics log rare touch, pacer, queue, output-queue, and
+HID-send threshold crossings under `BluetrackInput`; keep this diagnostic layer
+passive unless hardware evidence says what to change.
 
 ## Good Next Bets
 

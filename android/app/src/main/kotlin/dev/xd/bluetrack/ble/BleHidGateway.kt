@@ -490,38 +490,46 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         )
     }
 
-    @Synchronized
     fun send(mode: HidMode, report: ByteArray) {
+        val target: BluetoothDevice
+        val device: BluetoothHidDevice?
         try {
-            val target = host ?: run {
-                val now = SystemClock.elapsedRealtime()
-                if (now - lastNoHostReportWarningMs > 2000L) {
-                    lastNoHostReportWarningMs = now
-                    updateStatus(
-                        error = "No HID host connected; pair the host and Bluetrack will connect automatically.",
-                        eventSource = "HID",
-                        eventMessage = "Input was received, but no HID host is connected.",
-                    )
+            synchronized(this) {
+                val connectedHost = host
+                if (connectedHost == null) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastNoHostReportWarningMs > 2000L) {
+                        lastNoHostReportWarningMs = now
+                        updateStatus(
+                            error = "No HID host connected; pair the host and Bluetrack will connect automatically.",
+                            eventSource = "HID",
+                            eventMessage = "Input was received, but no HID host is connected.",
+                        )
+                    }
+                    return
                 }
-                return
+                target = connectedHost
+                device = hid
+                if (mode == HidMode.GAMEPAD && gamepadWakeArmed) {
+                    sendGamepadWakePulse("first gamepad input")
+                }
             }
-            if (mode == HidMode.GAMEPAD && gamepadWakeArmed) {
-                sendGamepadWakePulse("first gamepad input")
-            }
-            val sent = hid?.sendReport(
+            val sent = device?.sendReport(
                 target,
                 if (mode == HidMode.MOUSE) MOUSE_REPORT_ID else GAMEPAD_REPORT_ID,
                 report,
             ) == true
-            if (sent) {
-                reportsSent += 1
-                publishReportStatusIfDue()
-            } else {
-                updateStatus(
-                    error = "Android rejected a HID report send.",
-                    eventSource = "HID",
-                    eventMessage = "sendReport returned false.",
-                )
+            synchronized(this) {
+                if (sent) {
+                    reportsSent += 1
+                    publishReportStatusIfDue()
+                } else {
+                    updateStatus(
+                        error = "Android rejected a HID report send.",
+                        eventSource = "HID",
+                        eventMessage = "sendReport returned false.",
+                    )
+                }
             }
         } catch (_: SecurityException) {
             reportPermissionMissing()

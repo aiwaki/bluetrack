@@ -122,6 +122,9 @@ background 8 ms input pacer drains accumulated deltas into HID reports so the
 host receives steadier timing instead of bursty touch-event batches. High-rate
 HID report counters and telemetry are throttled before reaching Compose so the
 diagnostic UI does not compete with touch delivery during active movement.
+HID transport is also decoupled from the pacer: mouse deltas are coalesced in a
+small output buffer and sent from a dedicated sender so short Bluetooth stalls
+do not stop the input clock.
 Hidden input diagnostics log only when a threshold is crossed, without changing
 motion behavior. During hardware testing, inspect them with:
 

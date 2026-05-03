@@ -64,12 +64,16 @@ The app now has:
   touch samples are batched per Android motion event before entering the
   ViewModel, and high-rate HID report counters/telemetry are throttled before
   Compose observes them so the diagnostic UI does not compete with touch
-  delivery.
+  delivery. HID transport is decoupled from the pacer with a small output
+  buffer: mouse deltas coalesce instead of dropping motion, gamepad reports keep
+  a bounded short queue, and a dedicated sender absorbs short Bluetooth stalls
+  without stopping the input clock.
 - Hidden input diagnostics around touch enqueue, pacer ticks, queue latency, and
   HID send duration. They do not alter movement and only emit throttled logcat
   warnings under tag `BluetrackInput` when thresholds are crossed. Touch
   diagnostics reset at gesture start so long pauses between gestures do not
-  pollute micro-jank readings.
+  pollute micro-jank readings. Output queue latency is also logged so Bluetooth
+  transport stalls can be separated from touch or pacer stalls.
 - Status rows for HID, BLE feedback, pairing, host, input source, and error text.
 - HID Device registration for mouse/gamepad modes.
 - A feedback GATT server with connectable BLE advertising.
