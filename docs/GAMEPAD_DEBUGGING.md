@@ -1,0 +1,66 @@
+# Gamepad Debugging
+
+Bluetrack may appear in desktop Bluetooth settings as the Android phone name
+instead of `Bluetrack Pro Engine`. That is expected on some hosts: the classic
+Bluetooth bond is still the phone, while the HID service underneath carries the
+mouse and gamepad report map.
+
+## macOS HID Inspector
+
+The host-side inspector checks what macOS sees below browsers and games:
+
+```bash
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector scan --name Bluetrack --no-bluetooth
+```
+
+The default scan looks for the Bluetrack name and also recognizes the current
+composite HID shape, so it can select a phone-named device such as:
+
+```text
+aiwaki [0x01:0x02 Mouse]
+```
+
+A healthy composite descriptor has:
+
+- report 1: mouse buttons, X, Y, wheel;
+- report 2: Game Pad collection, 16 buttons, hat switch, X, Y, Z, Rz.
+
+To verify live input, switch Bluetrack to Gamepad and run:
+
+```bash
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector watch --name Bluetrack --seconds 15 --no-bluetooth --no-elements
+```
+
+If report 2 events appear, Android is sending gamepad HID to macOS. If a browser
+tester still waits for input, the problem is above raw IOHID: browser Gamepad API
+activation, macOS game-controller mapping, or the page being focused too late.
+The Gamepad API exposes already-connected pads only after a user gamepad
+gesture; the W3C spec describes this around `navigator.getGamepads()` exposure
+and the `gamepadconnected` event.
+
+Reference: https://www.w3.org/TR/gamepad/
+
+## Current Host Evidence
+
+On the tested Mac, macOS selected the Android phone-named device as a Bluetooth
+HID mouse primary usage, but the same report map contained the Game Pad
+collection. Live IOHID watch confirmed report 2 X/Y axis events while Bluetrack
+was in Gamepad mode.
+
+That means:
+
+- HID pairing is working;
+- Android sends report 2;
+- the browser issue is not BLE feedback and not basic HID transport;
+- activation must happen after the target browser/game page is already focused.
+
+Bluetrack therefore sends a short automatic gamepad discovery wake train on
+Gamepad activation and, rate-limited, at the start of Gamepad touch gestures.
+The wake train primes the host with a neutral report, presses a high-numbered
+discovery button, then releases back to neutral.
+
+## Descriptor Cache
+
+macOS and Windows cache Bluetooth HID report maps. After any descriptor change,
+forget the old phone/Bluetrack Bluetooth device on the host and pair again once.
+App code cannot force a desktop host to discard an old HID descriptor cache.

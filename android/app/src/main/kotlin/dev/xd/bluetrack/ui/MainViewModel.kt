@@ -61,6 +61,9 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         synchronized(inputLock) {
             touchMotionPredictor.reset()
         }
+        if (_mode.value == HidMode.GAMEPAD) {
+            ble.nudgeGamepadDiscovery("touch gesture")
+        }
     }
 
     fun processMotion(dx: Float, dy: Float, source: String = "External mouse") {

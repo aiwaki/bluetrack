@@ -61,10 +61,12 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         const val MAX_EVENTS = 24
         const val REPORT_STATUS_INTERVAL_MS = 250L
         const val REPORT_EVENT_INTERVAL = 50
+        const val GAMEPAD_WAKE_PRIME_MS = 40L
         const val GAMEPAD_WAKE_HOLD_MS = 120L
         const val GAMEPAD_WAKE_REST_MS = 80L
         const val GAMEPAD_WAKE_REPEATS = 3
         const val GAMEPAD_WAKE_MIN_INTERVAL_MS = 1500L
+        const val GAMEPAD_DISCOVERY_WAKE_INTERVAL_MS = 15000L
         val COMPOSITE_HID_SUBCLASS: Byte = (
             BluetoothHidDevice.SUBCLASS1_COMBO.toInt() or BluetoothHidDevice.SUBCLASS2_GAMEPAD.toInt()
         ).toByte()
@@ -95,6 +97,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     private var lastNoComputerHostWarningMs = 0L
     private var lastReportStatusAtMs = 0L
     private var lastGamepadWakeAtMs = 0L
+    private var lastGamepadDiscoveryWakeAtMs = 0L
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val _status = MutableStateFlow(GatewayStatus())
     val status: StateFlow<GatewayStatus> = _status
@@ -472,11 +475,11 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     }
 
     @Synchronized
-    private fun sendGamepadWakePulse(reason: String) {
-        val target = host ?: return
-        val device = hid ?: return
+    private fun sendGamepadWakePulse(reason: String): Boolean {
+        val target = host ?: return false
+        val device = hid ?: return false
         val now = SystemClock.elapsedRealtime()
-        if (gamepadWakeInFlight || now - lastGamepadWakeAtMs < GAMEPAD_WAKE_MIN_INTERVAL_MS) return
+        if (gamepadWakeInFlight || now - lastGamepadWakeAtMs < GAMEPAD_WAKE_MIN_INTERVAL_MS) return false
 
         gamepadWakeInFlight = true
         gamepadWakeArmed = false
@@ -485,7 +488,11 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             var sentReports = 0
             try {
                 repeat(GAMEPAD_WAKE_REPEATS) { repeatIndex ->
-                    if (device.sendReport(target, GAMEPAD_REPORT_ID, GamepadReportFormat.buttonAWakeReport())) {
+                    if (device.sendReport(target, GAMEPAD_REPORT_ID, GamepadReportFormat.neutralReport())) {
+                        sentReports += 1
+                    }
+                    Thread.sleep(GAMEPAD_WAKE_PRIME_MS)
+                    if (device.sendReport(target, GAMEPAD_REPORT_ID, GamepadReportFormat.discoveryWakeReport())) {
                         sentReports += 1
                     }
                     Thread.sleep(GAMEPAD_WAKE_HOLD_MS)
@@ -514,6 +521,17 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                     gamepadWakeInFlight = false
                 }
             }
+        }
+        return true
+    }
+
+    @Synchronized
+    fun nudgeGamepadDiscovery(reason: String) {
+        if (registeredMode != HidMode.GAMEPAD || host == null) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastGamepadDiscoveryWakeAtMs < GAMEPAD_DISCOVERY_WAKE_INTERVAL_MS) return
+        if (sendGamepadWakePulse(reason)) {
+            lastGamepadDiscoveryWakeAtMs = now
         }
     }
 

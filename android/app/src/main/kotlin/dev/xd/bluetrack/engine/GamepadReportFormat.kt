@@ -10,6 +10,7 @@ internal object GamepadReportFormat {
     const val RIGHT_X_INDEX = 5
     const val RIGHT_Y_INDEX = 6
     const val HAT_NEUTRAL: Byte = 0x08
+    private const val DISCOVERY_BUTTON_MASK_HIGH: Byte = -128
 
     fun neutralReport(): ByteArray = byteArrayOf(
         0,
@@ -21,9 +22,9 @@ internal object GamepadReportFormat {
         0,
     )
 
-    fun buttonAWakeReport(): ByteArray = byteArrayOf(
-        1,
+    fun discoveryWakeReport(): ByteArray = byteArrayOf(
         0,
+        DISCOVERY_BUTTON_MASK_HIGH,
         HAT_NEUTRAL,
         0,
         0,

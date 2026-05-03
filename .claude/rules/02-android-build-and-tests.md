@@ -19,7 +19,7 @@ python3 -m py_compile android/tools/ble_encrypt_sender.py
   buffering, touch prediction, crypto packet handling, host classification, and
   state reducers.
 - Do not stage broad unrelated files. Stage explicit paths.
-- Re-check GitHub Actions after pushing to PR #3.
+- Re-check GitHub Actions after pushing to an open PR.
 - Debug APK path after a successful build:
 
 ```text
