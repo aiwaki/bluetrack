@@ -67,7 +67,10 @@ The app now has:
   delivery. HID transport is decoupled from the pacer with a small output
   buffer: mouse deltas coalesce instead of dropping motion, gamepad reports keep
   a bounded short queue, and a dedicated sender absorbs short Bluetooth stalls
-  without stopping the input clock.
+  without stopping the input clock. The sender has a small adaptive governor:
+  after measured `sendReport` backpressure it briefly slows catch-up sends so
+  Bluetooth can drain and mouse deltas coalesce instead of causing repeated
+  transport stalls.
 - Hidden input diagnostics around touch enqueue, pacer ticks, queue latency, and
   HID send duration. They do not alter movement and only emit throttled logcat
   warnings under tag `BluetrackInput` when thresholds are crossed. Touch

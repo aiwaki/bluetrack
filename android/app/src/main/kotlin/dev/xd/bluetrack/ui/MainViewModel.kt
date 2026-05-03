@@ -33,6 +33,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
     private var inputPacerJob: Job? = null
     private var hidSenderJob: Job? = null
     private val hidOutputBuffer = HidOutputBuffer()
+    private val hidTransportGovernor = HidTransportGovernor()
     private val inputDiagnostics = InputDiagnostics()
 
     fun start() {
@@ -49,6 +50,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
             pendingMode = mode
         }
         hidOutputBuffer.clear()
+        hidTransportGovernor.reset()
         if (started) ble.register(mode)
     }
 
@@ -120,6 +122,7 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
             hidSenderJob = null
         }
         hidOutputBuffer.clear()
+        hidTransportGovernor.reset()
         inputDiagnostics.resetPacerClock()
         inputDiagnostics.resetTouchClock()
     }
@@ -176,15 +179,19 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
             if (hidSenderJob?.isActive == true) return
             hidSenderJob = viewModelScope.launch(Dispatchers.IO) {
                 while (isActive) {
+                    val transportDelayMs = hidTransportGovernor.delayBeforeSend(SystemClock.elapsedRealtime())
+                    if (transportDelayMs > 0L) delay(transportDelayMs)
+                    if (!isActive) break
+
                     val output = hidOutputBuffer.poll() ?: break
                     val sendStartedMs = SystemClock.elapsedRealtime()
                     inputDiagnostics.recordOutputFrame(sendStartedMs, output.queuedAtMs)
                     val sendStartedNs = SystemClock.elapsedRealtimeNanos()
                     ble.send(output.mode, output.report)
-                    inputDiagnostics.recordHidSend(
-                        durationNs = SystemClock.elapsedRealtimeNanos() - sendStartedNs,
-                        nowMs = SystemClock.elapsedRealtime(),
-                    )
+                    val durationNs = SystemClock.elapsedRealtimeNanos() - sendStartedNs
+                    val nowMs = SystemClock.elapsedRealtime()
+                    hidTransportGovernor.recordSend(durationNs / NANOS_PER_MS, nowMs)
+                    inputDiagnostics.recordHidSend(durationNs = durationNs, nowMs = nowMs)
                 }
                 val restart = synchronized(hidSenderLock) {
                     if (hidSenderJob == this@launch.coroutineContext[Job]) {
@@ -223,5 +230,6 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         const val INPUT_GESTURE_RESET_MS = 1000L
         const val INPUT_STATUS_INTERVAL_MS = 250L
         const val INPUT_EPSILON = 0.005f
+        const val NANOS_PER_MS = 1_000_000L
     }
 }

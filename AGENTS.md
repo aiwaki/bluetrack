@@ -95,7 +95,9 @@ UI-thread HID bursts. Historical touch samples are batched once per Android
 motion event, and high-rate report counters/telemetry are throttled before
 Compose sees them so the UI does not starve touch delivery. HID transport is
 decoupled from the pacer with a small output buffer and a dedicated sender; mouse
-deltas coalesce there instead of being dropped during short Bluetooth stalls.
+deltas coalesce there instead of being dropped during short Bluetooth stalls. The
+sender has a small adaptive governor that briefly slows catch-up sends after
+measured `sendReport` backpressure.
 Hidden input diagnostics log rare touch, pacer, queue, output-queue, and
 HID-send threshold crossings under `BluetrackInput`; keep this diagnostic layer
 passive unless hardware evidence says what to change.
