@@ -57,6 +57,8 @@ python3 -m py_compile android/tools/ble_encrypt_sender.py
     print live input values.
   - `feedback` uses CoreBluetooth to scan for the BLE feedback service,
     connect, and write AES-128-CTR encrypted `(counter, dx, dy)` packets.
+  - `companion` runs `watch` and `feedback` together on a single run loop
+    and prints a combined PASS/FAIL verdict for both paths.
   - `selftest` round-trips `FeedbackCrypto` without Bluetooth (works on
     machines with only CommandLineTools installed).
   - The `BluetrackHostKit` library target owns the shared crypto contract.

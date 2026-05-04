@@ -265,8 +265,8 @@ High leverage:
 
 - Run the cockpit on real Android hardware and capture the first compatibility
   snapshots for devices that do and do not expose HID Device support.
-- Combine `feedback` + `watch` into a single `companion` subcommand so one
-  invocation reports both BLE write health and HID input arrival.
+- Add a lightweight hardware report export so `companion` runs can be saved
+  alongside the Android event timeline for compatibility snapshots.
 - Add a lightweight hardware report export for compatibility snapshots and
   event timeline entries.
 
