@@ -1,0 +1,61 @@
+import Foundation
+
+/// Orchestrates `HidInspector.beginWatch` and `FeedbackCompanion.prepare`
+/// against a single CFRunLoop session, then prints a combined verdict.
+///
+/// Both subsystems already register their callbacks against the main run
+/// loop and main dispatch queue, so all we have to do is start them, spin
+/// the loop for the configured duration, and stop them.
+final class CompanionRunner {
+    private let inspector: HidInspector
+    private let feedback: FeedbackCompanion
+    private let totalSeconds: Double
+
+    init(inspector: HidInspector, feedback: FeedbackCompanion, totalSeconds: Double) {
+        self.inspector = inspector
+        self.feedback = feedback
+        self.totalSeconds = totalSeconds
+    }
+
+    func run() -> Int32 {
+        print("")
+        print("Companion mode: HID watch + BLE feedback writer for \(Int(totalSeconds))s.")
+
+        guard let selected = inspector.discoverWatchTargets() else {
+            print("")
+            print("No Bluetrack IOHID device matched. Running BLE feedback path on its own; HID watch is skipped.")
+            let bleExit = feedback.run()
+            return verdict(hidExit: 2, bleExit: bleExit)
+        }
+
+        inspector.beginWatch(selected)
+        feedback.prepare()
+        CFRunLoopRunInMode(CFRunLoopMode.defaultMode, totalSeconds, false)
+        let bleExit = feedback.finish()
+        let hidExit = inspector.endWatch()
+        return verdict(hidExit: hidExit, bleExit: bleExit)
+    }
+
+    private func verdict(hidExit: Int32, bleExit: Int32) -> Int32 {
+        print("")
+        print("Companion verdict:")
+        print("  HID watch:    \(label(for: hidExit))")
+        print("  BLE feedback: \(label(for: bleExit))")
+        if hidExit == 0 && bleExit == 0 {
+            print("Both Bluetrack paths look healthy.")
+            return 0
+        }
+        if hidExit == 0 {
+            print("HID is healthy. BLE feedback failed; rerun `feedback` for the diagnostic detail.")
+        } else if bleExit == 0 {
+            print("BLE feedback is healthy. HID side did not arrive; rerun `watch` for the diagnostic detail.")
+        } else {
+            print("Both paths failed. Check pairing and Bluetrack foreground state, then rerun.")
+        }
+        return max(hidExit, bleExit)
+    }
+
+    private func label(for exit: Int32) -> String {
+        exit == 0 ? "PASS" : "FAIL (exit \(exit))"
+    }
+}

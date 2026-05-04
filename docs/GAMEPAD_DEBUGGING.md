@@ -74,7 +74,18 @@ The `feedback` subcommand scans for the BLE feedback service UUID, connects to
 the advertiser, discovers the encrypted-correction characteristic, and writes
 AES-128-CTR-encrypted `(counter, dx, dy)` packets at the configured cadence.
 Pair it with a separate `watch` run on a second terminal to confirm both the
-BLE write side and the HID input side are healthy at the same time.
+BLE write side and the HID input side are healthy at the same time, or use
+`companion` to run both on a single run loop and see a combined verdict:
+
+```bash
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector \
+    companion --seconds 15 --interval-ms 5
+```
+
+`companion` discovers the Bluetrack composite IOHID device, schedules HID
+input callbacks, primes the BLE feedback writer, runs both for the configured
+duration, and prints a combined `HID watch: PASS|FAIL / BLE feedback: PASS|FAIL`
+verdict. The exit code is non-zero if either path fails.
 
 To validate the crypto contract without touching Bluetooth (useful on a Mac
 that only ships CommandLineTools):

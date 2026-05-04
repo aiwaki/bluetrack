@@ -34,12 +34,24 @@ final class FeedbackCompanion: NSObject {
     }
 
     func run() -> Int32 {
+        prepare()
+        let totalSeconds = options.scanTimeout + options.seconds
+        CFRunLoopRunInMode(CFRunLoopMode.defaultMode, totalSeconds, false)
+        return finish()
+    }
+
+    /// Print the heading. Scanning is already in flight from `init` because
+    /// `CBCentralManager` begins async setup before any run loop spins.
+    func prepare() {
         print(
             "Feedback writer: scan timeout \(Int(options.scanTimeout))s, write \(options.intervalMs)ms cadence " +
                 "for up to \(Int(options.seconds))s, dx=\(options.dx) dy=\(options.dy)."
         )
-        let totalSeconds = options.scanTimeout + options.seconds
-        CFRunLoopRunInMode(CFRunLoopMode.defaultMode, totalSeconds, false)
+    }
+
+    /// Tear down BLE state and print a summary. Returns the standalone
+    /// feedback exit code (0 on success, non-zero with diagnosis).
+    func finish() -> Int32 {
         teardown()
         return summarize()
     }

@@ -6,6 +6,7 @@ struct Options {
         case scan
         case watch
         case feedback
+        case companion
         case selftest
     }
 
@@ -60,6 +61,18 @@ final class HidInspector {
     }
 
     func run() -> Int32 {
+        guard let selected = discoverWatchTargets() else {
+            return options.command == .watch ? 2 : 0
+        }
+        if options.command == .watch {
+            return watch(selected)
+        }
+        return 0
+    }
+
+    /// Print device discovery output and return Bluetrack-matching IOHID devices.
+    /// Returns nil when no matches were found (the caller decides the exit code).
+    func discoverWatchTargets() -> [DeviceSummary]? {
         if options.showBluetooth {
             printBluetoothHints()
         }
@@ -72,7 +85,7 @@ final class HidInspector {
         if selected.isEmpty {
             print("No matching IOHID devices. Try `--all`, verify the Mac is paired, and forget/re-pair after descriptor changes.")
             printDeviceCandidates(devices)
-            return options.command == .watch ? 2 : 0
+            return nil
         }
 
         for (index, summary) in selected.enumerated() {
@@ -82,11 +95,7 @@ final class HidInspector {
                 printElements(summary.device)
             }
         }
-
-        if options.command == .watch {
-            return watch(selected)
-        }
-        return 0
+        return selected
     }
 
     private func copyDevices() -> [DeviceSummary] {
@@ -176,6 +185,14 @@ final class HidInspector {
     }
 
     private func watch(_ summaries: [DeviceSummary]) -> Int32 {
+        beginWatch(summaries)
+        CFRunLoopRunInMode(CFRunLoopMode.defaultMode, options.seconds, false)
+        return endWatch()
+    }
+
+    /// Schedule input callbacks for `summaries` on the current run loop.
+    /// Pair with `endWatch()` after running the run loop yourself.
+    func beginWatch(_ summaries: [DeviceSummary]) {
         print("")
         print("Watching \(summaries.count) device(s) for \(Int(options.seconds))s. Switch Bluetrack to Gamepad and move/press input now.")
         print("If no events appear but elements are listed, grant Terminal Input Monitoring/Accessibility and try again.")
@@ -190,13 +207,16 @@ final class HidInspector {
             IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
             IOHIDDeviceRegisterInputValueCallback(device, inputCallback, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
         }
+    }
 
-        CFRunLoopRunInMode(CFRunLoopMode.defaultMode, options.seconds, false)
-
+    /// Tear down what `beginWatch` scheduled and print the watch summary.
+    /// Returns 0 if any HID events arrived, 3 otherwise.
+    func endWatch() -> Int32 {
         for device in watchedDevices {
             IOHIDDeviceUnscheduleFromRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
             IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
         }
+        watchedDevices.removeAll()
 
         print("")
         print("Events captured: \(eventCount)")
@@ -406,13 +426,15 @@ private func parseOptions(_ arguments: [String]) -> Options {
 
 private func printUsageAndExit(code: Int32 = 0) -> Never {
     print("""
-    bluetrack-hid-inspector scan|watch|feedback|selftest [options]
+    bluetrack-hid-inspector scan|watch|feedback|companion|selftest [options]
 
     Commands:
       scan               List matching IOHID devices and elements.
       watch              List devices, then print live HID input values.
       feedback           Scan for the Bluetrack BLE feedback service, connect,
                          and write encrypted correction packets.
+      companion          Run watch and feedback together on one run loop and
+                         print a combined PASS/FAIL verdict for both paths.
       selftest           Run FeedbackCrypto roundtrip checks (no Bluetooth).
 
     Options (scan/watch):
@@ -494,6 +516,17 @@ case .feedback:
         seconds: options.feedbackSeconds
     )
     exit(FeedbackCompanion(options: feedback).run())
+case .companion:
+    let inspector = HidInspector(options: options)
+    let feedback = FeedbackCompanion(options: FeedbackOptions(
+        dx: options.feedbackDx,
+        dy: options.feedbackDy,
+        intervalMs: options.feedbackIntervalMs,
+        scanTimeout: options.feedbackScanTimeout,
+        seconds: options.feedbackSeconds
+    ))
+    let total = options.feedbackScanTimeout + options.feedbackSeconds
+    exit(CompanionRunner(inspector: inspector, feedback: feedback, totalSeconds: total).run())
 case .selftest:
     exit(FeedbackSelfTest.run())
 }
