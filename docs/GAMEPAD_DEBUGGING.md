@@ -87,6 +87,18 @@ input callbacks, primes the BLE feedback writer, runs both for the configured
 duration, and prints a combined `HID watch: PASS|FAIL / BLE feedback: PASS|FAIL`
 verdict. The exit code is non-zero if either path fails.
 
+Add `--report path.json` to persist the verdict, exit codes, event counters,
+peripheral identity, and timings. The output is pretty-printed JSON with
+`sortedKeys` so checked-in snapshots from multiple Mac/phone combinations
+diff cleanly:
+
+```bash
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector \
+    companion --seconds 15 --report ~/bluetrack-snapshot.json
+```
+
+The schema is versioned via `tool` / `toolVersion` fields inside the JSON.
+
 To validate the crypto contract without touching Bluetooth (useful on a Mac
 that only ships CommandLineTools):
 
