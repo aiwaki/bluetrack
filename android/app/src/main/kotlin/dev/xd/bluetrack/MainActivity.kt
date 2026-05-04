@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -39,9 +40,12 @@ import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.ui.MainViewModel
 import dev.xd.bluetrack.ui.ModeCardState
 import dev.xd.bluetrack.ui.automationLabel
+import dev.xd.bluetrack.ui.StickDeflection
 import dev.xd.bluetrack.ui.modeCardStates
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
+import dev.xd.bluetrack.ui.stickDeflectionLabel
+import dev.xd.bluetrack.ui.stickOverlayState
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
@@ -252,6 +256,7 @@ private fun AppScreen(
                 ) {
                     TouchpadPanel(
                         modifier = Modifier.fillMaxWidth().weight(1f),
+                        mode = mode,
                         telemetryX = telemetry.stickX,
                         telemetryY = telemetry.stickY,
                         onTouchStart = { vm.beginTouchGesture() },
@@ -266,6 +271,7 @@ private fun AppScreen(
                 Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     TouchpadPanel(
                         modifier = Modifier.weight(1.15f).fillMaxHeight(),
+                        mode = mode,
                         telemetryX = telemetry.stickX,
                         telemetryY = telemetry.stickY,
                         onTouchStart = { vm.beginTouchGesture() },
@@ -352,20 +358,60 @@ private fun ConnectionPanel(
 @Composable
 private fun TouchpadPanel(
     modifier: Modifier,
+    mode: HidMode,
     telemetryX: Int,
     telemetryY: Int,
     onTouchStart: () -> Unit,
     onMotion: (Float, Float, String) -> Unit,
 ) {
+    val isGamepad = mode == HidMode.GAMEPAD
+    val stick = stickOverlayState(stickX = telemetryX, stickY = telemetryY)
+    val dotColor = when {
+        !isGamepad -> Color(0xFF00F5A0)
+        stick.deflection == StickDeflection.IDLE -> Color.White.copy(alpha = 0.55f)
+        stick.deflection == StickDeflection.LIGHT -> Color(0xFF00E5FF)
+        else -> Color(0xFF00F5A0)
+    }
     Panel(modifier) {
         Box(Modifier.fillMaxSize()) {
             Canvas(Modifier.fillMaxSize().padding(24.dp)) {
-                val cx = size.width / 2f; val cy = size.height / 2f
-                val radius = minOf(size.width, size.height) * 0.27f
-                drawCircle(Color(0x2400E5FF), radius, Offset(cx, cy))
-                drawLine(Color(0xFF00E5FF), Offset(cx - radius * 1.3f, cy), Offset(cx + radius * 1.3f, cy), 2f)
-                drawLine(Color(0xFF00E5FF), Offset(cx, cy - radius * 1.3f), Offset(cx, cy + radius * 1.3f), 2f)
-                drawCircle(Color(0xFF00F5A0), 13f, Offset(cx + telemetryX * 1.5f, cy + telemetryY * 1.5f))
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                val baseRadius = minOf(size.width, size.height) * 0.27f
+                val travelRadius = minOf(size.width, size.height) * 0.42f
+                drawCircle(Color(0x2400E5FF), baseRadius, Offset(cx, cy))
+                drawLine(Color(0xFF00E5FF), Offset(cx - baseRadius * 1.3f, cy), Offset(cx + baseRadius * 1.3f, cy), 2f)
+                drawLine(Color(0xFF00E5FF), Offset(cx, cy - baseRadius * 1.3f), Offset(cx, cy + baseRadius * 1.3f), 2f)
+                if (isGamepad) {
+                    val ringColor = Color.White.copy(alpha = 0.22f)
+                    drawCircle(ringColor, travelRadius, Offset(cx, cy), style = Stroke(width = 2f))
+                    drawCircle(ringColor, baseRadius * 0.4f, Offset(cx, cy), style = Stroke(width = 1.5f))
+                }
+                val dotOffset = if (isGamepad) {
+                    Offset(cx + stick.normalizedX * travelRadius, cy + stick.normalizedY * travelRadius)
+                } else {
+                    Offset(cx + telemetryX * 1.5f, cy + telemetryY * 1.5f)
+                }
+                drawCircle(dotColor, if (isGamepad) 14f else 13f, dotOffset)
+            }
+            if (isGamepad) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(12.dp),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        stickDeflectionLabel(stick.deflection),
+                        color = dotColor,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "X ${stick.xLabel}  Y ${stick.yLabel}",
+                        color = Color.White.copy(alpha = 0.62f),
+                    )
+                }
             }
             AndroidView(factory = { ctx -> FrameLayout(ctx).apply {
                 var lastX = 0f
