@@ -1,4 +1,4 @@
-# CLAUDE.me: Bluetrack Project Context
+# CLAUDE.md: Bluetrack Project Context
 
 Start here before editing Bluetrack. Then read `AGENTS.md` and
 `docs/CODEX_CONTEXT.md`.

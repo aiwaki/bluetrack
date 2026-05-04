@@ -88,7 +88,7 @@ The app now has:
 - HID Device registration for mouse/gamepad modes.
 - A feedback GATT server with connectable BLE advertising.
 - A Python sender that can scan for the feedback service UUID.
-- Claude handoff files: `CLAUDE.me` and `.claude/rules/`.
+- Claude handoff files: `CLAUDE.md` and `.claude/rules/`.
 - A macOS SwiftPM IOHID inspector under `host/macos-hid-inspector/` and the
   workflow in `docs/GAMEPAD_DEBUGGING.md`.
 

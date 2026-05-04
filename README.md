@@ -20,7 +20,7 @@ integration tests.
 Future Codex/agent sessions should start with `AGENTS.md` and
 `docs/CODEX_CONTEXT.md`; those files carry the current project memory,
 hardware caveats, validation commands, and roadmap. Claude sessions can start
-with `CLAUDE.me` and `.claude/rules/`.
+with `CLAUDE.md` and `.claude/rules/`.
 
 ## Architecture
 
