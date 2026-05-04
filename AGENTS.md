@@ -52,8 +52,14 @@ python3 -m py_compile android/tools/ble_encrypt_sender.py
   mouse/gamepad HID report generation and correction application.
 - `android/tools/ble_encrypt_sender.py`: host-side reference sender for
   encrypted feedback packets.
-- `host/macos-hid-inspector/`: SwiftPM IOHID inspector for macOS descriptor and
-  live report verification.
+- `host/macos-hid-inspector/`: SwiftPM tool with four subcommands.
+  - `scan` / `watch` use IOHID to enumerate the Bluetrack composite HID and
+    print live input values.
+  - `feedback` uses CoreBluetooth to scan for the BLE feedback service,
+    connect, and write AES-128-CTR encrypted `(counter, dx, dy)` packets.
+  - `selftest` round-trips `FeedbackCrypto` without Bluetooth (works on
+    machines with only CommandLineTools installed).
+  - The `BluetrackHostKit` library target owns the shared crypto contract.
 - `docs/GAMEPAD_DEBUGGING.md`: host-side gamepad debugging workflow.
 
 ## Non-Negotiables

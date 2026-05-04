@@ -76,8 +76,12 @@ The HID path is hardware/firmware dependent. If Android does not expose
   adaptive sender backpressure governor.
 - `android/app/src/main/kotlin/dev/xd/bluetrack/ui/TouchMotionPredictor.kt`:
   short-horizon touch gap filler with debt reconciliation.
-- `host/macos-hid-inspector/`: SwiftPM IOHID inspector for seeing what macOS
-  receives below browsers/games.
+- `host/macos-hid-inspector/`: SwiftPM tool. `scan` and `watch` use IOHID to see
+  what macOS receives below browsers/games. `feedback` writes encrypted BLE
+  correction packets via CoreBluetooth, mirroring the Python sender. `selftest`
+  round-trips `FeedbackCrypto` without touching Bluetooth (useful when only
+  CommandLineTools is installed). The `BluetrackHostKit` library target holds
+  the shared crypto contract.
 - `docs/GAMEPAD_DEBUGGING.md`: host-side gamepad debugging workflow.
 
 ## Current Input Truth

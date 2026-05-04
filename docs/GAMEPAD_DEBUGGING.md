@@ -59,6 +59,33 @@ Gamepad activation and, rate-limited, at the start of Gamepad touch gestures.
 The wake train primes the host with a neutral report, presses a high-numbered
 discovery button, then releases back to neutral.
 
+## BLE Feedback Companion
+
+The same SwiftPM tool can also exercise the BLE feedback channel from macOS
+without leaving Swift. It mirrors `android/tools/ble_encrypt_sender.py` so the
+two paths can be diagnosed with one binary:
+
+```bash
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector \
+    feedback --seconds 15 --interval-ms 5
+```
+
+The `feedback` subcommand scans for the BLE feedback service UUID, connects to
+the advertiser, discovers the encrypted-correction characteristic, and writes
+AES-128-CTR-encrypted `(counter, dx, dy)` packets at the configured cadence.
+Pair it with a separate `watch` run on a second terminal to confirm both the
+BLE write side and the HID input side are healthy at the same time.
+
+To validate the crypto contract without touching Bluetooth (useful on a Mac
+that only ships CommandLineTools):
+
+```bash
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector selftest
+```
+
+`selftest` round-trips a few `(counter, dx, dy)` tuples through `FeedbackCrypto`
+and asserts the UUIDs and frame layout match the Android `PayloadDecryptor`.
+
 ## Descriptor Cache
 
 macOS and Windows cache Bluetooth HID report maps. After any descriptor change,

@@ -9,12 +9,18 @@ let package = Package(
     ],
     products: [
         .executable(name: "bluetrack-hid-inspector", targets: ["MacOSHidInspector"]),
+        .library(name: "BluetrackHostKit", targets: ["BluetrackHostKit"]),
     ],
     targets: [
+        .target(
+            name: "BluetrackHostKit"
+        ),
         .executableTarget(
             name: "MacOSHidInspector",
+            dependencies: ["BluetrackHostKit"],
             linkerSettings: [
                 .linkedFramework("IOKit"),
+                .linkedFramework("CoreBluetooth"),
             ]
         ),
     ]

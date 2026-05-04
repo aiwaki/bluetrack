@@ -5,6 +5,8 @@ struct Options {
     enum Command: String {
         case scan
         case watch
+        case feedback
+        case selftest
     }
 
     var command: Command = .scan
@@ -13,6 +15,11 @@ struct Options {
     var seconds = 30.0
     var showElements = true
     var showBluetooth = true
+    var feedbackDx: Float = 1.25
+    var feedbackDy: Float = -0.75
+    var feedbackIntervalMs: Int = 5
+    var feedbackScanTimeout: Double = 10.0
+    var feedbackSeconds: Double = 15.0
 }
 
 struct DeviceSummary {
@@ -364,6 +371,27 @@ private func parseOptions(_ arguments: [String]) -> Options {
             index += 1
             if index < arguments.count, let seconds = Double(arguments[index]) {
                 options.seconds = seconds
+                options.feedbackSeconds = seconds
+            }
+        case "--dx":
+            index += 1
+            if index < arguments.count, let value = Float(arguments[index]) {
+                options.feedbackDx = value
+            }
+        case "--dy":
+            index += 1
+            if index < arguments.count, let value = Float(arguments[index]) {
+                options.feedbackDy = value
+            }
+        case "--interval-ms":
+            index += 1
+            if index < arguments.count, let value = Int(arguments[index]) {
+                options.feedbackIntervalMs = max(1, value)
+            }
+        case "--scan-timeout":
+            index += 1
+            if index < arguments.count, let value = Double(arguments[index]) {
+                options.feedbackScanTimeout = value
             }
         case "--help", "-h":
             printUsageAndExit()
@@ -378,18 +406,28 @@ private func parseOptions(_ arguments: [String]) -> Options {
 
 private func printUsageAndExit(code: Int32 = 0) -> Never {
     print("""
-    bluetrack-hid-inspector scan|watch [options]
+    bluetrack-hid-inspector scan|watch|feedback|selftest [options]
 
     Commands:
       scan               List matching IOHID devices and elements.
       watch              List devices, then print live HID input values.
+      feedback           Scan for the Bluetrack BLE feedback service, connect,
+                         and write encrypted correction packets.
+      selftest           Run FeedbackCrypto roundtrip checks (no Bluetooth).
 
-    Options:
+    Options (scan/watch):
       --name Bluetrack   Product/manufacturer/transport substring. Default: Bluetrack.
       --all              Show all IOHID devices.
       --seconds 30       Watch duration.
       --no-elements      Hide element listing.
       --no-bluetooth     Skip system_profiler Bluetooth hints.
+
+    Options (feedback):
+      --seconds 15       Total write window after the characteristic is ready.
+      --scan-timeout 10  Seconds to scan for the BLE feedback advertiser.
+      --interval-ms 5    Milliseconds between encrypted writes.
+      --dx 1.25          Float dx value to encrypt and send.
+      --dy -0.75         Float dy value to encrypt and send.
     """)
     exit(code)
 }
@@ -443,4 +481,19 @@ private func emptyDash(_ value: String) -> String {
 }
 
 let options = parseOptions(Array(CommandLine.arguments.dropFirst()))
-exit(HidInspector(options: options).run())
+
+switch options.command {
+case .scan, .watch:
+    exit(HidInspector(options: options).run())
+case .feedback:
+    let feedback = FeedbackOptions(
+        dx: options.feedbackDx,
+        dy: options.feedbackDy,
+        intervalMs: options.feedbackIntervalMs,
+        scanTimeout: options.feedbackScanTimeout,
+        seconds: options.feedbackSeconds
+    )
+    exit(FeedbackCompanion(options: feedback).run())
+case .selftest:
+    exit(FeedbackSelfTest.run())
+}
