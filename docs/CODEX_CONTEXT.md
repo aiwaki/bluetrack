@@ -265,10 +265,8 @@ High leverage:
 
 - Run the cockpit on real Android hardware and capture the first compatibility
   snapshots for devices that do and do not expose HID Device support.
-- Build a simple host companion CLI/UI that:
-  - discovers the BLE feedback service,
-  - writes correction packets,
-  - displays whether HID input is arriving.
+- Combine `feedback` + `watch` into a single `companion` subcommand so one
+  invocation reports both BLE write health and HID input arrival.
 - Add a lightweight hardware report export for compatibility snapshots and
   event timeline entries.
 
