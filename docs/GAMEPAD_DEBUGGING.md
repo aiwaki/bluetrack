@@ -99,6 +99,20 @@ swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector \
 
 The schema is versioned via `tool` / `toolVersion` fields inside the JSON.
 
+### Bluetooth and Input Monitoring permission
+
+The executable target embeds an `Info.plist` with
+`NSBluetoothAlwaysUsageDescription` and `NSInputMonitoringUsageDescription`
+purpose strings via the linker (`__TEXT,__info_plist` section). Without these
+strings, macOS 26 aborts the process the moment CoreBluetooth or IOHID is
+touched (TCC privacy violation). With them, the OS surfaces the usual
+"Terminal wants to access Bluetooth / Input Monitoring" prompt the first time
+the inspector runs, after which the permission persists for that binary's
+codesign hash.
+
+If a rebuild changes the binary, macOS may re-prompt because the cdhash
+changed.
+
 To validate the crypto contract without touching Bluetooth (useful on a Mac
 that only ships CommandLineTools):
 
