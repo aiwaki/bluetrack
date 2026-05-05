@@ -1,0 +1,42 @@
+{
+  "ble" : {
+    "connectDurationSeconds" : 0.4,
+    "dx" : 1.25,
+    "dy" : -0.75,
+    "exitCode" : 0,
+    "intervalMs" : 5,
+    "packetsSent" : 3000,
+    "peripheralIdentifier" : "00000000-0000-0000-0000-000000000000",
+    "peripheralName" : "aiwaki",
+    "scanDurationSeconds" : 0.7,
+    "scanTimeoutSeconds" : 10,
+    "secondsBudget" : 15,
+    "writeWindowSeconds" : 15.04
+  },
+  "generatedAt" : "2026-05-05T12:34:56Z",
+  "hid" : {
+    "eventCount" : 1834,
+    "exitCode" : 0,
+    "reportEventCounts" : {
+      "1" : 421,
+      "2" : 1413
+    },
+    "selectedDevices" : [
+      {
+        "locationID" : 1408190741,
+        "looksLikeGamepad" : false,
+        "manufacturer" : "",
+        "product" : "aiwaki",
+        "productID" : 4608,
+        "transport" : "Bluetooth",
+        "usage" : 2,
+        "usagePage" : 1,
+        "vendorID" : 911
+      }
+    ]
+  },
+  "tool" : "bluetrack-hid-inspector",
+  "toolVersion" : "0.3.0",
+  "totalSeconds" : 25,
+  "verdict" : "pass"
+}
