@@ -101,17 +101,24 @@ The schema is versioned via `tool` / `toolVersion` fields inside the JSON.
 
 ### Bluetooth and Input Monitoring permission
 
-The executable target embeds an `Info.plist` with
-`NSBluetoothAlwaysUsageDescription` and `NSInputMonitoringUsageDescription`
-purpose strings via the linker (`__TEXT,__info_plist` section). Without these
-strings, macOS 26 aborts the process the moment CoreBluetooth or IOHID is
-touched (TCC privacy violation). With them, the OS surfaces the usual
-"Terminal wants to access Bluetooth / Input Monitoring" prompt the first time
-the inspector runs, after which the permission persists for that binary's
-codesign hash.
+Two pieces have to line up for the tool to clear macOS 26 TCC checks:
 
-If a rebuild changes the binary, macOS may re-prompt because the cdhash
-changed.
+1. The executable embeds an `Info.plist` with
+   `NSBluetoothAlwaysUsageDescription` and `NSInputMonitoringUsageDescription`
+   purpose strings via the linker (`__TEXT,__info_plist` section). Without
+   these strings, macOS aborts the process the moment CoreBluetooth or IOHID
+   is touched.
+2. The binary self-disclaims responsibility from its parent on first launch
+   (`SelfDisclaim.relaunchIfNeeded()` calls
+   `responsibility_spawnattrs_setdisclaim` and re-execs itself once with the
+   `BLUETRACK_TCC_DISCLAIMED=1` marker). Without this, macOS evaluates the
+   parent app's Info.plist for the purpose strings — and Codex / Claude / VS
+   Code / similar third-party shells do not declare them, which still aborts
+   us even though our own plist is correct.
+
+With both pieces in place, the OS surfaces the usual "Allow Bluetooth / Input
+Monitoring" prompts the first time the inspector runs, regardless of which
+terminal launched it. A rebuild changes the cdhash and may re-prompt.
 
 To validate the crypto contract without touching Bluetooth (useful on a Mac
 that only ships CommandLineTools):

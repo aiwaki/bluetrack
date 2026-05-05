@@ -1,6 +1,12 @@
 import Foundation
 import IOKit.hid
 
+// Run before any TCC-protected API touches (CoreBluetooth, IOHIDDeviceOpen).
+// Re-spawns the process disclaimed from its parent so macOS uses our embedded
+// Info.plist for privacy purpose strings instead of the launching app's. Only
+// fires once per chain because the disclaimed child sets an env marker.
+SelfDisclaim.relaunchIfNeeded()
+
 struct Options {
     enum Command: String {
         case scan
