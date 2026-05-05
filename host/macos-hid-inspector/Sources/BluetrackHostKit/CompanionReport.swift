@@ -54,6 +54,18 @@ public struct HidWatchSnapshot: Codable {
         self.reportEventCounts = reportEventCounts
         self.selectedDevices = selectedDevices
     }
+
+    /// Stub used when a subcommand persists a report but did not run the HID
+    /// path (e.g. standalone `feedback`). `exitCode == skippedExitCode` is the
+    /// signal to consumers and to `verdict(...)`.
+    public static func skipped() -> HidWatchSnapshot {
+        HidWatchSnapshot(
+            exitCode: CompanionReportWriter.skippedExitCode,
+            eventCount: 0,
+            reportEventCounts: [:],
+            selectedDevices: []
+        )
+    }
 }
 
 public struct EncodableDeviceSummary: Codable {
@@ -131,9 +143,35 @@ public struct BleFeedbackSnapshot: Codable {
         self.scanTimeoutSeconds = scanTimeoutSeconds
         self.secondsBudget = secondsBudget
     }
+
+    /// Stub used when a subcommand persists a report but did not run the BLE
+    /// feedback path (e.g. standalone `watch`). `exitCode == skippedExitCode`
+    /// is the signal to consumers and to `verdict(...)`.
+    public static func skipped() -> BleFeedbackSnapshot {
+        BleFeedbackSnapshot(
+            exitCode: CompanionReportWriter.skippedExitCode,
+            packetsSent: 0,
+            peripheralName: nil,
+            peripheralIdentifier: nil,
+            scanDurationSeconds: nil,
+            connectDurationSeconds: nil,
+            writeWindowSeconds: nil,
+            dx: 0,
+            dy: 0,
+            intervalMs: 0,
+            scanTimeoutSeconds: 0,
+            secondsBudget: 0
+        )
+    }
 }
 
 public enum CompanionReportWriter {
+    /// Sentinel exit code used in `HidWatchSnapshot.exitCode` /
+    /// `BleFeedbackSnapshot.exitCode` to mean "this subsystem did not run in
+    /// this invocation" (i.e. standalone `feedback` skipped the HID side).
+    /// `verdict(...)` treats sentinel sides as neither pass nor fail.
+    public static let skippedExitCode: Int32 = -1
+
     public static func write(_ report: CompanionRunReport, to path: String) throws {
         let data = try encode(report)
         let url = URL(fileURLWithPath: path)
@@ -158,12 +196,32 @@ public enum CompanionReportWriter {
     }
 
     /// Map the two exit codes to a single coarse verdict for the report.
-    /// "pass" iff both subsystems succeeded; "partial" iff exactly one did.
+    /// `skippedExitCode` is treated as "did not participate". A side that
+    /// passed combined with a skipped side is still "pass". A failed side
+    /// dominates: any non-zero, non-skipped exit demotes to "partial" or
+    /// "fail" depending on the other side.
     public static func verdict(hidExit: Int32, bleExit: Int32) -> String {
-        switch (hidExit, bleExit) {
-        case (0, 0): return "pass"
-        case (0, _), (_, 0): return "partial"
-        default: return "fail"
+        let hidSkipped = hidExit == skippedExitCode
+        let bleSkipped = bleExit == skippedExitCode
+        if hidSkipped && bleSkipped {
+            return "skipped"
         }
+        let hidPassed = !hidSkipped && hidExit == 0
+        let blePassed = !bleSkipped && bleExit == 0
+        let hidFailed = !hidSkipped && hidExit != 0
+        let bleFailed = !bleSkipped && bleExit != 0
+        if hidFailed && bleFailed {
+            return "fail"
+        }
+        if hidFailed || bleFailed {
+            // The other side is either skipped or passed. Skipped+failed
+            // means the only side that ran failed → fail; passed+failed
+            // means partial.
+            if hidPassed || blePassed {
+                return "partial"
+            }
+            return "fail"
+        }
+        return "pass"
     }
 }

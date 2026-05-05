@@ -57,23 +57,12 @@ final class CompanionRunner {
         bleExit: Int32
     ) {
         guard let path = reportPath else { return }
-        let report = CompanionRunReport(
-            tool: CompanionRunReport.toolName,
-            toolVersion: CompanionRunReport.toolVersion,
-            generatedAt: CompanionReportWriter.iso8601Now(),
+        emitCompanionReport(
+            path: path,
             totalSeconds: totalSeconds,
-            verdict: CompanionReportWriter.verdict(hidExit: hidExit, bleExit: bleExit),
             hid: inspector.snapshot(selected: selected, exitCode: hidExit),
             ble: feedback.snapshot(exitCode: bleExit)
         )
-        do {
-            try CompanionReportWriter.write(report, to: path)
-            print("")
-            print("Companion report written to \(path).")
-        } catch {
-            let msg = "WARN: failed to write report to \(path): \(error.localizedDescription)\n"
-            FileHandle.standardError.write(Data(msg.utf8))
-        }
     }
 
     private func verdict(hidExit: Int32, bleExit: Int32) -> Int32 {
