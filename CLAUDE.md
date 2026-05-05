@@ -81,9 +81,10 @@ The HID path is hardware/firmware dependent. If Android does not expose
   correction packets via CoreBluetooth, mirroring the Python sender. `companion`
   combines `watch` + `feedback` on one run loop and prints a combined verdict;
   add `--report path.json` to persist a versioned snapshot for compatibility
-  matrices. `selftest` round-trips `FeedbackCrypto` and the report JSON without
-  touching Bluetooth. The `BluetrackHostKit` library target holds the shared
-  crypto contract.
+  matrices. `selftest` is a runtime smoke check that does not touch Bluetooth.
+  The `BluetrackHostKit` library target holds the shared crypto and report
+  schema; canonical assertions live in `Tests/BluetrackHostKitTests` and run via
+  `swift test --package-path host/macos-hid-inspector`.
 - `docs/GAMEPAD_DEBUGGING.md`: host-side gamepad debugging workflow.
 
 ## Current Input Truth

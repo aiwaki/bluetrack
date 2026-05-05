@@ -268,8 +268,9 @@ High leverage:
 - Run `companion --report` against multiple Mac+phone combinations and check
   the JSON snapshots into `host/snapshots/` so the hardware compatibility
   matrix is machine-readable.
-- Add an XCTest target for `BluetrackHostKit` now that Xcode is installed; the
-  inline `selftest` subcommand was the CommandLineTools-only fallback.
+- Add a macOS CI lane that runs `swift test --package-path host/macos-hid-inspector`
+  alongside the existing Ubuntu Android job (the XCTest target itself is
+  already in place; only the GitHub Actions config still needs updating).
 - Add a lightweight hardware report export for compatibility snapshots and
   event timeline entries.
 
