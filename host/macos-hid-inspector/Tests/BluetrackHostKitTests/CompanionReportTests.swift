@@ -97,6 +97,27 @@ final class CompanionReportTests: XCTestCase {
         XCTAssertLessThan(toolIdx, verdictIdx)
     }
 
+    /// Guard against schema drift: the canonical `host/snapshots/example-pass.json`
+    /// must always decode into a valid `CompanionRunReport` whose top-level
+    /// fields match the constants exported by `CompanionRunReport`. If a
+    /// future PR bumps `toolVersion` or renames a field, this test breaks
+    /// and the example file must be regenerated through the same encoder.
+    func testCheckedInExampleSnapshotDecodesAndMatchesSchema() throws {
+        let snapshotURL = examplePassURL()
+        let data = try Data(contentsOf: snapshotURL)
+        let report = try JSONDecoder().decode(CompanionRunReport.self, from: data)
+
+        XCTAssertEqual(report.tool, CompanionRunReport.toolName)
+        XCTAssertEqual(report.toolVersion, CompanionRunReport.toolVersion)
+        XCTAssertEqual(report.verdict, "pass")
+        XCTAssertGreaterThan(report.totalSeconds, 0)
+        XCTAssertEqual(report.ble.exitCode, 0)
+        XCTAssertEqual(report.hid.exitCode, 0)
+        XCTAssertGreaterThan(report.ble.packetsSent, 0)
+        XCTAssertGreaterThan(report.hid.eventCount, 0)
+        XCTAssertGreaterThan(report.hid.selectedDevices.count, 0)
+    }
+
     func testOptionalBleTimingsSurviveNullEncoding() throws {
         let report = CompanionRunReport(
             tool: CompanionRunReport.toolName,
@@ -125,6 +146,19 @@ final class CompanionReportTests: XCTestCase {
         XCTAssertNil(decoded.ble.peripheralName)
         XCTAssertNil(decoded.ble.scanDurationSeconds)
         XCTAssertNil(decoded.ble.writeWindowSeconds)
+    }
+
+    /// Walk up from this test file's location to `host/snapshots/example-pass.json`.
+    /// `#filePath` resolves against whatever workspace `swift test` was run in
+    /// (local checkout or CI runner), so this stays portable as long as the
+    /// repository layout is preserved.
+    private func examplePassURL(file: String = #filePath) -> URL {
+        URL(fileURLWithPath: file)
+            .deletingLastPathComponent() // CompanionReportTests.swift -> BluetrackHostKitTests/
+            .deletingLastPathComponent() // BluetrackHostKitTests -> Tests/
+            .deletingLastPathComponent() // Tests -> macos-hid-inspector/
+            .deletingLastPathComponent() // macos-hid-inspector -> host/
+            .appendingPathComponent("snapshots/example-pass.json")
     }
 
     private func sampleReport() -> CompanionRunReport {

@@ -265,14 +265,9 @@ High leverage:
 
 - Run the cockpit on real Android hardware and capture the first compatibility
   snapshots for devices that do and do not expose HID Device support.
-- Run `companion --report` against multiple Mac+phone combinations and check
-  the JSON snapshots into `host/snapshots/` so the hardware compatibility
-  matrix is machine-readable.
-- Add a macOS CI lane that runs `swift test --package-path host/macos-hid-inspector`
-  alongside the existing Ubuntu Android job (the XCTest target itself is
-  already in place; only the GitHub Actions config still needs updating).
-- Add a lightweight hardware report export for compatibility snapshots and
-  event timeline entries.
+- Drop the next real `companion --report path.json` output into
+  `host/snapshots/` (directory + README + example reference are already in
+  place; check-in is one commit per Mac+phone combination).
 
 UX:
 
