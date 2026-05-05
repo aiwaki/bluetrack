@@ -1,3 +1,4 @@
+import BluetrackHostKit
 import Foundation
 
 /// Orchestrates `HidInspector.beginWatch` and `FeedbackCompanion.prepare`

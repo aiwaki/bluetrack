@@ -15,6 +15,10 @@ let package = Package(
         .target(
             name: "BluetrackHostKit"
         ),
+        .testTarget(
+            name: "BluetrackHostKitTests",
+            dependencies: ["BluetrackHostKit"]
+        ),
         .executableTarget(
             name: "MacOSHidInspector",
             dependencies: ["BluetrackHostKit"],

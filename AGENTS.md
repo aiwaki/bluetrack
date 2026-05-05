@@ -61,9 +61,12 @@ python3 -m py_compile android/tools/ble_encrypt_sender.py
     and prints a combined PASS/FAIL verdict for both paths. Add
     `--report path.json` to persist the verdict, exit codes, event counts,
     peripheral identity, and timings as a versioned JSON snapshot.
-  - `selftest` round-trips `FeedbackCrypto` without Bluetooth (works on
-    machines with only CommandLineTools installed).
-  - The `BluetrackHostKit` library target owns the shared crypto contract.
+  - `selftest` round-trips `FeedbackCrypto` without Bluetooth as a runtime
+    smoke check (works on machines with only CommandLineTools installed).
+  - The `BluetrackHostKit` library target owns the shared crypto and report
+    schema. Canonical assertions live in `Tests/BluetrackHostKitTests`
+    (`swift test --package-path host/macos-hid-inspector`); the inline
+    `selftest` is the fallback for environments without Xcode.
 - `docs/GAMEPAD_DEBUGGING.md`: host-side gamepad debugging workflow.
 
 ## Non-Negotiables
