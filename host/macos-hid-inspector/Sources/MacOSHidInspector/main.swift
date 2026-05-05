@@ -63,6 +63,9 @@ final class HidInspector {
     private var lastEventAt = Date.distantPast
     private var eventCount = 0
     private var reportEventCounts: [Int: Int] = [:]
+    /// Devices selected by the most recent `discoverWatchTargets()` call.
+    /// Surfaced so the standalone `watch` path can build a report after `run()`.
+    private(set) var lastSelected: [DeviceSummary] = []
 
     init(options: Options) {
         self.options = options
@@ -70,8 +73,10 @@ final class HidInspector {
 
     func run() -> Int32 {
         guard let selected = discoverWatchTargets() else {
+            lastSelected = []
             return options.command == .watch ? 2 : 0
         }
+        lastSelected = selected
         if options.command == .watch {
             return watch(selected)
         }
@@ -489,9 +494,11 @@ private func printUsageAndExit(code: Int32 = 0) -> Never {
       --dx 1.25          Float dx value to encrypt and send.
       --dy -0.75         Float dy value to encrypt and send.
 
-    Options (companion):
+    Options (watch, feedback, companion):
       --report path.json Write a JSON report of the run to `path.json` after
-                         both subsystems finish (creates or overwrites).
+                         the run finishes (creates or overwrites). For watch
+                         the BLE side is recorded as "skipped"; for feedback
+                         the HID side is recorded as "skipped".
     """)
     exit(code)
 }
@@ -547,17 +554,38 @@ private func emptyDash(_ value: String) -> String {
 let options = parseOptions(Array(CommandLine.arguments.dropFirst()))
 
 switch options.command {
-case .scan, .watch:
+case .scan:
     exit(HidInspector(options: options).run())
+case .watch:
+    let inspector = HidInspector(options: options)
+    let exitCode = inspector.run()
+    if let path = options.reportPath {
+        emitCompanionReport(
+            path: path,
+            totalSeconds: options.seconds,
+            hid: inspector.snapshot(selected: inspector.lastSelected, exitCode: exitCode),
+            ble: BleFeedbackSnapshot.skipped()
+        )
+    }
+    exit(exitCode)
 case .feedback:
-    let feedback = FeedbackOptions(
+    let feedback = FeedbackCompanion(options: FeedbackOptions(
         dx: options.feedbackDx,
         dy: options.feedbackDy,
         intervalMs: options.feedbackIntervalMs,
         scanTimeout: options.feedbackScanTimeout,
         seconds: options.feedbackSeconds
-    )
-    exit(FeedbackCompanion(options: feedback).run())
+    ))
+    let exitCode = feedback.run()
+    if let path = options.reportPath {
+        emitCompanionReport(
+            path: path,
+            totalSeconds: options.feedbackScanTimeout + options.feedbackSeconds,
+            hid: HidWatchSnapshot.skipped(),
+            ble: feedback.snapshot(exitCode: exitCode)
+        )
+    }
+    exit(exitCode)
 case .companion:
     let inspector = HidInspector(options: options)
     let feedback = FeedbackCompanion(options: FeedbackOptions(

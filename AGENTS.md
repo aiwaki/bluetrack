@@ -58,9 +58,11 @@ python3 -m py_compile android/tools/ble_encrypt_sender.py
   - `feedback` uses CoreBluetooth to scan for the BLE feedback service,
     connect, and write AES-128-CTR encrypted `(counter, dx, dy)` packets.
   - `companion` runs `watch` and `feedback` together on a single run loop
-    and prints a combined PASS/FAIL verdict for both paths. Add
-    `--report path.json` to persist the verdict, exit codes, event counts,
-    peripheral identity, and timings as a versioned JSON snapshot.
+    and prints a combined PASS/FAIL verdict for both paths.
+  - `--report path.json` works on `watch`, `feedback`, and `companion`. The
+    half that did not run is recorded as a "skipped" stub with
+    `exitCode == CompanionReportWriter.skippedExitCode` so loaders can
+    distinguish "did not run" from "failed".
   - `selftest` round-trips `FeedbackCrypto` without Bluetooth as a runtime
     smoke check (works on machines with only CommandLineTools installed).
   - The `BluetrackHostKit` library target owns the shared crypto and report

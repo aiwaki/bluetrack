@@ -10,6 +10,53 @@ final class CompanionReportTests: XCTestCase {
         XCTAssertEqual(CompanionReportWriter.verdict(hidExit: 3, bleExit: 4), "fail")
     }
 
+    func testVerdictTreatsSkippedSidesAsNeutral() {
+        let skipped = CompanionReportWriter.skippedExitCode
+
+        // Both skipped: no run.
+        XCTAssertEqual(CompanionReportWriter.verdict(hidExit: skipped, bleExit: skipped), "skipped")
+
+        // One side skipped, the other passes -> overall pass.
+        XCTAssertEqual(CompanionReportWriter.verdict(hidExit: skipped, bleExit: 0), "pass")
+        XCTAssertEqual(CompanionReportWriter.verdict(hidExit: 0, bleExit: skipped), "pass")
+
+        // One side skipped, the other fails -> overall fail (the only side
+        // that actually ran reports failure).
+        XCTAssertEqual(CompanionReportWriter.verdict(hidExit: skipped, bleExit: 4), "fail")
+        XCTAssertEqual(CompanionReportWriter.verdict(hidExit: 3, bleExit: skipped), "fail")
+    }
+
+    func testSkippedFactoriesAreRoundTripStable() throws {
+        let report = CompanionRunReport(
+            tool: CompanionRunReport.toolName,
+            toolVersion: CompanionRunReport.toolVersion,
+            generatedAt: "2026-05-05T00:00:00Z",
+            totalSeconds: 1.0,
+            verdict: "pass",
+            hid: HidWatchSnapshot.skipped(),
+            ble: BleFeedbackSnapshot(
+                exitCode: 0,
+                packetsSent: 100,
+                peripheralName: "Bluetrack",
+                peripheralIdentifier: nil,
+                scanDurationSeconds: nil,
+                connectDurationSeconds: nil,
+                writeWindowSeconds: 1.0,
+                dx: 1.0, dy: 1.0,
+                intervalMs: 5,
+                scanTimeoutSeconds: 10.0,
+                secondsBudget: 1.0
+            )
+        )
+
+        let decoded = try CompanionReportWriter.roundTrip(report)
+
+        XCTAssertEqual(decoded.hid.exitCode, CompanionReportWriter.skippedExitCode)
+        XCTAssertTrue(decoded.hid.selectedDevices.isEmpty)
+        XCTAssertEqual(decoded.hid.eventCount, 0)
+        XCTAssertEqual(decoded.ble.packetsSent, 100)
+    }
+
     func testReportRoundTripsThroughJSON() throws {
         let original = sampleReport()
         let decoded = try CompanionReportWriter.roundTrip(original)

@@ -97,6 +97,13 @@ swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector \
     companion --seconds 15 --report ~/bluetrack-snapshot.json
 ```
 
+`--report` also works on the standalone `watch` and `feedback` subcommands.
+The half that did not run is recorded with `exitCode == -1` (the
+`CompanionReportWriter.skippedExitCode` sentinel) and an empty body, so a
+subsequent loader can tell "this side was not exercised" apart from "this
+side failed". Verdict for one-sided runs collapses to `pass` or `fail`
+based on the side that ran.
+
 The schema is versioned via `tool` / `toolVersion` fields inside the JSON.
 
 ### Bluetooth and Input Monitoring permission
