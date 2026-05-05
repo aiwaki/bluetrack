@@ -87,6 +87,39 @@ input callbacks, primes the BLE feedback writer, runs both for the configured
 duration, and prints a combined `HID watch: PASS|FAIL / BLE feedback: PASS|FAIL`
 verdict. The exit code is non-zero if either path fails.
 
+Add `--report path.json` to persist the verdict, exit codes, event counters,
+peripheral identity, and timings. The output is pretty-printed JSON with
+`sortedKeys` so checked-in snapshots from multiple Mac/phone combinations
+diff cleanly:
+
+```bash
+swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector \
+    companion --seconds 15 --report ~/bluetrack-snapshot.json
+```
+
+The schema is versioned via `tool` / `toolVersion` fields inside the JSON.
+
+### Bluetooth and Input Monitoring permission
+
+Two pieces have to line up for the tool to clear macOS 26 TCC checks:
+
+1. The executable embeds an `Info.plist` with
+   `NSBluetoothAlwaysUsageDescription` and `NSInputMonitoringUsageDescription`
+   purpose strings via the linker (`__TEXT,__info_plist` section). Without
+   these strings, macOS aborts the process the moment CoreBluetooth or IOHID
+   is touched.
+2. The binary self-disclaims responsibility from its parent on first launch
+   (`SelfDisclaim.relaunchIfNeeded()` calls
+   `responsibility_spawnattrs_setdisclaim` and re-execs itself once with the
+   `BLUETRACK_TCC_DISCLAIMED=1` marker). Without this, macOS evaluates the
+   parent app's Info.plist for the purpose strings — and Codex / Claude / VS
+   Code / similar third-party shells do not declare them, which still aborts
+   us even though our own plist is correct.
+
+With both pieces in place, the OS surfaces the usual "Allow Bluetooth / Input
+Monitoring" prompts the first time the inspector runs, regardless of which
+terminal launched it. A rebuild changes the cdhash and may re-prompt.
+
 To validate the crypto contract without touching Bluetooth (useful on a Mac
 that only ships CommandLineTools):
 

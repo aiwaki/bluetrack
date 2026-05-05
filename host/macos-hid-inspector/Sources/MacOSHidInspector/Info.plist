@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>dev.xd.bluetrack.hid-inspector</string>
+    <key>CFBundleName</key>
+    <string>bluetrack-hid-inspector</string>
+    <key>CFBundleDisplayName</key>
+    <string>Bluetrack HID Inspector</string>
+    <key>CFBundleExecutable</key>
+    <string>bluetrack-hid-inspector</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Bluetrack host inspector reads encrypted BLE feedback packets and writes correction frames during diagnostic sessions.</string>
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>Bluetrack host inspector communicates with the Bluetrack BLE feedback service.</string>
+    <key>NSInputMonitoringUsageDescription</key>
+    <string>Bluetrack host inspector watches HID input reports from the paired Bluetrack composite device to verify gamepad delivery.</string>
+</dict>
+</plist>

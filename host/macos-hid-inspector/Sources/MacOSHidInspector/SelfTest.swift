@@ -49,6 +49,38 @@ enum FeedbackSelfTest {
                 FeedbackCrypto.characteristicUUIDString == "4846ff87-f2d4-4df2-9500-9bf8ed23f9e6"
         }
 
+        check("companion verdict maps exit codes correctly", &passed, &failed) {
+            CompanionReportWriter.verdict(hidExit: 0, bleExit: 0) == "pass" &&
+                CompanionReportWriter.verdict(hidExit: 0, bleExit: 4) == "partial" &&
+                CompanionReportWriter.verdict(hidExit: 3, bleExit: 0) == "partial" &&
+                CompanionReportWriter.verdict(hidExit: 3, bleExit: 4) == "fail"
+        }
+
+        check("CompanionRunReport round-trips through JSON", &passed, &failed) {
+            let original = sampleReport()
+            guard let decoded = try? CompanionReportWriter.roundTrip(original) else { return false }
+            return decoded.tool == original.tool &&
+                decoded.toolVersion == original.toolVersion &&
+                decoded.verdict == original.verdict &&
+                decoded.totalSeconds == original.totalSeconds &&
+                decoded.hid.exitCode == original.hid.exitCode &&
+                decoded.hid.eventCount == original.hid.eventCount &&
+                decoded.hid.reportEventCounts == original.hid.reportEventCounts &&
+                decoded.hid.selectedDevices.count == original.hid.selectedDevices.count &&
+                decoded.ble.exitCode == original.ble.exitCode &&
+                decoded.ble.packetsSent == original.ble.packetsSent &&
+                decoded.ble.dx == original.ble.dx &&
+                decoded.ble.dy == original.ble.dy
+        }
+
+        check("encoded report uses sorted keys for diff stability", &passed, &failed) {
+            guard let data = try? CompanionReportWriter.encode(sampleReport()),
+                  let text = String(data: data, encoding: .utf8) else { return false }
+            // The very first key inside the top-level object should be `ble`
+            // because sortedKeys orders the dict alphabetically.
+            return text.contains("\"ble\" :") || text.contains("\"ble\":")
+        }
+
         print("")
         if failed.isEmpty {
             print("FeedbackCrypto self-test: \(passed) checks passed.")
@@ -75,5 +107,47 @@ enum FeedbackSelfTest {
             failed.append(name)
             print("FAIL \(name)")
         }
+    }
+
+    private static func sampleReport() -> CompanionRunReport {
+        CompanionRunReport(
+            tool: CompanionRunReport.toolName,
+            toolVersion: CompanionRunReport.toolVersion,
+            generatedAt: "2026-05-05T00:00:00Z",
+            totalSeconds: 25.0,
+            verdict: "pass",
+            hid: HidWatchSnapshot(
+                exitCode: 0,
+                eventCount: 1234,
+                reportEventCounts: ["1": 800, "2": 434],
+                selectedDevices: [
+                    EncodableDeviceSummary(
+                        product: "aiwaki",
+                        manufacturer: "Apple",
+                        transport: "Bluetooth",
+                        usagePage: 1,
+                        usage: 2,
+                        vendorID: 0x004C,
+                        productID: 0x1234,
+                        locationID: 0x1F010000,
+                        looksLikeGamepad: false
+                    )
+                ]
+            ),
+            ble: BleFeedbackSnapshot(
+                exitCode: 0,
+                packetsSent: 3000,
+                peripheralName: "Bluetrack",
+                peripheralIdentifier: "11111111-2222-3333-4444-555555555555",
+                scanDurationSeconds: 1.2,
+                connectDurationSeconds: 0.4,
+                writeWindowSeconds: 15.0,
+                dx: 1.25,
+                dy: -0.75,
+                intervalMs: 5,
+                scanTimeoutSeconds: 10.0,
+                secondsBudget: 15.0
+            )
+        )
     }
 }

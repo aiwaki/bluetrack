@@ -1,6 +1,12 @@
 import Foundation
 import IOKit.hid
 
+// Run before any TCC-protected API touches (CoreBluetooth, IOHIDDeviceOpen).
+// Re-spawns the process disclaimed from its parent so macOS uses our embedded
+// Info.plist for privacy purpose strings instead of the launching app's. Only
+// fires once per chain because the disclaimed child sets an env marker.
+SelfDisclaim.relaunchIfNeeded()
+
 struct Options {
     enum Command: String {
         case scan
@@ -21,6 +27,7 @@ struct Options {
     var feedbackIntervalMs: Int = 5
     var feedbackScanTimeout: Double = 10.0
     var feedbackSeconds: Double = 15.0
+    var reportPath: String? = nil
 }
 
 struct DeviceSummary {
@@ -207,6 +214,31 @@ final class HidInspector {
             IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
             IOHIDDeviceRegisterInputValueCallback(device, inputCallback, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
         }
+    }
+
+    /// Build a JSON-serializable snapshot of the watch outcome. Safe to call
+    /// after `endWatch()` because the counters survive teardown.
+    func snapshot(selected: [DeviceSummary], exitCode: Int32) -> HidWatchSnapshot {
+        HidWatchSnapshot(
+            exitCode: exitCode,
+            eventCount: eventCount,
+            reportEventCounts: Dictionary(
+                uniqueKeysWithValues: reportEventCounts.map { (String($0.key), $0.value) }
+            ),
+            selectedDevices: selected.map { summary in
+                EncodableDeviceSummary(
+                    product: summary.product,
+                    manufacturer: summary.manufacturer,
+                    transport: summary.transport,
+                    usagePage: summary.usagePage,
+                    usage: summary.usage,
+                    vendorID: summary.vendorID,
+                    productID: summary.productID,
+                    locationID: summary.locationID,
+                    looksLikeGamepad: summary.looksLikeGamepad
+                )
+            }
+        )
     }
 
     /// Tear down what `beginWatch` scheduled and print the watch summary.
@@ -413,6 +445,11 @@ private func parseOptions(_ arguments: [String]) -> Options {
             if index < arguments.count, let value = Double(arguments[index]) {
                 options.feedbackScanTimeout = value
             }
+        case "--report":
+            index += 1
+            if index < arguments.count {
+                options.reportPath = arguments[index]
+            }
         case "--help", "-h":
             printUsageAndExit()
         default:
@@ -450,6 +487,10 @@ private func printUsageAndExit(code: Int32 = 0) -> Never {
       --interval-ms 5    Milliseconds between encrypted writes.
       --dx 1.25          Float dx value to encrypt and send.
       --dy -0.75         Float dy value to encrypt and send.
+
+    Options (companion):
+      --report path.json Write a JSON report of the run to `path.json` after
+                         both subsystems finish (creates or overwrites).
     """)
     exit(code)
 }
@@ -526,7 +567,12 @@ case .companion:
         seconds: options.feedbackSeconds
     ))
     let total = options.feedbackScanTimeout + options.feedbackSeconds
-    exit(CompanionRunner(inspector: inspector, feedback: feedback, totalSeconds: total).run())
+    exit(CompanionRunner(
+        inspector: inspector,
+        feedback: feedback,
+        totalSeconds: total,
+        reportPath: options.reportPath
+    ).run())
 case .selftest:
     exit(FeedbackSelfTest.run())
 }

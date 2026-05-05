@@ -18,9 +18,20 @@ let package = Package(
         .executableTarget(
             name: "MacOSHidInspector",
             dependencies: ["BluetrackHostKit"],
+            exclude: ["Info.plist"],
             linkerSettings: [
                 .linkedFramework("IOKit"),
                 .linkedFramework("CoreBluetooth"),
+                // Embed Info.plist into the Mach-O so macOS TCC sees the
+                // NSBluetoothAlwaysUsageDescription / NSInputMonitoringUsageDescription
+                // purpose strings instead of aborting the process on first
+                // privacy-protected API call. Required on macOS 26 and newer.
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "Sources/MacOSHidInspector/Info.plist",
+                ]),
             ]
         ),
     ]

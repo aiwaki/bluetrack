@@ -10,22 +10,34 @@ final class CompanionRunner {
     private let inspector: HidInspector
     private let feedback: FeedbackCompanion
     private let totalSeconds: Double
+    private let reportPath: String?
 
-    init(inspector: HidInspector, feedback: FeedbackCompanion, totalSeconds: Double) {
+    init(
+        inspector: HidInspector,
+        feedback: FeedbackCompanion,
+        totalSeconds: Double,
+        reportPath: String? = nil
+    ) {
         self.inspector = inspector
         self.feedback = feedback
         self.totalSeconds = totalSeconds
+        self.reportPath = reportPath
     }
 
     func run() -> Int32 {
         print("")
         print("Companion mode: HID watch + BLE feedback writer for \(Int(totalSeconds))s.")
+        if let reportPath {
+            print("Will write JSON report to \(reportPath) after the run.")
+        }
 
         guard let selected = inspector.discoverWatchTargets() else {
             print("")
             print("No Bluetrack IOHID device matched. Running BLE feedback path on its own; HID watch is skipped.")
             let bleExit = feedback.run()
-            return verdict(hidExit: 2, bleExit: bleExit)
+            let exit = verdict(hidExit: 2, bleExit: bleExit)
+            writeReportIfRequested(selected: [], hidExit: 2, bleExit: bleExit)
+            return exit
         }
 
         inspector.beginWatch(selected)
@@ -33,7 +45,34 @@ final class CompanionRunner {
         CFRunLoopRunInMode(CFRunLoopMode.defaultMode, totalSeconds, false)
         let bleExit = feedback.finish()
         let hidExit = inspector.endWatch()
-        return verdict(hidExit: hidExit, bleExit: bleExit)
+        let exit = verdict(hidExit: hidExit, bleExit: bleExit)
+        writeReportIfRequested(selected: selected, hidExit: hidExit, bleExit: bleExit)
+        return exit
+    }
+
+    private func writeReportIfRequested(
+        selected: [DeviceSummary],
+        hidExit: Int32,
+        bleExit: Int32
+    ) {
+        guard let path = reportPath else { return }
+        let report = CompanionRunReport(
+            tool: CompanionRunReport.toolName,
+            toolVersion: CompanionRunReport.toolVersion,
+            generatedAt: CompanionReportWriter.iso8601Now(),
+            totalSeconds: totalSeconds,
+            verdict: CompanionReportWriter.verdict(hidExit: hidExit, bleExit: bleExit),
+            hid: inspector.snapshot(selected: selected, exitCode: hidExit),
+            ble: feedback.snapshot(exitCode: bleExit)
+        )
+        do {
+            try CompanionReportWriter.write(report, to: path)
+            print("")
+            print("Companion report written to \(path).")
+        } catch {
+            let msg = "WARN: failed to write report to \(path): \(error.localizedDescription)\n"
+            FileHandle.standardError.write(Data(msg.utf8))
+        }
     }
 
     private func verdict(hidExit: Int32, bleExit: Int32) -> Int32 {

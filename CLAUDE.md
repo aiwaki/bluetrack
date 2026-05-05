@@ -79,10 +79,11 @@ The HID path is hardware/firmware dependent. If Android does not expose
 - `host/macos-hid-inspector/`: SwiftPM tool. `scan` and `watch` use IOHID to see
   what macOS receives below browsers/games. `feedback` writes encrypted BLE
   correction packets via CoreBluetooth, mirroring the Python sender. `companion`
-  combines `watch` + `feedback` on one run loop and prints a combined verdict.
-  `selftest` round-trips `FeedbackCrypto` without touching Bluetooth (useful
-  when only CommandLineTools is installed). The `BluetrackHostKit` library
-  target holds the shared crypto contract.
+  combines `watch` + `feedback` on one run loop and prints a combined verdict;
+  add `--report path.json` to persist a versioned snapshot for compatibility
+  matrices. `selftest` round-trips `FeedbackCrypto` and the report JSON without
+  touching Bluetooth. The `BluetrackHostKit` library target holds the shared
+  crypto contract.
 - `docs/GAMEPAD_DEBUGGING.md`: host-side gamepad debugging workflow.
 
 ## Current Input Truth

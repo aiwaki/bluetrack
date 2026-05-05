@@ -56,6 +56,51 @@ final class FeedbackCompanion: NSObject {
         return summarize()
     }
 
+    /// Build a JSON-serializable snapshot of the BLE side. Call after `finish()`
+    /// so timings reflect the full run.
+    func snapshot(exitCode: Int32) -> BleFeedbackSnapshot {
+        let scanDuration: Double?
+        if let scanStartedAt {
+            // Prefer the moment of advertiser discovery (connectedAt-ish),
+            // falling back to scan deadline if scan never produced one.
+            if let connectedAt {
+                scanDuration = connectedAt.timeIntervalSince(scanStartedAt)
+            } else if scanFailed {
+                scanDuration = options.scanTimeout
+            } else {
+                scanDuration = nil
+            }
+        } else {
+            scanDuration = nil
+        }
+        let connectDuration: Double?
+        if let connectedAt, let charReadyAt {
+            connectDuration = charReadyAt.timeIntervalSince(connectedAt)
+        } else {
+            connectDuration = nil
+        }
+        let writeDuration: Double?
+        if let charReadyAt {
+            writeDuration = Date().timeIntervalSince(charReadyAt)
+        } else {
+            writeDuration = nil
+        }
+        return BleFeedbackSnapshot(
+            exitCode: exitCode,
+            packetsSent: packetsSent,
+            peripheralName: peripheral?.name,
+            peripheralIdentifier: peripheral?.identifier.uuidString,
+            scanDurationSeconds: scanDuration,
+            connectDurationSeconds: connectDuration,
+            writeWindowSeconds: writeDuration,
+            dx: options.dx,
+            dy: options.dy,
+            intervalMs: options.intervalMs,
+            scanTimeoutSeconds: options.scanTimeout,
+            secondsBudget: options.seconds
+        )
+    }
+
     private func teardown() {
         sendTimer?.cancel()
         sendTimer = nil
