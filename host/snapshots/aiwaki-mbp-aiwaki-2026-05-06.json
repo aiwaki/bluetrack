@@ -1,0 +1,31 @@
+{
+  "ble" : {
+    "connectDurationSeconds" : 0.013959050178527832,
+    "dx" : 1.25,
+    "dy" : -0.75,
+    "exitCode" : 0,
+    "intervalMs" : 5,
+    "packetsSent" : 2990,
+    "peripheralIdentifier" : "C95856F2-5BE3-601C-EF08-A3D15209D58D",
+    "peripheralName" : "aiwaki",
+    "scanDurationSeconds" : 0.4402129650115967,
+    "scanTimeoutSeconds" : 10,
+    "secondsBudget" : 15,
+    "writeWindowSeconds" : 15.003686904907227
+  },
+  "generatedAt" : "2026-05-05T20:09:37Z",
+  "hid" : {
+    "eventCount" : 0,
+    "exitCode" : 2,
+    "reportEventCounts" : {
+
+    },
+    "selectedDevices" : [
+
+    ]
+  },
+  "tool" : "bluetrack-hid-inspector",
+  "toolVersion" : "0.3.0",
+  "totalSeconds" : 25,
+  "verdict" : "partial"
+}
