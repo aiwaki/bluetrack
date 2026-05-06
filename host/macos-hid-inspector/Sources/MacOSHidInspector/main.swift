@@ -154,6 +154,22 @@ final class HidInspector {
         for summary in candidates.prefix(20) {
             print("- \(summary.label), transport=\(summary.transport), manufacturer=\(summary.manufacturer)")
         }
+
+        let pairs = candidates.map {
+            CandidateProductPair(
+                product: $0.product,
+                transport: $0.transport,
+                looksLikeGamepad: $0.looksLikeGamepad
+            )
+        }
+        if let suggestion = InspectorHints.bestPhoneRename(
+            currentNameFilter: options.nameFilter,
+            candidates: pairs
+        ) {
+            print("")
+            print("Tip: macOS may have bonded the phone under its user-set product name.")
+            print("Rerun with `--name \(suggestion)` to also include that device in the IOHID match.")
+        }
     }
 
     private func printDevice(_ summary: DeviceSummary, index: Int) {

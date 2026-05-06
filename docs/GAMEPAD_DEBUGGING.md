@@ -20,6 +20,18 @@ composite HID shape, so it can select a phone-named device such as:
 aiwaki [0x01:0x02 Mouse]
 ```
 
+When neither the name match nor the composite-shape fallback hits (typical when
+the phone is currently in Mouse mode and macOS only enumerates the Mouse
+collection), the inspector still prints a candidate list and a hint telling you
+exactly which name to retry with:
+
+```text
+Tip: macOS may have bonded the phone under its user-set product name.
+Rerun with `--name aiwaki` to also include that device in the IOHID match.
+```
+
+Copy-paste the suggested `--name <phoneName>` and rerun.
+
 A healthy composite descriptor has:
 
 - report 1: mouse buttons, X, Y, wheel;
