@@ -55,4 +55,28 @@ public enum InspectorHints {
         }
         return sorted.first?.product
     }
+
+    /// When `companion` discovers the BLE peripheral first, cross-feed the
+    /// peripheral name into the IOHID-side filter to remove the manual
+    /// `--name <phone>` rerun the rename tip currently surfaces.
+    ///
+    /// Returns the override to apply, or nil if no change is appropriate:
+    /// - nil/empty BLE name (peripheral has no advertised name) → nil
+    /// - BLE name already substring-matches the current filter (e.g.
+    ///   "Bluetrack Pro" against the default "Bluetrack") → nil, the existing
+    ///   filter is already inclusive enough.
+    ///
+    /// Pure function with no IOKit/CoreBluetooth deps so it can live in tests.
+    public static func bleNameToHidFilter(
+        blePeripheralName: String?,
+        currentFilter: String
+    ) -> String? {
+        guard let name = blePeripheralName else { return nil }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.lowercased().contains(currentFilter.lowercased()) {
+            return nil
+        }
+        return trimmed
+    }
 }

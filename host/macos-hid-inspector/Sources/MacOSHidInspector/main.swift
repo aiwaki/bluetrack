@@ -59,6 +59,7 @@ struct DeviceSummary {
 
 final class HidInspector {
     private let options: Options
+    private var nameFilterOverride: String?
     private var watchedDevices: [IOHIDDevice] = []
     private var lastEventAt = Date.distantPast
     private var eventCount = 0
@@ -69,6 +70,17 @@ final class HidInspector {
 
     init(options: Options) {
         self.options = options
+    }
+
+    /// Filter applied during `select()` and printing. Falls back to the CLI
+    /// `--name` value when no override is set.
+    var effectiveNameFilter: String { nameFilterOverride ?? options.nameFilter }
+
+    /// Override the IOHID name filter at runtime. Used by `companion` to
+    /// cross-feed a BLE peripheral name and remove the manual `--name` rerun.
+    /// Pass nil to clear.
+    func setNameFilterOverride(_ name: String?) {
+        nameFilterOverride = name
     }
 
     func run() -> Int32 {
@@ -130,7 +142,7 @@ final class HidInspector {
         if options.includeAll {
             return devices
         }
-        let filter = options.nameFilter.lowercased()
+        let filter = effectiveNameFilter.lowercased()
         return devices.filter { summary in
             let haystack = "\(summary.product) \(summary.manufacturer) \(summary.transport)".lowercased()
             return haystack.contains(filter) || isLikelyBluetrackComposite(summary)
@@ -163,7 +175,7 @@ final class HidInspector {
             )
         }
         if let suggestion = InspectorHints.bestPhoneRename(
-            currentNameFilter: options.nameFilter,
+            currentNameFilter: effectiveNameFilter,
             candidates: pairs
         ) {
             print("")
@@ -314,7 +326,7 @@ final class HidInspector {
         print("Bluetooth hints:")
         let output = runProcess("/usr/sbin/system_profiler", ["SPBluetoothDataType"])
         let lines = output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        let filter = options.nameFilter.lowercased()
+        let filter = effectiveNameFilter.lowercased()
         var found = false
         for index in lines.indices where lines[index].lowercased().contains(filter) {
             found = true
@@ -326,7 +338,7 @@ final class HidInspector {
             print("")
         }
         if !found {
-            print("  No `\(options.nameFilter)` entry found in system_profiler Bluetooth output.")
+            print("  No `\(effectiveNameFilter)` entry found in system_profiler Bluetooth output.")
         }
     }
 }
