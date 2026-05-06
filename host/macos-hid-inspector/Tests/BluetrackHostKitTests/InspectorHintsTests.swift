@@ -82,4 +82,50 @@ final class InspectorHintsTests: XCTestCase {
             InspectorHints.bestPhoneRename(currentNameFilter: "Bluetrack", candidates: candidates)
         )
     }
+
+    // MARK: - bleNameToHidFilter
+
+    func testBleNameToHidFilterReturnsNilForNilName() {
+        XCTAssertNil(
+            InspectorHints.bleNameToHidFilter(blePeripheralName: nil, currentFilter: "Bluetrack")
+        )
+    }
+
+    func testBleNameToHidFilterReturnsNilForEmptyName() {
+        XCTAssertNil(
+            InspectorHints.bleNameToHidFilter(blePeripheralName: "", currentFilter: "Bluetrack")
+        )
+        XCTAssertNil(
+            InspectorHints.bleNameToHidFilter(blePeripheralName: "   ", currentFilter: "Bluetrack")
+        )
+    }
+
+    func testBleNameToHidFilterReturnsPhoneNameWhenDifferent() {
+        XCTAssertEqual(
+            InspectorHints.bleNameToHidFilter(blePeripheralName: "aiwaki", currentFilter: "Bluetrack"),
+            "aiwaki"
+        )
+    }
+
+    func testBleNameToHidFilterReturnsNilWhenAlreadyMatching() {
+        XCTAssertNil(
+            InspectorHints.bleNameToHidFilter(blePeripheralName: "Bluetrack Pro", currentFilter: "Bluetrack")
+        )
+    }
+
+    func testBleNameToHidFilterIsCaseInsensitive() {
+        XCTAssertNil(
+            InspectorHints.bleNameToHidFilter(blePeripheralName: "bluetrack", currentFilter: "Bluetrack")
+        )
+        XCTAssertNil(
+            InspectorHints.bleNameToHidFilter(blePeripheralName: "BLUETRACK PRO", currentFilter: "Bluetrack")
+        )
+    }
+
+    func testBleNameToHidFilterTrimsWhitespace() {
+        XCTAssertEqual(
+            InspectorHints.bleNameToHidFilter(blePeripheralName: "  pixel-8  ", currentFilter: "Bluetrack"),
+            "pixel-8"
+        )
+    }
 }

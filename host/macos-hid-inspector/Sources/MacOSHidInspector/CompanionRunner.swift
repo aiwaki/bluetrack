@@ -12,17 +12,20 @@ final class CompanionRunner {
     private let feedback: FeedbackCompanion
     private let totalSeconds: Double
     private let reportPath: String?
+    private let crossFeedTimeoutSeconds: Double
 
     init(
         inspector: HidInspector,
         feedback: FeedbackCompanion,
         totalSeconds: Double,
-        reportPath: String? = nil
+        reportPath: String? = nil,
+        crossFeedTimeoutSeconds: Double = 3.0
     ) {
         self.inspector = inspector
         self.feedback = feedback
         self.totalSeconds = totalSeconds
         self.reportPath = reportPath
+        self.crossFeedTimeoutSeconds = crossFeedTimeoutSeconds
     }
 
     func run() -> Int32 {
@@ -31,6 +34,14 @@ final class CompanionRunner {
         if let reportPath {
             print("Will write JSON report to \(reportPath) after the run.")
         }
+
+        // Cross-feed pre-probe: spin the run loop briefly until the BLE side
+        // resolves first peripheral discovery (or the cross-feed window
+        // elapses). If we learn the advertised name before HID enumeration,
+        // adopt it as the IOHID name filter so users no longer have to
+        // rerun with `--name <phone>` for the phone-named composite case.
+        feedback.prepare()
+        crossFeedFromBle()
 
         guard let selected = inspector.discoverWatchTargets() else {
             print("")
@@ -42,13 +53,36 @@ final class CompanionRunner {
         }
 
         inspector.beginWatch(selected)
-        feedback.prepare()
-        CFRunLoopRunInMode(CFRunLoopMode.defaultMode, totalSeconds, false)
+        // Total budget already includes the BLE scan timeout; the cross-feed
+        // pre-spin consumed up to `crossFeedTimeoutSeconds` of it. Spin the
+        // remainder with a sane minimum so the HID watcher always sees some
+        // input window.
+        let remaining = max(1.0, totalSeconds - crossFeedTimeoutSeconds)
+        CFRunLoopRunInMode(CFRunLoopMode.defaultMode, remaining, false)
         let bleExit = feedback.finish()
         let hidExit = inspector.endWatch()
         let exit = verdict(hidExit: hidExit, bleExit: bleExit)
         writeReportIfRequested(selected: selected, hidExit: hidExit, bleExit: bleExit)
         return exit
+    }
+
+    /// Spin the run loop briefly to capture the first BLE scan result, then
+    /// apply the cross-feed override to the inspector if appropriate.
+    private func crossFeedFromBle() {
+        feedback.onFirstScanResult = { _ in
+            DispatchQueue.main.async { CFRunLoopStop(CFRunLoopGetMain()) }
+        }
+        CFRunLoopRunInMode(CFRunLoopMode.defaultMode, crossFeedTimeoutSeconds, false)
+        feedback.onFirstScanResult = nil
+
+        let bleName = feedback.discoveredPeripheralName
+        if let override = InspectorHints.bleNameToHidFilter(
+            blePeripheralName: bleName,
+            currentFilter: inspector.effectiveNameFilter
+        ) {
+            inspector.setNameFilterOverride(override)
+            print("Cross-feed: BLE peripheral '\(bleName ?? "")' → IOHID name filter '\(override)'.")
+        }
     }
 
     private func writeReportIfRequested(

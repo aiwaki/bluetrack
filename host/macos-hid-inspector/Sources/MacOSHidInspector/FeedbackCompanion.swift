@@ -26,6 +26,18 @@ final class FeedbackCompanion: NSObject {
     private var connectedAt: Date?
     private var charReadyAt: Date?
     private var scanFailed = false
+    private var firstDiscoveryFired = false
+
+    /// Fired exactly once when scanning resolves, either by discovering the
+    /// first peripheral (parameter is its advertised name, possibly nil) or
+    /// by hitting the scan deadline (parameter is nil). Used by the
+    /// `companion` runner to cross-feed the BLE name into the HID filter
+    /// before HID enumeration runs.
+    var onFirstScanResult: ((String?) -> Void)?
+
+    /// Advertised name of the peripheral discovered during scanning, or nil
+    /// if no peripheral has been seen yet.
+    var discoveredPeripheralName: String? { peripheral?.name }
 
     init(options: FeedbackOptions) {
         self.options = options
@@ -148,6 +160,12 @@ final class FeedbackCompanion: NSObject {
         DispatchQueue.main.async { CFRunLoopStop(CFRunLoopGetMain()) }
     }
 
+    private func fireFirstScanResult(name: String?) {
+        guard !firstDiscoveryFired else { return }
+        firstDiscoveryFired = true
+        onFirstScanResult?(name)
+    }
+
     private func stateLabel(_ state: CBManagerState) -> String {
         switch state {
         case .poweredOn: return "poweredOn"
@@ -179,14 +197,24 @@ extension FeedbackCompanion: CBCentralManagerDelegate {
             }
             scanDeadline = deadline
             DispatchQueue.main.asyncAfter(deadline: .now() + options.scanTimeout, execute: deadline)
+            // Forward scan timeout to the cross-feed observer too, so the
+            // companion runner doesn't wait beyond the BLE deadline if the
+            // peripheral never appears.
+            let crossFeedDeadline = DispatchWorkItem { [weak self] in
+                self?.fireFirstScanResult(name: nil)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + options.scanTimeout, execute: crossFeedDeadline)
         case .poweredOff:
             print("Bluetooth is off. Enable it and rerun.")
+            fireFirstScanResult(name: nil)
             stopRunLoopSoon()
         case .unauthorized:
             print("Bluetooth permission denied for this process. Grant Terminal access in System Settings → Privacy & Security → Bluetooth.")
+            fireFirstScanResult(name: nil)
             stopRunLoopSoon()
         case .unsupported:
             print("This Mac does not support Bluetooth LE.")
+            fireFirstScanResult(name: nil)
             stopRunLoopSoon()
         case .resetting, .unknown:
             print("Bluetooth state \(stateLabel(central.state)); waiting...")
@@ -216,6 +244,7 @@ extension FeedbackCompanion: CBCentralManagerDelegate {
         peripheral.delegate = self
         central.stopScan()
         central.connect(peripheral, options: nil)
+        fireFirstScanResult(name: peripheral.name)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
