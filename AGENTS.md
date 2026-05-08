@@ -49,8 +49,5 @@ lanes (Android, Host) green.
   (TOFU), or device-bound identity keys exchanged out-of-band (QR
   code on first run). Current pin model is opportunistic-only — fine
   against passive snoops, weak against shoulder-surfing.
-- Add replay-window / counter-monotonicity enforcement on the
-  peripheral. AES-GCM rejects nonce reuse but does not enforce strict
-  ordering.
 - Refine the diagnostic touchpad into a more deliberate control
   surface once the new UI artifacts land.

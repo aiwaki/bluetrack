@@ -69,11 +69,14 @@ Frame shape (28 bytes):
 nonce     = salt8 || counter_le   (12 bytes)
 ```
 
-The phone rotates its X25519 keypair on every `BleHidGateway.startGatt`
-call, so each app launch / reconnect produces fresh forward-secret key
-material. Counter wrap (2³² packets ≈ 248 days at 5 ms cadence) requires
-a session rotation; the peripheral rejects duplicate (key, counter)
-pairs via tag failure.
+The phone rotates its X25519 keypair (and pairing pin) on every
+`BleHidGateway.startGatt` call, so each app launch / reconnect produces
+fresh forward-secret key material. The receiver enforces a 64-frame
+sliding replay window after AES-GCM verification (IPsec ESP / SRTP
+style): exact replays, counters older than 63 below the highest
+accepted, and counter wrap-around (`0xFFFFFFFF → 0`) are dropped even
+though the cryptographic tag is valid. The host MUST rotate the
+session before counter wrap — 2³² packets ≈ 248 days at 5 ms cadence.
 
 This BLE path is not what makes the phone show up as a mouse/gamepad on
 the PC — it is the calibration/correction side channel.
@@ -172,9 +175,6 @@ Security:
   (TOFU) or device-bound identity keys exchanged out-of-band. The
   current pin model is opportunistic — fine against passive snoops,
   weak against shoulder-surfing or physical access to the phone screen.
-- Add replay window detection on the peripheral (currently any
-  in-session counter that hasn't been used will authenticate; counter
-  monotonicity is not enforced).
 
 ## User Preference
 
