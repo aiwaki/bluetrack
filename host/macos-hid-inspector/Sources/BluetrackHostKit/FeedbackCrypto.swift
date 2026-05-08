@@ -51,13 +51,41 @@ public enum FeedbackCrypto {
     public static let hkdfSaltBytes: [UInt8] = Array("bluetrack-feedback-v1".utf8)
 
     /// HKDF info argument; binds the derived material to AES-256-GCM.
+    /// The peripheral-displayed pairing pin is appended at derivation time
+    /// (`<base>|pin:<digits>` for the key, `<base>|pin:<digits>|nonce-salt`
+    /// for the 8-byte nonce salt) so a host that does not know the pin
+    /// derives different key material and AES-GCM tag verification fails.
     public static let hkdfInfoBytes: [UInt8] = Array("aes-256-gcm key+nonce-salt".utf8)
+
+    /// Acceptable pairing-pin length range. The peripheral generates a
+    /// random pin in this range per `BleHidGateway.startGatt`.
+    public static let pinMinLength = 4
+    public static let pinMaxLength = 12
+
+    /// Trim whitespace and validate that `pin` contains only ASCII digits
+    /// of an acceptable length. Returns the canonical pin bytes ready to
+    /// feed into HKDF, or nil for invalid input.
+    public static func normalizedPinBytes(_ pin: String) -> [UInt8]? {
+        let trimmed = pin.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= pinMinLength, trimmed.count <= pinMaxLength else {
+            return nil
+        }
+        for ch in trimmed.unicodeScalars {
+            guard ch.isASCII, ch.value >= 0x30, ch.value <= 0x39 else {
+                return nil
+            }
+        }
+        return Array(trimmed.utf8)
+    }
 }
 
 /// Errors a `FeedbackSession` can produce.
 public enum FeedbackSessionError: Error, Equatable {
-    /// `deriveSession(peerPublicKey:)` was called with the wrong byte count.
+    /// `deriveSession` was called with the wrong byte count.
     case invalidPeerPublicKey
+    /// `deriveSession` was called with a pin that does not match
+    /// `FeedbackCrypto.normalizedPinBytes` (non-digit, wrong length).
+    case invalidPin
     /// `buildPacket` / `decodePacket` was called before `deriveSession`.
     case sessionNotReady
 }
@@ -85,23 +113,30 @@ public final class FeedbackSession {
     public var isReady: Bool { symmetricKey != nil && nonceSalt != nil }
 
     /// Run X25519 against the peer's 32-byte public key, then HKDF-SHA256
-    /// to install the AES-256-GCM key and 8-byte nonce salt.
-    public func deriveSession(peerPublicKey: Data) throws {
+    /// to install the AES-256-GCM key and 8-byte nonce salt. The pairing
+    /// `pin` is mixed into the HKDF info so a host that does not know the
+    /// peripheral-displayed pin derives different keys and the first AES-GCM
+    /// frame fails authentication.
+    public func deriveSession(peerPublicKey: Data, pin: String) throws {
         guard peerPublicKey.count == FeedbackCrypto.publicKeySize else {
             throw FeedbackSessionError.invalidPeerPublicKey
         }
+        guard let pinBytes = FeedbackCrypto.normalizedPinBytes(pin) else {
+            throw FeedbackSessionError.invalidPin
+        }
         let peer = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: peerPublicKey)
         let shared = try privateKey.sharedSecretFromKeyAgreement(with: peer)
+        let pinSuffix = Array("|pin:".utf8) + pinBytes
         let derivedKey = shared.hkdfDerivedSymmetricKey(
             using: SHA256.self,
             salt: Data(FeedbackCrypto.hkdfSaltBytes),
-            sharedInfo: Data(FeedbackCrypto.hkdfInfoBytes),
+            sharedInfo: Data(FeedbackCrypto.hkdfInfoBytes + pinSuffix),
             outputByteCount: 32
         )
         let derivedSalt = shared.hkdfDerivedSymmetricKey(
             using: SHA256.self,
             salt: Data(FeedbackCrypto.hkdfSaltBytes),
-            sharedInfo: Data(FeedbackCrypto.hkdfInfoBytes + Array("|nonce-salt".utf8)),
+            sharedInfo: Data(FeedbackCrypto.hkdfInfoBytes + pinSuffix + Array("|nonce-salt".utf8)),
             outputByteCount: FeedbackCrypto.nonceSaltSize
         )
         symmetricKey = derivedKey

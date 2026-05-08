@@ -42,12 +42,13 @@ lanes (Android, Host) green.
 
 ## Good Next Bets
 
-- Capture more `host/snapshots/` entries on different Mac+phone combos
-  (especially with the phone in Gamepad mode at capture time) to fill
-  the compatibility matrix.
-- Authenticate the X25519 handshake against MitM (host pubkey pinning,
-  SAS verification, or device-bound identity keys exchanged
-  out-of-band). The current handshake is unauthenticated.
+- Compatibility matrix: more `host/snapshots/` entries from different
+  Mac+phone combos. Held for community contribution; one user does
+  not have enough hardware to populate this meaningfully.
+- Strengthen pairing beyond the 6-digit pin: host pubkey pinning
+  (TOFU), or device-bound identity keys exchanged out-of-band (QR
+  code on first run). Current pin model is opportunistic-only — fine
+  against passive snoops, weak against shoulder-surfing.
 - Add replay-window / counter-monotonicity enforcement on the
   peripheral. AES-GCM rejects nonce reuse but does not enforce strict
   ordering.

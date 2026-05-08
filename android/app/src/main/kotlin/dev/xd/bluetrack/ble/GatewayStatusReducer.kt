@@ -24,6 +24,7 @@ internal fun reduceGatewayStatus(
     lastInputAtMs: Long? = current.lastInputAtMs,
     lastReportAtMs: Long? = current.lastReportAtMs,
     lastFeedbackAtMs: Long? = current.lastFeedbackAtMs,
+    feedbackPin: String? = current.feedbackPin,
     eventSource: String? = null,
     eventMessage: String? = null,
 ): GatewayReduction {
@@ -46,6 +47,7 @@ internal fun reduceGatewayStatus(
         lastInputAtMs = lastInputAtMs,
         lastReportAtMs = lastReportAtMs,
         lastFeedbackAtMs = lastFeedbackAtMs,
+        feedbackPin = feedbackPin,
         events = if (event == null) current.events else (listOf(event) + current.events).take(maxEvents),
     )
     return GatewayReduction(nextStatus, event)

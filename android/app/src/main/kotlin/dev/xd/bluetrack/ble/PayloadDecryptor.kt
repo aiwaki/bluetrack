@@ -6,12 +6,16 @@ package dev.xd.bluetrack.ble
  *  - install the host-supplied peer public key (handshake write), and
  *  - decrypt incoming 28-byte AES-256-GCM feedback frames.
  *
- * Each `BleHidGateway.startGatt()` call replaces the active session, so
- * key material is forward-secret across app launches/reconnects.
+ * The active pairing pin is provided by `BleHidGateway.startGatt()` and
+ * mixed into the AES-GCM key derivation so a host that does not know the
+ * pin produces non-decryptable frames. Each `rotateSession(pin)` call
+ * replaces both the ephemeral keypair and the pin, so key material is
+ * forward-secret across app launches/reconnects and across pin rolls.
  */
 class PayloadDecryptor {
 
     private var session: FeedbackSession = FeedbackSession()
+    private var activePin: String = DEFAULT_PIN
 
     /**
      * Local 32-byte X25519 public key. The GATT server returns this to the
@@ -24,11 +28,20 @@ class PayloadDecryptor {
         get() = session.isReady
 
     /**
-     * Replace the active session with a fresh ephemeral keypair. Call when
-     * a new GATT server lifecycle begins to drop any prior session state.
+     * Replace the active session with a fresh ephemeral keypair and the
+     * supplied pin. The pin is held in memory until the next rotation;
+     * `installPeerPublicKey` uses it to derive the AES-256-GCM session.
+     *
+     * Throws [IllegalArgumentException] if [pin] does not satisfy
+     * `FeedbackSession.normalizedPinBytes`.
      */
-    fun rotateSession() {
+    fun rotateSession(pin: String) {
+        require(FeedbackSession.normalizedPinBytes(pin) != null) {
+            "pin must be ${FeedbackSession.PIN_MIN_LENGTH}.." +
+                "${FeedbackSession.PIN_MAX_LENGTH} ASCII digits"
+        }
         session = FeedbackSession()
+        activePin = pin
     }
 
     /**
@@ -38,7 +51,7 @@ class PayloadDecryptor {
      */
     fun installPeerPublicKey(peerPublicKey: ByteArray): Boolean {
         return try {
-            session.deriveSession(peerPublicKey)
+            session.deriveSession(peerPublicKey, activePin)
             true
         } catch (_: IllegalArgumentException) {
             false
@@ -70,5 +83,14 @@ class PayloadDecryptor {
             // ok set inside callback
         }
         return if (ok) Pair(x, y) else null
+    }
+
+    private companion object {
+        // Sentinel pin used before the first rotateSession; ensures
+        // installPeerPublicKey still derives a valid (but unused) session
+        // even if a host writes its pubkey before the gateway rotates.
+        // BleHidGateway always rotates with a real random pin in startGatt
+        // so the sentinel never reaches the wire under normal flow.
+        private const val DEFAULT_PIN = "00000000"
     }
 }

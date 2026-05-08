@@ -34,6 +34,13 @@ data class GatewayStatus(
     val lastInputAtMs: Long? = null,
     val lastReportAtMs: Long? = null,
     val lastFeedbackAtMs: Long? = null,
+    /**
+     * Pairing pin shown on the BLE feedback status row. Regenerated on
+     * every `startGatt()` call. The host must pass this value via
+     * `--pin` (or `--pin` arg in the Python sender) for the AES-GCM
+     * handshake to authenticate. Null while the GATT server is closed.
+     */
+    val feedbackPin: String? = null,
 )
 
 data class CompatibilitySnapshot(
@@ -611,7 +618,11 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
 
     @Synchronized
     fun shutdown() {
-        updateStatus(eventSource = "Lifecycle", eventMessage = "Shutting down Bluetooth gateway.")
+        updateStatus(
+            feedbackPin = null,
+            eventSource = "Lifecycle",
+            eventMessage = "Shutting down Bluetooth gateway.",
+        )
         stopFeedbackAdvertising()
         gattServer?.close()
         gattServer = null
@@ -718,13 +729,16 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     private fun startGatt() {
         if (gattServer != null) return
         // Rotate the ECDH session so this lifecycle starts with a fresh
-        // ephemeral keypair. The host re-runs the handshake on connect.
-        decryptor.rotateSession()
+        // ephemeral keypair AND a fresh pairing pin. The host has to
+        // re-run the handshake on connect with the new pin.
+        val pin = generatePairingPin()
+        decryptor.rotateSession(pin)
         updateStatus(
             feedback = "Opening feedback GATT",
             compatibility = snapshotCompatibility(),
+            feedbackPin = pin,
             eventSource = "Feedback",
-            eventMessage = "Opening BLE feedback GATT server.",
+            eventMessage = "Opening BLE feedback GATT server (pairing pin $pin).",
         )
         gattServer = try {
             btManager.openGattServer(context, object : BluetoothGattServerCallback() {
@@ -1119,6 +1133,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         lastInputAtMs: Long? = _status.value.lastInputAtMs,
         lastReportAtMs: Long? = _status.value.lastReportAtMs,
         lastFeedbackAtMs: Long? = _status.value.lastFeedbackAtMs,
+        feedbackPin: String? = _status.value.feedbackPin,
         eventSource: String? = null,
         eventMessage: String? = null,
     ) {
@@ -1138,10 +1153,22 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             lastInputAtMs = lastInputAtMs,
             lastReportAtMs = lastReportAtMs,
             lastFeedbackAtMs = lastFeedbackAtMs,
+            feedbackPin = feedbackPin,
             eventSource = eventSource,
             eventMessage = eventMessage,
         )
         reduction.event?.let { Log.i(TAG, "${it.source}: ${it.message}") }
         _status.value = reduction.status
+    }
+
+    /**
+     * Returns a fresh 6-digit ASCII pin from `SecureRandom`. Uniform over
+     * [0, 999_999]; leading zeros are preserved by zero-padding so the
+     * displayed string is always 6 chars.
+     */
+    private fun generatePairingPin(): String {
+        val rng = java.security.SecureRandom()
+        val n = rng.nextInt(1_000_000)
+        return "%06d".format(n)
     }
 }

@@ -39,15 +39,32 @@ class FeedbackSession {
         const val PLAINTEXT_SIZE: Int = 8
         const val TAG_SIZE: Int = 16
         const val NONCE_SALT_SIZE: Int = 8
+        const val PIN_MIN_LENGTH: Int = 4
+        const val PIN_MAX_LENGTH: Int = 12
         private const val GCM_TAG_BITS: Int = 128
 
         // Domain-separated HKDF salt for this protocol version.
         private val HKDF_SALT: ByteArray = "bluetrack-feedback-v1".toByteArray()
-        private val HKDF_INFO_KEY: ByteArray =
+        private val HKDF_INFO_BASE: ByteArray =
             "aes-256-gcm key+nonce-salt".toByteArray()
-        private val HKDF_INFO_SALT: ByteArray =
-            ("aes-256-gcm key+nonce-salt".toByteArray()
-                + "|nonce-salt".toByteArray())
+        private val PIN_PREFIX: ByteArray = "|pin:".toByteArray()
+        private val NONCE_SALT_SUFFIX: ByteArray = "|nonce-salt".toByteArray()
+
+        /**
+         * Trim whitespace and validate that [pin] contains only ASCII
+         * digits within `PIN_MIN_LENGTH..PIN_MAX_LENGTH`. Returns the
+         * canonical pin bytes or null on failure.
+         */
+        fun normalizedPinBytes(pin: String): ByteArray? {
+            val trimmed = pin.trim()
+            if (trimmed.length < PIN_MIN_LENGTH || trimmed.length > PIN_MAX_LENGTH) {
+                return null
+            }
+            for (ch in trimmed) {
+                if (ch < '0' || ch > '9') return null
+            }
+            return trimmed.toByteArray(Charsets.US_ASCII)
+        }
     }
 
     private val privateKey = ByteArray(PRIVATE_KEY_SIZE)
@@ -67,18 +84,30 @@ class FeedbackSession {
 
     /**
      * Run X25519 against the peer's 32-byte public key, then HKDF-SHA256
-     * to install the AES-256-GCM key and 8-byte nonce salt. Throws
-     * [IllegalArgumentException] if [peerPublicKey] is not 32 bytes long.
+     * to install the AES-256-GCM key and 8-byte nonce salt. The pairing
+     * [pin] is mixed into the HKDF info so a host that does not know the
+     * peripheral-displayed pin derives different keys and the first
+     * AES-GCM frame fails authentication.
+     *
+     * Throws [IllegalArgumentException] if [peerPublicKey] is not 32
+     * bytes or [pin] does not satisfy `normalizedPinBytes` (digits only,
+     * length `PIN_MIN_LENGTH..PIN_MAX_LENGTH`).
      */
-    fun deriveSession(peerPublicKey: ByteArray) {
+    fun deriveSession(peerPublicKey: ByteArray, pin: String) {
         require(peerPublicKey.size == PUBLIC_KEY_SIZE) {
             "peer public key must be $PUBLIC_KEY_SIZE bytes, got ${peerPublicKey.size}"
         }
+        val pinBytes = normalizedPinBytes(pin)
+            ?: throw IllegalArgumentException(
+                "pin must be $PIN_MIN_LENGTH..$PIN_MAX_LENGTH ASCII digits"
+            )
         val shared = ByteArray(32)
         X25519.scalarMult(privateKey, 0, peerPublicKey, 0, shared, 0)
 
-        val keyBytes = hkdfExpand(shared, HKDF_SALT, HKDF_INFO_KEY, 32)
-        val saltBytes = hkdfExpand(shared, HKDF_SALT, HKDF_INFO_SALT, NONCE_SALT_SIZE)
+        val infoKey = HKDF_INFO_BASE + PIN_PREFIX + pinBytes
+        val infoSalt = infoKey + NONCE_SALT_SUFFIX
+        val keyBytes = hkdfExpand(shared, HKDF_SALT, infoKey, 32)
+        val saltBytes = hkdfExpand(shared, HKDF_SALT, infoSalt, NONCE_SALT_SIZE)
         symmetricKey = SecretKeySpec(keyBytes, "AES")
         nonceSalt = saltBytes
         // Best-effort wipe of intermediate material.
