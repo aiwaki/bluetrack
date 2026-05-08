@@ -9,12 +9,32 @@ enum FeedbackSelfTest {
         var passed = 0
         var failed: [String] = []
 
-        check("packet length is 12", &passed, &failed) {
-            FeedbackCrypto.buildPacket(counter: 0, dx: 0, dy: 0).count == FeedbackCrypto.frameSize
+        let pairedSessions: () -> (FeedbackSession, FeedbackSession)? = {
+            let host = FeedbackSession()
+            let phone = FeedbackSession()
+            do {
+                try host.deriveSession(peerPublicKey: phone.publicKey)
+                try phone.deriveSession(peerPublicKey: host.publicKey)
+            } catch {
+                return nil
+            }
+            return (host, phone)
+        }
+
+        check("fresh session exposes 32-byte public key", &passed, &failed) {
+            let session = FeedbackSession()
+            return session.publicKey.count == FeedbackCrypto.publicKeySize && !session.isReady
+        }
+
+        check("packet length is 28", &passed, &failed) {
+            guard let (host, _) = pairedSessions() else { return false }
+            guard let packet = try? host.buildPacket(counter: 0, dx: 0, dy: 0) else { return false }
+            return packet.count == FeedbackCrypto.frameSize
         }
 
         check("counter prefix is little-endian", &passed, &failed) {
-            let packet = FeedbackCrypto.buildPacket(counter: 0x01020304, dx: 0, dy: 0)
+            guard let (host, _) = pairedSessions() else { return false }
+            guard let packet = try? host.buildPacket(counter: 0x01020304, dx: 0, dy: 0) else { return false }
             return Array(packet.prefix(4)) == [0x04, 0x03, 0x02, 0x01]
         }
 
@@ -26,27 +46,60 @@ enum FeedbackSelfTest {
         ]
         for (counter, dx, dy) in cases {
             check("roundtrip counter=\(counter) dx=\(dx) dy=\(dy)", &passed, &failed) {
-                let packet = FeedbackCrypto.buildPacket(counter: counter, dx: dx, dy: dy)
-                guard let decoded = FeedbackCrypto.decodePacket(packet) else { return false }
-                return abs(decoded.dx - dx) < 1e-6 && abs(decoded.dy - dy) < 1e-6
+                guard let (host, phone) = pairedSessions() else { return false }
+                guard let packet = try? host.buildPacket(counter: counter, dx: dx, dy: dy) else { return false }
+                guard let xy = (try? phone.decodePacket(packet)) ?? nil else { return false }
+                return abs(xy.dx - dx) < 1e-6 && abs(xy.dy - dy) < 1e-6
             }
         }
 
         check("counter changes ciphertext for identical payload", &passed, &failed) {
-            let a = FeedbackCrypto.buildPacket(counter: 0, dx: 1.0, dy: 1.0)
-            let b = FeedbackCrypto.buildPacket(counter: 1, dx: 1.0, dy: 1.0)
-            return Array(a.suffix(from: 4)) != Array(b.suffix(from: 4))
+            guard let (host, _) = pairedSessions() else { return false }
+            guard let a = try? host.buildPacket(counter: 0, dx: 1.0, dy: 1.0),
+                  let b = try? host.buildPacket(counter: 1, dx: 1.0, dy: 1.0)
+            else { return false }
+            return Array(a.suffix(from: FeedbackCrypto.counterPrefixSize))
+                != Array(b.suffix(from: FeedbackCrypto.counterPrefixSize))
         }
 
         check("decode rejects wrong length", &passed, &failed) {
-            FeedbackCrypto.decodePacket(Data([0, 1, 2])) == nil &&
-                FeedbackCrypto.decodePacket(Data(repeating: 0, count: 11)) == nil &&
-                FeedbackCrypto.decodePacket(Data(repeating: 0, count: 13)) == nil
+            guard let (_, phone) = pairedSessions() else { return false }
+            return ((try? phone.decodePacket(Data([0, 1, 2]))) ?? nil) == nil &&
+                ((try? phone.decodePacket(Data(repeating: 0, count: FeedbackCrypto.frameSize - 1))) ?? nil) == nil &&
+                ((try? phone.decodePacket(Data(repeating: 0, count: FeedbackCrypto.frameSize + 1))) ?? nil) == nil
+        }
+
+        check("decode rejects tampered tag", &passed, &failed) {
+            guard let (host, phone) = pairedSessions() else { return false }
+            guard var packet = try? host.buildPacket(counter: 5, dx: 0.5, dy: 0.5) else { return false }
+            packet[packet.count - 1] ^= 0x01
+            return ((try? phone.decodePacket(packet)) ?? nil) == nil
+        }
+
+        check("different sessions cannot decrypt each other", &passed, &failed) {
+            guard let (hostA, _) = pairedSessions(),
+                  let (_, phoneB) = pairedSessions()
+            else { return false }
+            guard let packet = try? hostA.buildPacket(counter: 0, dx: 1.0, dy: 1.0) else { return false }
+            return ((try? phoneB.decodePacket(packet)) ?? nil) == nil
+        }
+
+        check("buildPacket rejects unprepared session", &passed, &failed) {
+            let unready = FeedbackSession()
+            do {
+                _ = try unready.buildPacket(counter: 0, dx: 0, dy: 0)
+                return false
+            } catch FeedbackSessionError.sessionNotReady {
+                return true
+            } catch {
+                return false
+            }
         }
 
         check("UUIDs match the Android contract", &passed, &failed) {
             FeedbackCrypto.serviceUUIDString == "0d03f2a3-b9b2-43f6-90ca-6c4ff67c2263" &&
-                FeedbackCrypto.characteristicUUIDString == "4846ff87-f2d4-4df2-9500-9bf8ed23f9e6"
+                FeedbackCrypto.feedbackCharacteristicUUIDString == "4846ff87-f2d4-4df2-9500-9bf8ed23f9e6" &&
+                FeedbackCrypto.handshakeCharacteristicUUIDString == "4846ff88-f2d4-4df2-9500-9bf8ed23f9e6"
         }
 
         check("companion verdict maps exit codes correctly", &passed, &failed) {

@@ -71,6 +71,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         ).toByte()
         val FEEDBACK_SERVICE_UUID: UUID = UUID.fromString("0d03f2a3-b9b2-43f6-90ca-6c4ff67c2263")
         val FEEDBACK_CHARACTERISTIC_UUID: UUID = UUID.fromString("4846ff87-f2d4-4df2-9500-9bf8ed23f9e6")
+        val HANDSHAKE_CHARACTERISTIC_UUID: UUID = UUID.fromString("4846ff88-f2d4-4df2-9500-9bf8ed23f9e6")
     }
 
     private val decryptor = PayloadDecryptor()
@@ -716,6 +717,9 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
 
     private fun startGatt() {
         if (gattServer != null) return
+        // Rotate the ECDH session so this lifecycle starts with a fresh
+        // ephemeral keypair. The host re-runs the handshake on connect.
+        decryptor.rotateSession()
         updateStatus(
             feedback = "Opening feedback GATT",
             compatibility = snapshotCompatibility(),
@@ -745,6 +749,25 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                     }
                 }
 
+                override fun onCharacteristicReadRequest(
+                    device: BluetoothDevice,
+                    requestId: Int,
+                    offset: Int,
+                    characteristic: BluetoothGattCharacteristic,
+                ) {
+                    if (characteristic.uuid != HANDSHAKE_CHARACTERISTIC_UUID) {
+                        sendResponseSafely(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
+                        return
+                    }
+                    val pub = decryptor.publicKey
+                    if (offset > pub.size) {
+                        sendResponseSafely(device, requestId, BluetoothGatt.GATT_INVALID_OFFSET, offset, null)
+                        return
+                    }
+                    val slice = pub.copyOfRange(offset, pub.size)
+                    sendResponseSafely(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, slice)
+                }
+
                 override fun onCharacteristicWriteRequest(
                     device: BluetoothDevice,
                     requestId: Int,
@@ -754,43 +777,30 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                     offset: Int,
                     value: ByteArray,
                 ) {
-                    val accepted = !preparedWrite && offset == 0 && decryptor.decryptPayloadTo(value) { correctionX, correctionY ->
-                        engine.updateCorrection(correctionX, correctionY)
-                    }
-                    if (accepted) {
-                        feedbackPackets += 1
-                        updateStatus(
-                            feedback = "Feedback packets: $feedbackPackets",
-                            feedbackPackets = feedbackPackets,
-                            lastFeedbackAtMs = SystemClock.elapsedRealtime(),
-                            eventSource = if (feedbackPackets == 1 || feedbackPackets % 100 == 0) "Feedback" else null,
-                            eventMessage = if (feedbackPackets == 1 || feedbackPackets % 100 == 0) {
-                                "Received $feedbackPackets feedback packets."
-                            } else {
-                                null
-                            },
+                    when (characteristic.uuid) {
+                        HANDSHAKE_CHARACTERISTIC_UUID -> handleHandshakeWrite(
+                            device = device,
+                            requestId = requestId,
+                            preparedWrite = preparedWrite,
+                            responseNeeded = responseNeeded,
+                            offset = offset,
+                            value = value,
                         )
-                    } else {
-                        rejectedFeedbackPackets += 1
-                        updateStatus(
-                            rejectedFeedbackPackets = rejectedFeedbackPackets,
-                            error = "Rejected invalid BLE feedback packet.",
-                            eventSource = "Feedback",
-                            eventMessage = "Rejected feedback packet #$rejectedFeedbackPackets.",
+                        FEEDBACK_CHARACTERISTIC_UUID -> handleFeedbackWrite(
+                            device = device,
+                            requestId = requestId,
+                            preparedWrite = preparedWrite,
+                            responseNeeded = responseNeeded,
+                            offset = offset,
+                            value = value,
                         )
-                    }
-                    if (responseNeeded) {
-                        try {
-                            gattServer?.sendResponse(
-                                device,
-                                requestId,
-                                if (accepted) BluetoothGatt.GATT_SUCCESS else BluetoothGatt.GATT_FAILURE,
-                                offset,
-                                null,
-                            )
-                        } catch (_: SecurityException) {
-                            reportPermissionMissing()
-                        }
+                        else -> sendResponseSafely(
+                            device,
+                            requestId,
+                            BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED,
+                            offset,
+                            null,
+                        )
                     }
                 }
             })
@@ -813,6 +823,15 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         )
         service.addCharacteristic(
             BluetoothGattCharacteristic(
+                HANDSHAKE_CHARACTERISTIC_UUID,
+                BluetoothGattCharacteristic.PROPERTY_READ or
+                    BluetoothGattCharacteristic.PROPERTY_WRITE,
+                BluetoothGattCharacteristic.PERMISSION_READ or
+                    BluetoothGattCharacteristic.PERMISSION_WRITE,
+            )
+        )
+        service.addCharacteristic(
+            BluetoothGattCharacteristic(
                 FEEDBACK_CHARACTERISTIC_UUID,
                 BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
                 BluetoothGattCharacteristic.PERMISSION_WRITE,
@@ -825,6 +844,103 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                 eventSource = "Feedback",
                 eventMessage = "BluetoothGattServer.addService returned false.",
             )
+        }
+    }
+
+    private fun handleHandshakeWrite(
+        device: BluetoothDevice,
+        requestId: Int,
+        preparedWrite: Boolean,
+        responseNeeded: Boolean,
+        offset: Int,
+        value: ByteArray,
+    ) {
+        val accepted = !preparedWrite &&
+            offset == 0 &&
+            value.size == FeedbackSession.PUBLIC_KEY_SIZE &&
+            decryptor.installPeerPublicKey(value)
+        if (accepted) {
+            updateStatus(
+                feedback = "Feedback handshake complete",
+                compatibility = snapshotCompatibility(),
+                eventSource = "Feedback",
+                eventMessage = "Installed host X25519 public key; AES-256-GCM session ready.",
+            )
+        } else {
+            rejectedFeedbackPackets += 1
+            updateStatus(
+                rejectedFeedbackPackets = rejectedFeedbackPackets,
+                error = "Rejected invalid BLE handshake packet.",
+                eventSource = "Feedback",
+                eventMessage = "Rejected handshake write of ${value.size} bytes.",
+            )
+        }
+        if (responseNeeded) {
+            sendResponseSafely(
+                device,
+                requestId,
+                if (accepted) BluetoothGatt.GATT_SUCCESS else BluetoothGatt.GATT_FAILURE,
+                offset,
+                null,
+            )
+        }
+    }
+
+    private fun handleFeedbackWrite(
+        device: BluetoothDevice,
+        requestId: Int,
+        preparedWrite: Boolean,
+        responseNeeded: Boolean,
+        offset: Int,
+        value: ByteArray,
+    ) {
+        val accepted = !preparedWrite && offset == 0 && decryptor.decryptPayloadTo(value) { correctionX, correctionY ->
+            engine.updateCorrection(correctionX, correctionY)
+        }
+        if (accepted) {
+            feedbackPackets += 1
+            updateStatus(
+                feedback = "Feedback packets: $feedbackPackets",
+                feedbackPackets = feedbackPackets,
+                lastFeedbackAtMs = SystemClock.elapsedRealtime(),
+                eventSource = if (feedbackPackets == 1 || feedbackPackets % 100 == 0) "Feedback" else null,
+                eventMessage = if (feedbackPackets == 1 || feedbackPackets % 100 == 0) {
+                    "Received $feedbackPackets feedback packets."
+                } else {
+                    null
+                },
+            )
+        } else {
+            rejectedFeedbackPackets += 1
+            updateStatus(
+                rejectedFeedbackPackets = rejectedFeedbackPackets,
+                error = "Rejected invalid BLE feedback packet.",
+                eventSource = "Feedback",
+                eventMessage = "Rejected feedback packet #$rejectedFeedbackPackets.",
+            )
+        }
+        if (responseNeeded) {
+            sendResponseSafely(
+                device,
+                requestId,
+                if (accepted) BluetoothGatt.GATT_SUCCESS else BluetoothGatt.GATT_FAILURE,
+                offset,
+                null,
+            )
+        }
+    }
+
+    private fun sendResponseSafely(
+        device: BluetoothDevice,
+        requestId: Int,
+        status: Int,
+        offset: Int,
+        value: ByteArray?,
+    ) {
+        try {
+            gattServer?.sendResponse(device, requestId, status, offset, value)
+        } catch (_: SecurityException) {
+            reportPermissionMissing()
         }
     }
 

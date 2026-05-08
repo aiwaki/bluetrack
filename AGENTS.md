@@ -45,13 +45,11 @@ lanes (Android, Host) green.
 - Capture more `host/snapshots/` entries on different Mac+phone combos
   (especially with the phone in Gamepad mode at capture time) to fill
   the compatibility matrix.
-- Cross-feed the BLE peripheral name discovered in `companion` into
-  the HID-side filter automatically, removing the manual `--name` step
-  that the `InspectorHints` rerun tip documents.
-- Per-session ECDH key agreement + authenticated encryption for the
-  BLE feedback channel, replacing the static AES-128-CTR contract.
-  Atomic across Android `PayloadDecryptor`, Python sender, Swift
-  `FeedbackCrypto` — schedule when the new UI work has settled so we
-  are not juggling two breaking changes.
+- Authenticate the X25519 handshake against MitM (host pubkey pinning,
+  SAS verification, or device-bound identity keys exchanged
+  out-of-band). The current handshake is unauthenticated.
+- Add replay-window / counter-monotonicity enforcement on the
+  peripheral. AES-GCM rejects nonce reuse but does not enforce strict
+  ordering.
 - Refine the diagnostic touchpad into a more deliberate control
   surface once the new UI artifacts land.

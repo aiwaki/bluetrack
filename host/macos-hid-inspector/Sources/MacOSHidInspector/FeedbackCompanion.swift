@@ -13,11 +13,14 @@ struct FeedbackOptions {
 final class FeedbackCompanion: NSObject {
     private let options: FeedbackOptions
     private let serviceUUID = CBUUID(string: FeedbackCrypto.serviceUUIDString)
-    private let characteristicUUID = CBUUID(string: FeedbackCrypto.characteristicUUIDString)
+    private let feedbackCharUUID = CBUUID(string: FeedbackCrypto.feedbackCharacteristicUUIDString)
+    private let handshakeCharUUID = CBUUID(string: FeedbackCrypto.handshakeCharacteristicUUIDString)
 
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
-    private var characteristic: CBCharacteristic?
+    private var feedbackCharacteristic: CBCharacteristic?
+    private var handshakeCharacteristic: CBCharacteristic?
+    private var session = FeedbackSession()
     private var counter: UInt32 = 0
     private var packetsSent = 0
     private var sendTimer: DispatchSourceTimer?
@@ -25,8 +28,12 @@ final class FeedbackCompanion: NSObject {
     private var scanStartedAt: Date?
     private var connectedAt: Date?
     private var charReadyAt: Date?
+    private var sessionReadyAt: Date?
     private var scanFailed = false
     private var firstDiscoveryFired = false
+    private var handshakePubKeyWritten = false
+    private var handshakeFailed = false
+    private var handshakeFailureReason: String?
 
     /// Fired exactly once when scanning resolves, either by discovering the
     /// first peripheral (parameter is its advertised name, possibly nil) or
@@ -73,8 +80,6 @@ final class FeedbackCompanion: NSObject {
     func snapshot(exitCode: Int32) -> BleFeedbackSnapshot {
         let scanDuration: Double?
         if let scanStartedAt {
-            // Prefer the moment of advertiser discovery (connectedAt-ish),
-            // falling back to scan deadline if scan never produced one.
             if let connectedAt {
                 scanDuration = connectedAt.timeIntervalSince(scanStartedAt)
             } else if scanFailed {
@@ -92,7 +97,9 @@ final class FeedbackCompanion: NSObject {
             connectDuration = nil
         }
         let writeDuration: Double?
-        if let charReadyAt {
+        if let sessionReadyAt {
+            writeDuration = Date().timeIntervalSince(sessionReadyAt)
+        } else if let charReadyAt {
             writeDuration = Date().timeIntervalSince(charReadyAt)
         } else {
             writeDuration = nil
@@ -140,17 +147,29 @@ final class FeedbackCompanion: NSObject {
             print("Hints: open Bluetrack on the phone, confirm the BLE feedback service is advertising, and grant Terminal Bluetooth permission in System Settings.")
             return 4
         }
-        if characteristic == nil {
-            print("Peripheral connected but characteristic \(FeedbackCrypto.characteristicUUIDString) was not discovered.")
+        if feedbackCharacteristic == nil {
+            print("Peripheral connected but characteristic \(FeedbackCrypto.feedbackCharacteristicUUIDString) was not discovered.")
+            return 5
+        }
+        if handshakeCharacteristic == nil {
+            print("Peripheral connected but handshake characteristic \(FeedbackCrypto.handshakeCharacteristicUUIDString) was not discovered. The phone may be running an older Bluetrack build.")
+            return 5
+        }
+        if handshakeFailed {
+            print("Handshake failed: \(handshakeFailureReason ?? "unknown error").")
+            return 5
+        }
+        if !session.isReady {
+            print("Handshake never completed within the run window. No encrypted frames were written.")
             return 5
         }
         print("Wrote \(packetsSent) feedback packets.")
         if packetsSent == 0 {
-            print("No packets were written even though the characteristic was ready. The send timer never fired or seconds was too short.")
+            print("No packets were written even though the session was ready. The send timer never fired or seconds was too short.")
             return 6
         }
-        if let charReadyAt {
-            let writeWindow = Date().timeIntervalSince(charReadyAt)
+        if let sessionReadyAt {
+            let writeWindow = Date().timeIntervalSince(sessionReadyAt)
             print("Write window: \(String(format: "%.1f", writeWindow))s. If the Android timeline shows feedback packets, the BLE path is healthy.")
         }
         return 0
@@ -164,6 +183,13 @@ final class FeedbackCompanion: NSObject {
         guard !firstDiscoveryFired else { return }
         firstDiscoveryFired = true
         onFirstScanResult?(name)
+    }
+
+    private func failHandshake(_ reason: String) {
+        handshakeFailed = true
+        handshakeFailureReason = reason
+        print("Handshake failed: \(reason).")
+        stopRunLoopSoon()
     }
 
     private func stateLabel(_ state: CBManagerState) -> String {
@@ -277,7 +303,7 @@ extension FeedbackCompanion: CBPeripheralDelegate {
             stopRunLoopSoon()
             return
         }
-        peripheral.discoverCharacteristics([characteristicUUID], for: service)
+        peripheral.discoverCharacteristics([feedbackCharUUID, handshakeCharUUID], for: service)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
@@ -286,14 +312,69 @@ extension FeedbackCompanion: CBPeripheralDelegate {
             stopRunLoopSoon()
             return
         }
-        guard let char = service.characteristics?.first(where: { $0.uuid == characteristicUUID }) else {
-            print("Service did not expose characteristic \(FeedbackCrypto.characteristicUUIDString).")
+        feedbackCharacteristic = service.characteristics?.first { $0.uuid == feedbackCharUUID }
+        handshakeCharacteristic = service.characteristics?.first { $0.uuid == handshakeCharUUID }
+        guard let handshake = handshakeCharacteristic else {
+            print("Service did not expose handshake characteristic \(FeedbackCrypto.handshakeCharacteristicUUIDString).")
             stopRunLoopSoon()
             return
         }
-        characteristic = char
+        guard feedbackCharacteristic != nil else {
+            print("Service did not expose feedback characteristic \(FeedbackCrypto.feedbackCharacteristicUUIDString).")
+            stopRunLoopSoon()
+            return
+        }
         charReadyAt = Date()
-        print("Characteristic ready. Writing every \(options.intervalMs)ms.")
+        print("Characteristics ready. Starting handshake (writing 32-byte X25519 public key)...")
+        // 1) Write our pubkey first; the peripheral derives its session in
+        //    onCharacteristicWriteRequest before responding.
+        peripheral.writeValue(session.publicKey, for: handshake, type: .withResponse)
+    }
+
+    func peripheral(
+        _ peripheral: CBPeripheral,
+        didWriteValueFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        guard characteristic.uuid == handshakeCharUUID else { return }
+        if let error {
+            failHandshake("write failed: \(error.localizedDescription)")
+            return
+        }
+        handshakePubKeyWritten = true
+        // 2) Read the peripheral's pubkey. The read landing in
+        //    didUpdateValueFor below will derive our session and start writes.
+        peripheral.readValue(for: characteristic)
+    }
+
+    func peripheral(
+        _ peripheral: CBPeripheral,
+        didUpdateValueFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        guard characteristic.uuid == handshakeCharUUID else { return }
+        if let error {
+            failHandshake("read failed: \(error.localizedDescription)")
+            return
+        }
+        guard let value = characteristic.value, value.count == FeedbackCrypto.publicKeySize else {
+            failHandshake("peripheral returned \(characteristic.value?.count ?? 0)-byte handshake (expected \(FeedbackCrypto.publicKeySize))")
+            return
+        }
+        do {
+            try session.deriveSession(peerPublicKey: value)
+        } catch {
+            failHandshake("ECDH derivation failed: \(error)")
+            return
+        }
+        sessionReadyAt = Date()
+        let handshakeMs: Int
+        if let charReadyAt {
+            handshakeMs = Int(Date().timeIntervalSince(charReadyAt) * 1000)
+        } else {
+            handshakeMs = 0
+        }
+        print("Handshake complete in \(handshakeMs)ms. Writing every \(options.intervalMs)ms.")
         startSendTimer()
         scheduleWriteWindowEnd()
     }
@@ -320,8 +401,14 @@ extension FeedbackCompanion: CBPeripheralDelegate {
     }
 
     private func sendNextPacket() {
-        guard let peripheral, let characteristic else { return }
-        let packet = FeedbackCrypto.buildPacket(counter: counter, dx: options.dx, dy: options.dy)
+        guard let peripheral, let characteristic = feedbackCharacteristic else { return }
+        let packet: Data
+        do {
+            packet = try session.buildPacket(counter: counter, dx: options.dx, dy: options.dy)
+        } catch {
+            failHandshake("buildPacket: \(error)")
+            return
+        }
         peripheral.writeValue(packet, for: characteristic, type: .withoutResponse)
         counter = counter &+ 1
         packetsSent += 1

@@ -53,6 +53,12 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.3.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
+    // X25519 + HKDF-SHA256 for the BLE feedback channel handshake. The
+    // platform JCE supplies AES-GCM; BC carries the parts that are not on
+    // the public Android API surface for minSdk 29 (X25519 KeyAgreement
+    // arrived in API 33, so we use BC's deterministic primitive directly).
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }
