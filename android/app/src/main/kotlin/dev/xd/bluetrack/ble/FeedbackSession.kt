@@ -25,9 +25,10 @@ import org.bouncycastle.math.ec.rfc7748.X25519
  * ```
  *
  * The AES-GCM nonce is `NONCE_SALT || counter_LE` (8 + 4 bytes). The host
- * must use a unique counter per packet within a session; the peripheral
- * rejects duplicate counters via tag failure (different nonces with the
- * same key still authenticate as long as the counter is unique).
+ * MUST emit strictly monotonic counters within a session and rotate the
+ * session before counter wrap; the receiver enforces a 64-frame sliding
+ * replay window after AES-GCM verification, so duplicate or far-stale
+ * counters are dropped even when the cryptographic tag is valid.
  */
 class FeedbackSession {
 
@@ -41,6 +42,13 @@ class FeedbackSession {
         const val NONCE_SALT_SIZE: Int = 8
         const val PIN_MIN_LENGTH: Int = 4
         const val PIN_MAX_LENGTH: Int = 12
+        /**
+         * Sliding-window size for replay-protection on the receiver. Frames
+         * with a counter older than this from the highest accepted counter
+         * are rejected, regardless of AES-GCM tag validity. Standard 64-bit
+         * IPsec ESP / SRTP-style window.
+         */
+        const val REPLAY_WINDOW_SIZE: Int = 64
         private const val GCM_TAG_BITS: Int = 128
 
         // Domain-separated HKDF salt for this protocol version.
@@ -72,6 +80,14 @@ class FeedbackSession {
 
     private var symmetricKey: SecretKeySpec? = null
     private var nonceSalt: ByteArray? = null
+
+    // Replay-protection state. `lastCounter` is the highest accepted
+    // counter as an unsigned 32-bit value held in a Long; -1 means "no
+    // frame accepted yet". `replayBitmap` tracks which of the last
+    // `REPLAY_WINDOW_SIZE` counters relative to `lastCounter` were seen,
+    // bit 0 = `lastCounter` itself.
+    private var lastCounter: Long = -1L
+    private var replayBitmap: Long = 0L
 
     init {
         SecureRandom().nextBytes(privateKey)
@@ -110,6 +126,9 @@ class FeedbackSession {
         val saltBytes = hkdfExpand(shared, HKDF_SALT, infoSalt, NONCE_SALT_SIZE)
         symmetricKey = SecretKeySpec(keyBytes, "AES")
         nonceSalt = saltBytes
+        // Fresh handshake → fresh replay window.
+        lastCounter = -1L
+        replayBitmap = 0L
         // Best-effort wipe of intermediate material.
         shared.fill(0)
     }
@@ -118,6 +137,8 @@ class FeedbackSession {
     fun reset() {
         symmetricKey = null
         nonceSalt = null
+        lastCounter = -1L
+        replayBitmap = 0L
     }
 
     /**
@@ -143,12 +164,55 @@ class FeedbackSession {
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, nonce))
             val plain = cipher.doFinal(ciphertextWithTag)
             if (plain.size != PLAINTEXT_SIZE) return false
+            val counter = readIntLe(bleData, 0)
+            // Authenticated, but reject replays (incl. counter wrap-around)
+            // before delivering to the engine.
+            if (!acceptCounter(counter)) return false
             val xBits = readIntLe(plain, 0)
             val yBits = readIntLe(plain, 4)
             onDecrypted(Float.fromBits(xBits), Float.fromBits(yBits))
             true
         } catch (_: GeneralSecurityException) {
             false
+        }
+    }
+
+    /**
+     * Sliding-window replay check. Returns true if [counter] is fresh
+     * (newer than the highest seen, or within the replay window and not
+     * previously seen) and updates internal state. Returns false on
+     * exact replay, on a counter older than `lastCounter -
+     * REPLAY_WINDOW_SIZE + 1`, or on counter wrap-around (the unsigned
+     * counter going far backwards), which forces a session rotation.
+     *
+     * Visible internally so tests can drive the window directly.
+     */
+    @JvmName("acceptCounterForTest")
+    internal fun acceptCounter(counter: Int): Boolean {
+        val c = counter.toLong() and 0xFFFFFFFFL
+        val last = lastCounter
+        if (last < 0L) {
+            lastCounter = c
+            replayBitmap = 1L
+            return true
+        }
+        return when {
+            c > last -> {
+                val shift = c - last
+                replayBitmap = if (shift >= REPLAY_WINDOW_SIZE) 1L
+                else (replayBitmap shl shift.toInt()) or 1L
+                lastCounter = c
+                true
+            }
+            c == last -> false
+            else -> {
+                val diff = last - c
+                if (diff >= REPLAY_WINDOW_SIZE) return false
+                val bit = 1L shl diff.toInt()
+                if ((replayBitmap and bit) != 0L) return false
+                replayBitmap = replayBitmap or bit
+                true
+            }
         }
     }
 
