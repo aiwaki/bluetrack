@@ -33,22 +33,40 @@ Owner: `android/app/src/main/kotlin/dev/xd/bluetrack/ble/BleHidGateway.kt`.
 ### Feedback path
 
 Android also runs a BLE GATT server for encrypted host feedback.
-Service UUID `0d03f2a3-b9b2-43f6-90ca-6c4ff67c2263` accepts writes on
-characteristic UUID `4846ff87-f2d4-4df2-9500-9bf8ed23f9e6`.
+Service UUID `0d03f2a3-b9b2-43f6-90ca-6c4ff67c2263` exposes two
+characteristics:
 
-Packet shape:
+- handshake `4846ff88-f2d4-4df2-9500-9bf8ed23f9e6` (READ + WRITE) — host
+  writes its 32-byte X25519 public key, then reads the phone's 32-byte
+  public key.
+- feedback `4846ff87-f2d4-4df2-9500-9bf8ed23f9e6` (WRITE_NO_RESPONSE) —
+  28-byte authenticated frames.
+
+Per-session key derivation:
 
 ```text
-[0..3]  counter_le
-[4..11] AES-128-CTR ciphertext for little-endian float dx, float dy
+shared    = X25519(local_priv, peer_pub)        # 32 bytes
+key       = HKDF-SHA256(shared, salt, info_key, 32)
+salt8     = HKDF-SHA256(shared, salt, info_salt, 8)
+salt      = "bluetrack-feedback-v1"
+info_key  = "aes-256-gcm key+nonce-salt"
+info_salt = "aes-256-gcm key+nonce-salt|nonce-salt"
 ```
 
-Static prototype crypto:
+Frame shape (28 bytes):
 
 ```text
-KEY    = "BluetrackKey1234"
-SALT12 = "BluetrackSal"
+[0..3]    counter_le              (uint32 LE, AES-GCM nonce suffix)
+[4..11]   AES-256-GCM ciphertext  (Float32 dx, Float32 dy LE)
+[12..27]  AES-256-GCM 16-byte tag
+nonce     = salt8 || counter_le   (12 bytes)
 ```
+
+The phone rotates its X25519 keypair on every `BleHidGateway.startGatt`
+call, so each app launch / reconnect produces fresh forward-secret key
+material. Counter wrap (2³² packets ≈ 248 days at 5 ms cadence) requires
+a session rotation; the peripheral rejects duplicate (key, counter)
+pairs via tag failure.
 
 This BLE path is not what makes the phone show up as a mouse/gamepad on
 the PC — it is the calibration/correction side channel.
@@ -121,8 +139,10 @@ adb logcat -s BluetrackInput Bluetrack
   HID keep-alive path.
 - Mode switching never calls `unregisterApp()`; one composite descriptor
   is registered and only the active report path changes.
-- Crypto is prototype-only: static key, static salt, no authentication,
-  no session negotiation.
+- Feedback crypto: per-session X25519 ECDH + HKDF-SHA256 + AES-256-GCM.
+  No long-term identity, no peer authentication beyond handshake
+  characteristic exclusivity. A man-in-the-middle that intercepts the
+  initial handshake can substitute its own pubkey.
 - Runtime Bluetooth validation still needs real Android hardware plus a
   PC.
 
@@ -132,9 +152,6 @@ High leverage:
 
 - Capture more `host/snapshots/` entries on different Mac+phone combos
   (especially with the phone in Gamepad mode at capture time).
-- Cross-feed BLE peripheral name into HID-side filter automatically in
-  `companion`, removing the manual `--name <phone>` rerun the
-  `InspectorHints` tip currently surfaces.
 
 UX:
 
@@ -143,9 +160,12 @@ UX:
 
 Security:
 
-- Replace static AES material with per-session key agreement (ECDH).
-- Add authenticated encryption (AES-GCM or ChaCha20-Poly1305).
-- Validate peer identity before accepting correction writes.
+- Authenticate the X25519 handshake against MitM (e.g. host pubkey
+  pinning, short-authentication-string verification, or device-bound
+  identity keys exchanged out-of-band).
+- Add replay window detection on the peripheral (currently any
+  in-session counter that hasn't been used will authenticate; counter
+  monotonicity is not enforced).
 
 ## User Preference
 
