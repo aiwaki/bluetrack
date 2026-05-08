@@ -9,12 +9,14 @@ enum FeedbackSelfTest {
         var passed = 0
         var failed: [String] = []
 
+        let testPin = "246810"
+        let otherPin = "135790"
         let pairedSessions: () -> (FeedbackSession, FeedbackSession)? = {
             let host = FeedbackSession()
             let phone = FeedbackSession()
             do {
-                try host.deriveSession(peerPublicKey: phone.publicKey)
-                try phone.deriveSession(peerPublicKey: host.publicKey)
+                try host.deriveSession(peerPublicKey: phone.publicKey, pin: testPin)
+                try phone.deriveSession(peerPublicKey: host.publicKey, pin: testPin)
             } catch {
                 return nil
             }
@@ -94,6 +96,28 @@ enum FeedbackSelfTest {
             } catch {
                 return false
             }
+        }
+
+        check("wrong pin: phone rejects host frames", &passed, &failed) {
+            let host = FeedbackSession()
+            let phone = FeedbackSession()
+            do {
+                try host.deriveSession(peerPublicKey: phone.publicKey, pin: otherPin)
+                try phone.deriveSession(peerPublicKey: host.publicKey, pin: testPin)
+            } catch {
+                return false
+            }
+            guard let packet = try? host.buildPacket(counter: 0, dx: 1.0, dy: 1.0) else { return false }
+            return ((try? phone.decodePacket(packet)) ?? nil) == nil
+        }
+
+        check("invalid pin lengths and characters are rejected", &passed, &failed) {
+            return FeedbackCrypto.normalizedPinBytes("123") == nil &&
+                FeedbackCrypto.normalizedPinBytes("1234567890123") == nil &&
+                FeedbackCrypto.normalizedPinBytes("12ab56") == nil &&
+                FeedbackCrypto.normalizedPinBytes("") == nil &&
+                FeedbackCrypto.normalizedPinBytes("246810") == Array("246810".utf8) &&
+                FeedbackCrypto.normalizedPinBytes("  123456  ") == Array("123456".utf8)
         }
 
         check("UUIDs match the Android contract", &passed, &failed) {

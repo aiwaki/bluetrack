@@ -49,9 +49,16 @@ shared    = X25519(local_priv, peer_pub)        # 32 bytes
 key       = HKDF-SHA256(shared, salt, info_key, 32)
 salt8     = HKDF-SHA256(shared, salt, info_salt, 8)
 salt      = "bluetrack-feedback-v1"
-info_key  = "aes-256-gcm key+nonce-salt"
-info_salt = "aes-256-gcm key+nonce-salt|nonce-salt"
+info_key  = "aes-256-gcm key+nonce-salt|pin:<digits>"
+info_salt = "aes-256-gcm key+nonce-salt|pin:<digits>|nonce-salt"
 ```
+
+The `<digits>` are a fresh 6-digit pairing pin the peripheral generates
+per `BleHidGateway.startGatt` and shows on the `Pin` status row. The
+host CLI requires `--pin <digits>` (Python: `--pin`); a host that does
+not know the pin derives different key material and AES-GCM tag
+verification fails on every frame. Pin validation accepts 4–12 ASCII
+digits.
 
 Frame shape (28 bytes):
 
@@ -139,10 +146,11 @@ adb logcat -s BluetrackInput Bluetrack
   HID keep-alive path.
 - Mode switching never calls `unregisterApp()`; one composite descriptor
   is registered and only the active report path changes.
-- Feedback crypto: per-session X25519 ECDH + HKDF-SHA256 + AES-256-GCM.
-  No long-term identity, no peer authentication beyond handshake
-  characteristic exclusivity. A man-in-the-middle that intercepts the
-  initial handshake can substitute its own pubkey.
+- Feedback crypto: per-session X25519 ECDH + HKDF-SHA256 + AES-256-GCM,
+  with a 6-digit pairing pin shown on the phone mixed into HKDF. Pin
+  protects against opportunistic in-range attackers but leaks to
+  shoulder-surfers; ~20 bits of entropy means a remote brute force has
+  one chance per BLE reconnect (pin rotates per `startGatt`).
 - Runtime Bluetooth validation still needs real Android hardware plus a
   PC.
 
@@ -160,9 +168,10 @@ UX:
 
 Security:
 
-- Authenticate the X25519 handshake against MitM (e.g. host pubkey
-  pinning, short-authentication-string verification, or device-bound
-  identity keys exchanged out-of-band).
+- Strengthen pairing beyond the 6-digit pin: host pubkey pinning
+  (TOFU) or device-bound identity keys exchanged out-of-band. The
+  current pin model is opportunistic — fine against passive snoops,
+  weak against shoulder-surfing or physical access to the phone screen.
 - Add replay window detection on the peripheral (currently any
   in-session counter that hasn't been used will authenticate; counter
   monotonicity is not enforced).

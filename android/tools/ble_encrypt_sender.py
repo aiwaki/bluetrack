@@ -44,9 +44,22 @@ HANDSHAKE_CHAR_UUID = "4846ff88-f2d4-4df2-9500-9bf8ed23f9e6"
 PUBLIC_KEY_SIZE = 32
 FRAME_SIZE = 28
 NONCE_SALT_SIZE = 8
+PIN_MIN_LENGTH = 4
+PIN_MAX_LENGTH = 12
 HKDF_SALT = b"bluetrack-feedback-v1"
-HKDF_INFO_KEY = b"aes-256-gcm key+nonce-salt"
-HKDF_INFO_SALT = b"aes-256-gcm key+nonce-salt|nonce-salt"
+HKDF_INFO_BASE = b"aes-256-gcm key+nonce-salt"
+PIN_PREFIX = b"|pin:"
+NONCE_SALT_SUFFIX = b"|nonce-salt"
+
+
+def normalized_pin_bytes(pin: str) -> Optional[bytes]:
+    """Trim whitespace, validate digits-only and length, return UTF-8 bytes."""
+    trimmed = pin.strip()
+    if not (PIN_MIN_LENGTH <= len(trimmed) <= PIN_MAX_LENGTH):
+        return None
+    if not trimmed.isascii() or not trimmed.isdigit():
+        return None
+    return trimmed.encode("ascii")
 
 
 class FeedbackSession:
@@ -72,25 +85,32 @@ class FeedbackSession:
     def is_ready(self) -> bool:
         return self._key is not None and self._nonce_salt is not None
 
-    def derive_session(self, peer_public_key: bytes) -> None:
+    def derive_session(self, peer_public_key: bytes, pin: str) -> None:
         if len(peer_public_key) != PUBLIC_KEY_SIZE:
             raise ValueError(
                 f"peer public key must be {PUBLIC_KEY_SIZE} bytes, "
                 f"got {len(peer_public_key)}"
             )
+        pin_bytes = normalized_pin_bytes(pin)
+        if pin_bytes is None:
+            raise ValueError(
+                f"pin must be {PIN_MIN_LENGTH}..{PIN_MAX_LENGTH} ASCII digits"
+            )
         peer = X25519PublicKey.from_public_bytes(peer_public_key)
         shared = self._private.exchange(peer)
+        info_key = HKDF_INFO_BASE + PIN_PREFIX + pin_bytes
+        info_salt = info_key + NONCE_SALT_SUFFIX
         self._key = HKDF(
             algorithm=hashes.SHA256(),
             length=32,
             salt=HKDF_SALT,
-            info=HKDF_INFO_KEY,
+            info=info_key,
         ).derive(shared)
         self._nonce_salt = HKDF(
             algorithm=hashes.SHA256(),
             length=NONCE_SALT_SIZE,
             salt=HKDF_SALT,
-            info=HKDF_INFO_SALT,
+            info=info_salt,
         ).derive(shared)
 
     def build_packet(self, counter: int, dx: float, dy: float) -> bytes:
@@ -119,11 +139,15 @@ async def find_target(address: Optional[str], timeout: float):
     return device
 
 
-async def perform_handshake(client: BleakClient, session: FeedbackSession) -> None:
+async def perform_handshake(
+    client: BleakClient,
+    session: FeedbackSession,
+    pin: str,
+) -> None:
     """Write our 32-byte X25519 pubkey, read peer pubkey, derive session."""
     await client.write_gatt_char(HANDSHAKE_CHAR_UUID, session.public_key, response=True)
     peer = await client.read_gatt_char(HANDSHAKE_CHAR_UUID)
-    session.derive_session(bytes(peer))
+    session.derive_session(bytes(peer), pin)
 
 
 async def send_loop(
@@ -132,12 +156,13 @@ async def send_loop(
     dy: float,
     interval: float,
     scan_timeout: float,
+    pin: str,
 ) -> None:
     counter = 0
     target = await find_target(address, scan_timeout)
     async with BleakClient(target) as client:
         session = FeedbackSession()
-        await perform_handshake(client, session)
+        await perform_handshake(client, session, pin)
         while True:
             packet = session.build_packet(counter, dx, dy)
             await client.write_gatt_char(FEEDBACK_CHAR_UUID, packet, response=False)
@@ -160,9 +185,33 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--scan-timeout", type=float, default=10.0, help="Seconds to scan when address is omitted."
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--pin",
+        required=True,
+        help=(
+            "Pairing pin shown on the Bluetrack status row "
+            f"({PIN_MIN_LENGTH}..{PIN_MAX_LENGTH} ASCII digits). The peripheral "
+            "mixes it into AES-256-GCM key derivation; without the correct pin, "
+            "frames will not authenticate."
+        ),
+    )
+    args = parser.parse_args()
+    if normalized_pin_bytes(args.pin) is None:
+        parser.error(
+            f"--pin must be {PIN_MIN_LENGTH}..{PIN_MAX_LENGTH} ASCII digits"
+        )
+    return args
 
 
 if __name__ == "__main__":
     args = parse_args()
-    asyncio.run(send_loop(args.address, args.dx, args.dy, args.interval, args.scan_timeout))
+    asyncio.run(
+        send_loop(
+            args.address,
+            args.dx,
+            args.dy,
+            args.interval,
+            args.scan_timeout,
+            args.pin,
+        )
+    )

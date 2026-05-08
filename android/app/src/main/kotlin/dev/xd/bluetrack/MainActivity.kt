@@ -494,6 +494,9 @@ private fun SystemPanel(status: GatewayStatus, modifier: Modifier) {
             StatusLine("HID", status.hid)
             StatusLine("Pair", status.pairing)
             StatusLine("BLE", status.feedback)
+            status.feedbackPin?.let { pin ->
+                StatusLine("Pin", pin)
+            }
         }
     }
 }

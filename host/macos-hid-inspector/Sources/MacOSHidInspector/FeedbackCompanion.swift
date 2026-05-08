@@ -8,6 +8,9 @@ struct FeedbackOptions {
     var intervalMs: Int = 5
     var scanTimeout: Double = 10.0
     var seconds: Double = 15.0
+    /// Pairing pin shown on the Bluetrack status row. Must satisfy
+    /// `FeedbackCrypto.normalizedPinBytes`. Required.
+    var pin: String = ""
 }
 
 final class FeedbackCompanion: NSObject {
@@ -362,7 +365,7 @@ extension FeedbackCompanion: CBPeripheralDelegate {
             return
         }
         do {
-            try session.deriveSession(peerPublicKey: value)
+            try session.deriveSession(peerPublicKey: value, pin: options.pin)
         } catch {
             failHandshake("ECDH derivation failed: \(error)")
             return

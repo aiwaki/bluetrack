@@ -29,6 +29,10 @@ struct Options {
     var feedbackScanTimeout: Double = 10.0
     var feedbackSeconds: Double = 15.0
     var reportPath: String? = nil
+    /// Pairing pin displayed by the peripheral on the Bluetrack status row.
+    /// Required for `feedback` and `companion`; mixed into the AES-GCM key
+    /// derivation so a host without the pin produces non-decryptable frames.
+    var feedbackPin: String? = nil
 }
 
 struct DeviceSummary {
@@ -484,6 +488,11 @@ private func parseOptions(_ arguments: [String]) -> Options {
             if index < arguments.count {
                 options.reportPath = arguments[index]
             }
+        case "--pin":
+            index += 1
+            if index < arguments.count {
+                options.feedbackPin = arguments[index]
+            }
         case "--help", "-h":
             printUsageAndExit()
         default:
@@ -515,7 +524,11 @@ private func printUsageAndExit(code: Int32 = 0) -> Never {
       --no-elements      Hide element listing.
       --no-bluetooth     Skip system_profiler Bluetooth hints.
 
-    Options (feedback):
+    Options (feedback, companion):
+      --pin 123456       Pairing pin shown on the Bluetrack status row. The
+                         peripheral mixes it into the AES-256-GCM key
+                         derivation so a host without the pin produces
+                         non-decryptable frames. Required.
       --seconds 15       Total write window after the characteristic is ready.
       --scan-timeout 10  Seconds to scan for the BLE feedback advertiser.
       --interval-ms 5    Milliseconds between encrypted writes.
@@ -597,12 +610,17 @@ case .watch:
     }
     exit(exitCode)
 case .feedback:
+    guard let pin = options.feedbackPin, FeedbackCrypto.normalizedPinBytes(pin) != nil else {
+        print("`feedback` requires --pin <digits> (4–12 ASCII digits, shown on the Bluetrack status row).")
+        exit(64)
+    }
     let feedback = FeedbackCompanion(options: FeedbackOptions(
         dx: options.feedbackDx,
         dy: options.feedbackDy,
         intervalMs: options.feedbackIntervalMs,
         scanTimeout: options.feedbackScanTimeout,
-        seconds: options.feedbackSeconds
+        seconds: options.feedbackSeconds,
+        pin: pin
     ))
     let exitCode = feedback.run()
     if let path = options.reportPath {
@@ -615,13 +633,18 @@ case .feedback:
     }
     exit(exitCode)
 case .companion:
+    guard let pin = options.feedbackPin, FeedbackCrypto.normalizedPinBytes(pin) != nil else {
+        print("`companion` requires --pin <digits> (4–12 ASCII digits, shown on the Bluetrack status row).")
+        exit(64)
+    }
     let inspector = HidInspector(options: options)
     let feedback = FeedbackCompanion(options: FeedbackOptions(
         dx: options.feedbackDx,
         dy: options.feedbackDy,
         intervalMs: options.feedbackIntervalMs,
         scanTimeout: options.feedbackScanTimeout,
-        seconds: options.feedbackSeconds
+        seconds: options.feedbackSeconds,
+        pin: pin
     ))
     let total = options.feedbackScanTimeout + options.feedbackSeconds
     exit(CompanionRunner(
