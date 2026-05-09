@@ -33,3 +33,23 @@ jobs:
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug
+
+      - name: Assemble release APK (R8 minify, with ProGuard keep rules)
+        run: ./gradlew assembleRelease
+
+      - name: Verify BouncyCastle + Bluetrack protocol classes survived R8
+        run: |
+          set -euo pipefail
+          apk="app/build/outputs/apk/release/app-release-unsigned.apk"
+          test -f "$apk"
+          # Collect every classes*.dex out of the APK and grep symbols.
+          tmp="$(mktemp -d)"
+          unzip -j -q "$apk" 'classes*.dex' -d "$tmp"
+          for sym in rfc7748 rfc8032 FeedbackSession FeedbackHandshakePayload PayloadDecryptor TrustedHostStore; do
+            if ! strings -a "$tmp"/classes*.dex | grep -q "$sym"; then
+              echo "FAIL: '$sym' not found in any classes*.dex of $apk"
+              exit 1
+            fi
+            echo "ok  '$sym' present"
+          done
+          rm -rf "$tmp"
