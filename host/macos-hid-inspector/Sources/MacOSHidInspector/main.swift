@@ -15,6 +15,8 @@ struct Options {
         case feedback
         case companion
         case selftest
+        case exportIdentity = "export-identity"
+        case importIdentity = "import-identity"
     }
 
     var command: Command = .scan
@@ -39,6 +41,10 @@ struct Options {
     /// When true, delete the identity file before continuing. Used to roll
     /// the host identity after the peripheral pinned the wrong key.
     var resetHostIdentity: Bool = false
+    /// Destination path for the `export-identity` subcommand.
+    var identityExportToPath: String? = nil
+    /// Source path for the `import-identity` subcommand.
+    var identityImportFromPath: String? = nil
 }
 
 struct DeviceSummary {
@@ -506,6 +512,16 @@ private func parseOptions(_ arguments: [String]) -> Options {
             }
         case "--reset-host-identity":
             options.resetHostIdentity = true
+        case "--to":
+            index += 1
+            if index < arguments.count {
+                options.identityExportToPath = arguments[index]
+            }
+        case "--from":
+            index += 1
+            if index < arguments.count {
+                options.identityImportFromPath = arguments[index]
+            }
         case "--help", "-h":
             printUsageAndExit()
         default:
@@ -519,7 +535,7 @@ private func parseOptions(_ arguments: [String]) -> Options {
 
 private func printUsageAndExit(code: Int32 = 0) -> Never {
     print("""
-    bluetrack-hid-inspector scan|watch|feedback|companion|selftest [options]
+    bluetrack-hid-inspector scan|watch|feedback|companion|selftest|export-identity|import-identity [options]
 
     Commands:
       scan               List matching IOHID devices and elements.
@@ -529,6 +545,14 @@ private func printUsageAndExit(code: Int32 = 0) -> Never {
       companion          Run watch and feedback together on one run loop and
                          print a combined PASS/FAIL verdict for both paths.
       selftest           Run FeedbackCrypto roundtrip checks (no Bluetooth).
+      export-identity    Copy the active host identity to `--to <path>`. Use
+                         to back up the Ed25519 keypair before reformatting
+                         this machine, or to share it with the Python sender
+                         (the file format is compatible).
+      import-identity    Replace the active identity with the file at
+                         `--from <path>`. Validates the source first; the
+                         previous identity is preserved as `<path>.bak` so
+                         a mistaken import can be undone.
 
     Options (scan/watch):
       --name Bluetrack   Product/manufacturer/transport substring. Default: Bluetrack.
@@ -716,4 +740,42 @@ case .companion:
     ).run())
 case .selftest:
     exit(FeedbackSelfTest.run())
+case .exportIdentity:
+    let sourceURL: URL = options.hostIdentityPath
+        .map { URL(fileURLWithPath: $0) } ?? HostIdentity.defaultURL
+    guard let toPath = options.identityExportToPath else {
+        print("`export-identity` requires --to <path>.")
+        exit(64)
+    }
+    let destURL = URL(fileURLWithPath: toPath)
+    do {
+        try HostIdentity.export(from: sourceURL, to: destURL)
+        let copy = try HostIdentity.load(at: destURL)
+        print("Exported host identity \(copy.fingerprint()) from \(sourceURL.path) to \(destURL.path) (mode 0600).")
+        exit(0)
+    } catch {
+        print("Could not export identity from \(sourceURL.path) to \(destURL.path): \(error)")
+        exit(74)
+    }
+case .importIdentity:
+    let destURL: URL = options.hostIdentityPath
+        .map { URL(fileURLWithPath: $0) } ?? HostIdentity.defaultURL
+    guard let fromPath = options.identityImportFromPath else {
+        print("`import-identity` requires --from <path>.")
+        exit(64)
+    }
+    let sourceURL = URL(fileURLWithPath: fromPath)
+    do {
+        try HostIdentity.importIdentity(from: sourceURL, to: destURL)
+        let installed = try HostIdentity.load(at: destURL)
+        let backup = destURL.appendingPathExtension("bak")
+        let backupNote = FileManager.default.fileExists(atPath: backup.path)
+            ? " (previous identity preserved at \(backup.path))"
+            : ""
+        print("Imported host identity \(installed.fingerprint()) from \(sourceURL.path) to \(destURL.path)\(backupNote).")
+        exit(0)
+    } catch {
+        print("Could not import identity from \(sourceURL.path) to \(destURL.path): \(error)")
+        exit(75)
+    }
 }
