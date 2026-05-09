@@ -167,6 +167,15 @@ adb logcat -s BluetrackInput Bluetrack
   out-of-order frames more than 63 below the high-water counter, and
   counter wrap-around are silently dropped. Host MUST rotate sessions
   before 2³² packets.
+- Cross-platform golden vectors: `host/test-vectors/feedback_v1.json`
+  is the deterministic fixture every platform's tests load and
+  byte-compare against. Regenerate via
+  `python3 host/test-vectors/generate_vectors.py` after any protocol
+  change; the diff is part of the PR review. Note: Swift's CryptoKit
+  Ed25519 is hedged (non-deterministic), so Swift verifies the
+  fixture's signature without comparing sig bytes — Android (BC) and
+  Python (cryptography) Ed25519 are RFC 8032 deterministic and do
+  compare byte-for-byte.
 - Runtime Bluetooth validation still needs real Android hardware plus a
   PC.
 

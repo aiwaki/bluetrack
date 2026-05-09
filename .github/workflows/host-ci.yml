@@ -32,3 +32,22 @@ jobs:
 
       - name: Run inline selftest binary
         run: swift run bluetrack-hid-inspector selftest
+
+      - name: Set up Python for cross-platform golden vectors
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install cryptography for the vector tests
+        run: pip install --upgrade pip && pip install cryptography
+        working-directory: ${{ github.workspace }}
+
+      - name: Regenerate golden vectors fixture (must be byte-identical to committed file)
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 host/test-vectors/generate_vectors.py
+          git diff --exit-code -- host/test-vectors/feedback_v1.json
+
+      - name: Run cross-platform golden-vector tests (Python)
+        working-directory: ${{ github.workspace }}
+        run: python3 host/test-vectors/test_golden_vectors.py
