@@ -73,6 +73,25 @@ class FeedbackSession {
             }
             return trimmed.toByteArray(Charsets.US_ASCII)
         }
+
+        /**
+         * Test-only seed-based constructor for the cross-platform golden
+         * vector fixture. Production code always uses the random `init()`.
+         */
+        @JvmStatic
+        internal fun fromTestSeed(seed: ByteArray): FeedbackSession {
+            require(seed.size == PRIVATE_KEY_SIZE) {
+                "seed must be $PRIVATE_KEY_SIZE bytes, got ${seed.size}"
+            }
+            val session = FeedbackSession()
+            System.arraycopy(seed, 0, session.privateKey, 0, PRIVATE_KEY_SIZE)
+            X25519.scalarMultBase(session.privateKey, 0, session.publicKey, 0)
+            session.symmetricKey = null
+            session.nonceSalt = null
+            session.lastCounter = -1L
+            session.replayBitmap = 0L
+            return session
+        }
     }
 
     private val privateKey = ByteArray(PRIVATE_KEY_SIZE)
@@ -94,6 +113,12 @@ class FeedbackSession {
         // X25519 clamps internally; explicit clamp keeps us deterministic.
         X25519.scalarMultBase(privateKey, 0, publicKey, 0)
     }
+
+    /** Test-only accessor for the AES-256-GCM key bytes after derivation. */
+    internal fun testOnlyAesKeyBytes(): ByteArray? = symmetricKey?.encoded
+
+    /** Test-only accessor for the 8-byte nonce salt after derivation. */
+    internal fun testOnlyNonceSaltBytes(): ByteArray? = nonceSalt?.copyOf()
 
     val isReady: Boolean
         get() = symmetricKey != null && nonceSalt != null

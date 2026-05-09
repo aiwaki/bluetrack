@@ -118,6 +118,15 @@ public final class FeedbackSession {
         self.publicKey = privateKey.publicKey.rawRepresentation
     }
 
+    /// Test-only initializer that accepts a pre-generated private key
+    /// (e.g. derived from a fixed seed). Used by `GoldenVectorsTests`
+    /// to load the cross-platform fixture; production code should
+    /// always go through the random `init()` above.
+    internal init(privateKey: Curve25519.KeyAgreement.PrivateKey) {
+        self.privateKey = privateKey
+        self.publicKey = privateKey.publicKey.rawRepresentation
+    }
+
     /// True after `deriveSession(peerPublicKey:)` has installed key material.
     public var isReady: Bool { symmetricKey != nil && nonceSalt != nil }
 

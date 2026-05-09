@@ -1,0 +1,72 @@
+{
+  "aes_key_b64": "Xh6lEOhYE0coAmX4UXZ0ECzV9CTCpGmLKRwTDoWFB4Q=",
+  "constants": {
+    "frame_size": 28,
+    "handshake_write_payload_size": 128,
+    "hkdf_info_base_utf8": "aes-256-gcm key+nonce-salt",
+    "hkdf_salt_utf8": "bluetrack-feedback-v1",
+    "identity_public_key_size": 32,
+    "identity_signature_size": 64,
+    "nonce_salt_size": 8,
+    "nonce_salt_suffix_utf8": "|nonce-salt",
+    "pin_prefix_utf8": "|pin:",
+    "public_key_size": 32
+  },
+  "feedback_characteristic_uuid": "4846ff87-f2d4-4df2-9500-9bf8ed23f9e6",
+  "frames": [
+    {
+      "counter": 0,
+      "dx": 1.25,
+      "dy": -0.75,
+      "frame_b64": "AAAAADr/b91jy+m/Zq92IDwIUzpL5P0xoAG2PQ=="
+    },
+    {
+      "counter": 1,
+      "dx": 0.0,
+      "dy": 0.0,
+      "frame_b64": "AQAAABIiKetsauY3kkK5DADb3YXdnbjTmmEP/Q=="
+    },
+    {
+      "counter": 7,
+      "dx": -12.5,
+      "dy": 99.125,
+      "frame_b64": "BwAAAOuctJhSNGgCFUbeFxDcI3Q9/U6YivJ5aA=="
+    },
+    {
+      "counter": 42,
+      "dx": 127.0,
+      "dy": -127.0,
+      "frame_b64": "KgAAANK+hDMe2kU3nainjqaHMhYDzDnGgL8mdw=="
+    },
+    {
+      "counter": 4294967294,
+      "dx": 3.5,
+      "dy": -3.5,
+      "frame_b64": "/v///52Ofgo1JfoKXW+Uc3I+t03f39Tl/B2ICQ=="
+    },
+    {
+      "counter": 4294967295,
+      "dx": 0.0,
+      "dy": 0.0,
+      "frame_b64": "/////1zed5Dg+YM35oCYXdTSAh5KXUukls7EWA=="
+    }
+  ],
+  "handshake_characteristic_uuid": "4846ff88-f2d4-4df2-9500-9bf8ed23f9e6",
+  "handshake_write_payload_b64": "j0DFrbaPJWJK5bIU6nZ6bslNgp09e14a0bpvPiE4KF8lQ7kv8QlVEUdq3INp223ckzZloRl43aFATuEGbKlVnS6PjCZ+B0ji0j3Gy3Ewab/izvJ04QxSXrwFYY5A3WBndw6wmy/FB0RHKo3EeWP67dlE2PHUigKYzxgLKfXblQ4=",
+  "host": {
+    "ephemeral_x25519_private_seed_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "ephemeral_x25519_public_b64": "j0DFrbaPJWJK5bIU6nZ6bslNgp09e14a0bpvPiE4KF8=",
+    "identity_ed25519_private_seed_b64": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+    "identity_ed25519_public_b64": "JUO5L/EJVRFHatyDadtt3JM2ZaEZeN2hQE7hBmypVZ0=",
+    "identity_fingerprint": "03396219237f75a6"
+  },
+  "nonce_salt_b64": "ydyVIg63Ej4=",
+  "phone": {
+    "ephemeral_x25519_private_seed_b64": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+    "ephemeral_x25519_public_b64": "NYBy1jZYgNGu6jKa35EhODhR7SGijjt16WXQ0s0WYlQ="
+  },
+  "pin": "246810",
+  "protocol_version": "v1-pin-tofu-replay",
+  "service_uuid": "0d03f2a3-b9b2-43f6-90ca-6c4ff67c2263",
+  "shared_secret_b64": "lmOqHal+hIqRSkNtBBY9+7iRePEH8bW3ftOFQgM4KFQ="
+}
