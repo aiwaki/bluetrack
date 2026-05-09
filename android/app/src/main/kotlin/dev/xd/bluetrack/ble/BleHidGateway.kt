@@ -89,6 +89,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
 
     private val trustedHosts = TrustedHostStore(context)
     private val decryptor = PayloadDecryptor(trustedHosts)
+    private val handshakeRateLimiter = HandshakeRateLimiter()
     private val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val adapter = btManager.adapter
     private var hid: BluetoothHidDevice? = null
@@ -877,6 +878,23 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         offset: Int,
         value: ByteArray,
     ) {
+        // Rate-limit BEFORE crypto so a flooder cannot pin the GATT
+        // thread on Ed25519 + X25519 every write. A legitimate host
+        // writes one handshake per session (with rare retries) and is
+        // never throttled in practice.
+        if (!handshakeRateLimiter.tryAcquire(device.address, SystemClock.elapsedRealtime())) {
+            rejectedFeedbackPackets += 1
+            updateStatus(
+                rejectedFeedbackPackets = rejectedFeedbackPackets,
+                error = "Rate-limited a handshake flood from ${device.address}.",
+                eventSource = "Feedback",
+                eventMessage = "Rate-limited handshake from ${device.address}; dropped before crypto verify.",
+            )
+            if (responseNeeded) {
+                sendResponseSafely(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
+            }
+            return
+        }
         val outcome = if (!preparedWrite && offset == 0) {
             decryptor.installHandshake(value)
         } else {
