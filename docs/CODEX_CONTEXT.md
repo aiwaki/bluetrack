@@ -167,6 +167,17 @@ adb logcat -s BluetrackInput Bluetrack
   out-of-order frames more than 63 below the high-water counter, and
   counter wrap-around are silently dropped. Host MUST rotate sessions
   before 2³² packets.
+- Identity backup/migration: both CLIs ship `export-identity --to
+  <path>` and `import-identity --from <path>` subcommands. The
+  Swift host inspector stores its identity under
+  `~/.config/bluetrack-hid-inspector/host_identity_v1.json` and the
+  Python sender under `~/.config/bluetrack-hid-inspector-py/...`;
+  both files share the same byte-shape (`{"private_key_b64": "..."}`)
+  so an identity exported from one CLI can be imported by the other
+  without translation. `import-identity` validates the source seed
+  before touching the destination and preserves the previous
+  identity at `<destination>.bak` for one-shot recovery from a
+  mistaken import.
 - Release-build crypto: `android/app/proguard-rules.pro` keeps the
   BouncyCastle X25519/Ed25519 packages and every Bluetrack BLE
   protocol entry class. Android CI runs `assembleRelease` (R8

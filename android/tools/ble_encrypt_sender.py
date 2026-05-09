@@ -166,6 +166,41 @@ def reset_host_identity(path: pathlib.Path) -> None:
         pass
 
 
+def export_host_identity(source: pathlib.Path, destination: pathlib.Path) -> HostIdentity:
+    """Validate the identity at ``source`` and write a canonical copy
+    to ``destination`` with mode 0600. Returns the loaded identity so
+    the caller can print its fingerprint. Raises ``ValueError`` /
+    ``OSError`` on malformed or missing source."""
+    identity = HostIdentity.load(source)
+    identity.save(destination)
+    return identity
+
+
+def import_host_identity(
+    source: pathlib.Path, destination: pathlib.Path
+) -> HostIdentity:
+    """Validate the identity at ``source``, back up any existing
+    identity at ``destination`` to ``destination + '.bak'``, then
+    install the new identity at ``destination``. Raises before
+    touching the destination if the source is malformed."""
+    incoming = HostIdentity.load(source)
+    if destination.exists():
+        backup = destination.with_suffix(destination.suffix + ".bak")
+        if backup.exists():
+            backup.unlink()
+        # Atomic copy via tmp + rename so we never leave dst gone.
+        tmp = backup.with_suffix(backup.suffix + ".tmp")
+        with open(destination, "rb") as src_fh, open(tmp, "wb") as dst_fh:
+            dst_fh.write(src_fh.read())
+        os.replace(tmp, backup)
+        try:
+            os.chmod(backup, stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass
+    incoming.save(destination)
+    return incoming
+
+
 def build_handshake_payload(
     ephemeral_public_key: bytes, identity: HostIdentity
 ) -> bytes:
@@ -307,28 +342,11 @@ async def send_loop(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Send encrypted Bluetrack BLE feedback frames "
-        "(X25519 ECDH handshake + AES-256-GCM)."
-    )
-    parser.add_argument(
-        "--address",
-        help="Optional BLE address. If omitted, scan by Bluetrack service UUID.",
-    )
-    parser.add_argument("--dx", type=float, default=1.25, help="Correction X value.")
-    parser.add_argument("--dy", type=float, default=-0.75, help="Correction Y value.")
-    parser.add_argument("--interval", type=float, default=0.005, help="Seconds between frames.")
-    parser.add_argument(
-        "--scan-timeout", type=float, default=10.0, help="Seconds to scan when address is omitted."
-    )
-    parser.add_argument(
-        "--pin",
-        required=True,
-        help=(
-            "Pairing pin shown on the Bluetrack status row "
-            f"({PIN_MIN_LENGTH}..{PIN_MAX_LENGTH} ASCII digits). The peripheral "
-            "mixes it into AES-256-GCM key derivation; without the correct pin, "
-            "frames will not authenticate."
-        ),
+        description=(
+            "Send encrypted Bluetrack BLE feedback frames "
+            "(X25519 ECDH handshake + AES-256-GCM), or manage the "
+            "long-term Ed25519 host identity."
+        )
     )
     parser.add_argument(
         "--host-identity-path",
@@ -338,20 +356,92 @@ def parse_args() -> argparse.Namespace:
             f"Default: {DEFAULT_IDENTITY_PATH}"
         ),
     )
-    parser.add_argument(
-        "--reset-host-identity",
-        action="store_true",
+
+    subparsers = parser.add_subparsers(dest="cmd")
+
+    # Default subcommand: send. Backward-compatible — invoking the
+    # tool without `send` and with `--pin` keeps the old behaviour.
+    send_p = subparsers.add_parser(
+        "send",
+        help="Default. Run the BLE feedback writer.",
+    )
+    for p in (send_p, parser):
+        # Both `send_p` and the bare top-level parser carry the send
+        # flags so `... --pin 246810` (no subcommand) still works.
+        p.add_argument(
+            "--address",
+            help="Optional BLE address. If omitted, scan by Bluetrack service UUID.",
+        )
+        p.add_argument("--dx", type=float, default=1.25, help="Correction X value.")
+        p.add_argument("--dy", type=float, default=-0.75, help="Correction Y value.")
+        p.add_argument(
+            "--interval", type=float, default=0.005, help="Seconds between frames."
+        )
+        p.add_argument(
+            "--scan-timeout",
+            type=float,
+            default=10.0,
+            help="Seconds to scan when address is omitted.",
+        )
+        p.add_argument(
+            "--pin",
+            help=(
+                "Pairing pin shown on the Bluetrack status row "
+                f"({PIN_MIN_LENGTH}..{PIN_MAX_LENGTH} ASCII digits). The peripheral "
+                "mixes it into AES-256-GCM key derivation; without the correct pin, "
+                "frames will not authenticate."
+            ),
+        )
+        p.add_argument(
+            "--reset-host-identity",
+            action="store_true",
+            help=(
+                "Delete the host identity file before this run, generating a "
+                "new one. Use after you intentionally tap \"Forget host\" on "
+                "the phone, or after the phone pinned a stale identity."
+            ),
+        )
+
+    export_p = subparsers.add_parser(
+        "export-identity",
         help=(
-            "Delete the host identity file before this run, generating a "
-            "new one. Use after you intentionally tap \"Forget host\" on "
-            "the phone, or after the phone pinned a stale identity."
+            "Copy the active host identity to --to <path>. Use to back "
+            "up the Ed25519 keypair, or share it with the Swift host "
+            "inspector (file format compatible)."
         ),
     )
+    export_p.add_argument(
+        "--to",
+        required=True,
+        help="Destination path for the exported identity (mode 0600).",
+    )
+
+    import_p = subparsers.add_parser(
+        "import-identity",
+        help=(
+            "Replace the active identity with --from <path>. The previous "
+            "identity is preserved as <path>.bak so a mistaken import can "
+            "be undone."
+        ),
+    )
+    import_p.add_argument(
+        "--from",
+        dest="from_path",
+        required=True,
+        help="Source path for the imported identity.",
+    )
+
     args = parser.parse_args()
-    if normalized_pin_bytes(args.pin) is None:
-        parser.error(
-            f"--pin must be {PIN_MIN_LENGTH}..{PIN_MAX_LENGTH} ASCII digits"
-        )
+
+    if args.cmd is None:
+        # Backward compat: no subcommand → treat as `send`.
+        args.cmd = "send"
+
+    if args.cmd == "send":
+        if not args.pin or normalized_pin_bytes(args.pin) is None:
+            parser.error(
+                f"send requires --pin ({PIN_MIN_LENGTH}..{PIN_MAX_LENGTH} ASCII digits)"
+            )
     return args
 
 
@@ -385,20 +475,69 @@ def load_host_identity_or_exit(path: pathlib.Path, reset: bool) -> HostIdentity:
     return identity
 
 
+def run_export_identity(args: argparse.Namespace) -> None:
+    """`export-identity` subcommand: copy the active identity to --to."""
+    source = pathlib.Path(args.host_identity_path)
+    destination = pathlib.Path(args.to)
+    try:
+        identity = export_host_identity(source, destination)
+    except (OSError, ValueError) as exc:
+        print(
+            f"Could not export identity from {source} to {destination}: {exc}",
+            file=sys.stderr,
+        )
+        sys.exit(74)
+    print(
+        f"Exported host identity {identity.fingerprint()} from {source} to "
+        f"{destination} (mode 0600).",
+        file=sys.stderr,
+    )
+
+
+def run_import_identity(args: argparse.Namespace) -> None:
+    """`import-identity` subcommand: replace --host-identity-path with --from."""
+    source = pathlib.Path(args.from_path)
+    destination = pathlib.Path(args.host_identity_path)
+    try:
+        identity = import_host_identity(source, destination)
+    except (OSError, ValueError) as exc:
+        print(
+            f"Could not import identity from {source} to {destination}: {exc}",
+            file=sys.stderr,
+        )
+        sys.exit(75)
+    backup = destination.with_suffix(destination.suffix + ".bak")
+    backup_note = (
+        f" (previous identity preserved at {backup})"
+        if backup.exists()
+        else ""
+    )
+    print(
+        f"Imported host identity {identity.fingerprint()} from {source} to "
+        f"{destination}{backup_note}.",
+        file=sys.stderr,
+    )
+
+
 if __name__ == "__main__":
     args = parse_args()
-    identity = load_host_identity_or_exit(
-        pathlib.Path(args.host_identity_path),
-        args.reset_host_identity,
-    )
-    asyncio.run(
-        send_loop(
-            args.address,
-            args.dx,
-            args.dy,
-            args.interval,
-            args.scan_timeout,
-            args.pin,
-            identity,
+    if args.cmd == "export-identity":
+        run_export_identity(args)
+    elif args.cmd == "import-identity":
+        run_import_identity(args)
+    else:
+        identity = load_host_identity_or_exit(
+            pathlib.Path(args.host_identity_path),
+            args.reset_host_identity,
         )
-    )
+        asyncio.run(
+            send_loop(
+                args.address,
+                args.dx,
+                args.dy,
+                args.interval,
+                args.scan_timeout,
+                args.pin,
+                identity,
+            )
+        )

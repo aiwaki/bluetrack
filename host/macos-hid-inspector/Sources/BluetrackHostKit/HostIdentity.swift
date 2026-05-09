@@ -111,6 +111,46 @@ public struct HostIdentity {
         }
     }
 
+    /// Copy the identity at `source` to `destination`. Validates that
+    /// the source parses cleanly first, then re-serialises through
+    /// `save(to:)` so `destination` always has mode 0600 and the
+    /// canonical JSON shape (sortedKeys / prettyPrinted) — even if
+    /// the source on disk was hand-edited.
+    ///
+    /// Use `--export-identity <path>` to back up the active host
+    /// identity before reformatting the host machine, switching
+    /// CLIs (Swift host inspector ↔ Python sender — both file
+    /// formats are byte-compatible), or rotating identities by
+    /// hand without losing the previously-pinned phone trust.
+    public static func export(from source: URL = defaultURL, to destination: URL) throws {
+        let identity = try load(at: source)
+        try identity.save(to: destination)
+    }
+
+    /// Replace the identity at `destination` (default: standard
+    /// location) with the one at `source`. Validates the source
+    /// JSON + 32-byte private key seed before touching `destination`,
+    /// so a malformed source does not wipe an existing identity.
+    /// The previous identity at `destination`, if any, is left in
+    /// `destination + ".bak"` so the user can recover from a
+    /// mistaken import.
+    public static func importIdentity(from source: URL, to destination: URL = defaultURL) throws {
+        let incoming = try load(at: source)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            let backup = destination.appendingPathExtension("bak")
+            // Best-effort: replace any previous backup atomically.
+            if FileManager.default.fileExists(atPath: backup.path) {
+                try FileManager.default.removeItem(at: backup)
+            }
+            try FileManager.default.copyItem(at: destination, to: backup)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: backup.path
+            )
+        }
+        try incoming.save(to: destination)
+    }
+
     private struct StoredIdentity: Codable {
         let privateKeyB64: String
 
