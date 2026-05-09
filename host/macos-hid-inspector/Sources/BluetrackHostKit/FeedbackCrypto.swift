@@ -43,6 +43,15 @@ public enum FeedbackCrypto {
     public static let tagSize = 16
     /// Length of an X25519 public or private key on the wire.
     public static let publicKeySize = 32
+    /// Length of an Ed25519 host identity public key on the wire.
+    public static let identityPublicKeySize = 32
+    /// Length of an Ed25519 signature on the wire.
+    public static let identitySignatureSize = 64
+    /// Total bytes the host writes to the handshake characteristic:
+    /// ephemeral X25519 pubkey, Ed25519 identity pubkey, Ed25519 sig
+    /// over the ephemeral pubkey.
+    public static let handshakeWritePayloadSize =
+        publicKeySize + identityPublicKeySize + identitySignatureSize
     /// Length of the HKDF-derived nonce salt prefix.
     public static let nonceSaltSize = 8
 

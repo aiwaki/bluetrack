@@ -1,5 +1,7 @@
 package dev.xd.bluetrack.ble
 
+import java.security.SecureRandom
+import org.bouncycastle.math.ec.rfc8032.Ed25519
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -12,6 +14,31 @@ class PayloadDecryptorTest {
 
     private val testPin = "246810"
     private val otherPin = "135790"
+
+    /** Generate an Ed25519 host identity keypair (private seed, public). */
+    private fun newHostIdentity(): Pair<ByteArray, ByteArray> {
+        val priv = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val pub = ByteArray(32)
+        Ed25519.generatePublicKey(priv, 0, pub, 0)
+        return priv to pub
+    }
+
+    /** Build a 128-byte handshake payload that the host would write. */
+    private fun buildHandshake(
+        eph: ByteArray,
+        idPriv: ByteArray,
+        idPub: ByteArray,
+    ): ByteArray {
+        val sig = ByteArray(64)
+        Ed25519.sign(idPriv, 0, eph, 0, eph.size, sig, 0)
+        return eph + idPub + sig
+    }
+
+    /** Convenience: a fresh decryptor with an empty in-memory trust store. */
+    private fun newDecryptor(): Pair<PayloadDecryptor, InMemoryTrustedHostPolicy> {
+        val store = InMemoryTrustedHostPolicy()
+        return PayloadDecryptor(store) to store
+    }
 
     @Test
     fun freshSessionExposes32BytePublicKey() {
@@ -190,13 +217,20 @@ class PayloadDecryptorTest {
 
     @Test
     fun payloadDecryptorWrapperHandshakeAndDecryptRoundTrip() {
-        val phone = PayloadDecryptor()
+        val (phone, store) = newDecryptor()
         phone.rotateSession(testPin)
+        val (idPriv, idPub) = newHostIdentity()
         val hostSession = FeedbackSession()
 
-        assertTrue(phone.installPeerPublicKey(hostSession.publicKey))
+        val handshake = buildHandshake(hostSession.publicKey, idPriv, idPub)
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.OK,
+            phone.installHandshake(handshake),
+        )
         hostSession.deriveSession(phone.publicKey, testPin)
         assertTrue(phone.isSessionReady)
+        // Identity got TOFU-pinned.
+        assertTrue(idPub.contentEquals(store.trustedIdentityPublicKey()))
 
         val packet = hostSession.buildPacket(123, 4.0f, -4.0f)!!
         assertEquals(FeedbackSession.FRAME_SIZE, packet.size)
@@ -205,26 +239,34 @@ class PayloadDecryptorTest {
         assertTrue(ok)
         assertEquals(Pair(4.0f, -4.0f), decoded)
 
-        // Wrong-length pubkey rejected.
-        assertFalse(phone.installPeerPublicKey(ByteArray(31)))
+        // Wrong-length handshake rejected.
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.MALFORMED,
+            phone.installHandshake(ByteArray(31)),
+        )
     }
 
     @Test
     fun payloadDecryptorWrapperRejectsWrongPin() {
-        val phone = PayloadDecryptor()
+        val (phone, _) = newDecryptor()
         phone.rotateSession(testPin)
+        val (idPriv, idPub) = newHostIdentity()
         val hostSession = FeedbackSession()
 
-        assertTrue(phone.installPeerPublicKey(hostSession.publicKey))
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.OK,
+            phone.installHandshake(buildHandshake(hostSession.publicKey, idPriv, idPub)),
+        )
+        // Host derives with a DIFFERENT pin than the phone, so AES-GCM
+        // tag verification must fail on every frame the host sends.
         hostSession.deriveSession(phone.publicKey, otherPin)
-
         val packet = hostSession.buildPacket(0, 1.0f, 1.0f)!!
         assertFalse(phone.decryptPayloadTo(packet) { _, _ -> })
     }
 
     @Test
     fun payloadDecryptorRotateSessionRejectsInvalidPin() {
-        val phone = PayloadDecryptor()
+        val (phone, _) = newDecryptor()
         try {
             phone.rotateSession("12")
             assertTrue("should have thrown", false)
@@ -241,21 +283,101 @@ class PayloadDecryptorTest {
 
     @Test
     fun rotateSessionInvalidatesPriorHandshake() {
-        val phone = PayloadDecryptor()
+        val (phone, _) = newDecryptor()
         phone.rotateSession(testPin)
+        val (idPriv, idPub) = newHostIdentity()
         val host = FeedbackSession()
-        assertTrue(phone.installPeerPublicKey(host.publicKey))
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.OK,
+            phone.installHandshake(buildHandshake(host.publicKey, idPriv, idPub)),
+        )
         host.deriveSession(phone.publicKey, testPin)
         val packet = host.buildPacket(0, 1f, 1f)!!
         assertTrue(phone.decryptPayloadTo(packet) { _, _ -> })
 
         // Rotating with a fresh keypair AND a fresh pin must invalidate
-        // both the prior packet and the prior pin. Same host re-deriving
-        // against the new public key with the OLD pin should also fail.
+        // both the prior packet and the prior pin.
         phone.rotateSession(otherPin)
         assertNotEquals(host.publicKey.toList(), phone.publicKey.toList())
         assertFalse(phone.isSessionReady)
         assertFalse(phone.decryptPayloadTo(packet) { _, _ -> })
+    }
+
+    @Test
+    fun installHandshakeRejectsBadEd25519Signature() {
+        val (phone, store) = newDecryptor()
+        phone.rotateSession(testPin)
+        val (_, idPub) = newHostIdentity()
+        val (otherPriv, _) = newHostIdentity()
+        val hostSession = FeedbackSession()
+        // Sign with the WRONG private key but advertise the real pubkey.
+        val handshake = buildHandshake(hostSession.publicKey, otherPriv, idPub)
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.BAD_SIGNATURE,
+            phone.installHandshake(handshake),
+        )
+        // Identity must NOT be pinned on a bad signature.
+        assertNull(store.trustedIdentityPublicKey())
+    }
+
+    @Test
+    fun installHandshakeRejectsUntrustedHostAfterPinning() {
+        val (phone, store) = newDecryptor()
+        phone.rotateSession(testPin)
+        val (idPrivA, idPubA) = newHostIdentity()
+        val (idPrivB, idPubB) = newHostIdentity()
+        val hostA = FeedbackSession()
+        val hostB = FeedbackSession()
+
+        // First handshake TOFU-pins host A.
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.OK,
+            phone.installHandshake(buildHandshake(hostA.publicKey, idPrivA, idPubA)),
+        )
+        assertTrue(idPubA.contentEquals(store.trustedIdentityPublicKey()))
+
+        // Rotating the session must NOT clear the trusted host pin.
+        phone.rotateSession(testPin)
+
+        // Host B presents a valid signature but a different identity.
+        // Must be rejected even though the pin is correct.
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.UNTRUSTED_HOST,
+            phone.installHandshake(buildHandshake(hostB.publicKey, idPrivB, idPubB)),
+        )
+        // Pin still on host A.
+        assertTrue(idPubA.contentEquals(store.trustedIdentityPublicKey()))
+
+        // Forget host → host B can re-pin.
+        store.forget()
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.OK,
+            phone.installHandshake(buildHandshake(hostB.publicKey, idPrivB, idPubB)),
+        )
+        assertTrue(idPubB.contentEquals(store.trustedIdentityPublicKey()))
+    }
+
+    @Test
+    fun installHandshakeAcceptsRepeatFromPinnedHost() {
+        val (phone, store) = newDecryptor()
+        phone.rotateSession(testPin)
+        val (idPriv, idPub) = newHostIdentity()
+
+        // First connect: pin.
+        val hostA = FeedbackSession()
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.OK,
+            phone.installHandshake(buildHandshake(hostA.publicKey, idPriv, idPub)),
+        )
+
+        // Rotation simulates the next reconnect with a fresh phone keypair.
+        phone.rotateSession(testPin)
+        val hostB = FeedbackSession()  // fresh ephemeral on the host side too
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.OK,
+            phone.installHandshake(buildHandshake(hostB.publicKey, idPriv, idPub)),
+        )
+        assertTrue(idPub.contentEquals(store.trustedIdentityPublicKey()))
     }
 
     @Test
@@ -313,10 +435,14 @@ class PayloadDecryptorTest {
 
     @Test
     fun replayWindowResetsOnRotateSession() {
-        val phone = PayloadDecryptor()
+        val (phone, _) = newDecryptor()
         phone.rotateSession(testPin)
+        val (idPriv, idPub) = newHostIdentity()
         val hostA = FeedbackSession()
-        assertTrue(phone.installPeerPublicKey(hostA.publicKey))
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.OK,
+            phone.installHandshake(buildHandshake(hostA.publicKey, idPriv, idPub)),
+        )
         hostA.deriveSession(phone.publicKey, testPin)
 
         val pkt = hostA.buildPacket(7, 0f, 0f)!!
@@ -327,7 +453,10 @@ class PayloadDecryptorTest {
         // window; a new host can re-use any counter it likes.
         phone.rotateSession(testPin)
         val hostB = FeedbackSession()
-        assertTrue(phone.installPeerPublicKey(hostB.publicKey))
+        assertEquals(
+            PayloadDecryptor.HandshakeOutcome.OK,
+            phone.installHandshake(buildHandshake(hostB.publicKey, idPriv, idPub)),
+        )
         hostB.deriveSession(phone.publicKey, testPin)
         val newPkt = hostB.buildPacket(7, 0f, 0f)!!
         assertTrue(phone.decryptPayloadTo(newPkt) { _, _ -> })

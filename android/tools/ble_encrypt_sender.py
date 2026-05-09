@@ -21,11 +21,21 @@ duplicate (key, counter) pairs via tag failure since GCM nonces collide.
 """
 import argparse
 import asyncio
+import base64
+import hashlib
+import json
+import os
+import pathlib
+import stat
 import struct
+import sys
 from typing import Optional
 
 from bleak import BleakClient, BleakScanner
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+)
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PrivateKey,
     X25519PublicKey,
@@ -34,7 +44,9 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
+    PrivateFormat,
     PublicFormat,
+    NoEncryption,
 )
 
 SERVICE_UUID = "0d03f2a3-b9b2-43f6-90ca-6c4ff67c2263"
@@ -46,10 +58,124 @@ FRAME_SIZE = 28
 NONCE_SALT_SIZE = 8
 PIN_MIN_LENGTH = 4
 PIN_MAX_LENGTH = 12
+IDENTITY_PUBLIC_KEY_SIZE = 32
+IDENTITY_SIGNATURE_SIZE = 64
+HANDSHAKE_WRITE_PAYLOAD_SIZE = (
+    PUBLIC_KEY_SIZE + IDENTITY_PUBLIC_KEY_SIZE + IDENTITY_SIGNATURE_SIZE
+)
 HKDF_SALT = b"bluetrack-feedback-v1"
 HKDF_INFO_BASE = b"aes-256-gcm key+nonce-salt"
 PIN_PREFIX = b"|pin:"
 NONCE_SALT_SUFFIX = b"|nonce-salt"
+
+DEFAULT_IDENTITY_PATH = (
+    pathlib.Path.home()
+    / ".config"
+    / "bluetrack-hid-inspector-py"
+    / "host_identity_v1.json"
+)
+
+
+class HostIdentity:
+    """Long-term Ed25519 identity persisted on disk under
+    ``~/.config/bluetrack-hid-inspector-py/host_identity_v1.json``. The
+    peripheral pins this identity on first use and refuses subsequent
+    handshakes that present a different identity public key, so users
+    can roll the host (CLI ``--reset-host-identity``) or roll the phone
+    (Forget host) deliberately.
+    """
+
+    def __init__(self, signing_key: Ed25519PrivateKey) -> None:
+        self._signing_key = signing_key
+
+    @property
+    def public_key_bytes(self) -> bytes:
+        return self._signing_key.public_key().public_bytes(
+            Encoding.Raw, PublicFormat.Raw
+        )
+
+    def sign(self, data: bytes) -> bytes:
+        return self._signing_key.sign(data)
+
+    def fingerprint(self) -> str:
+        return host_identity_fingerprint(self.public_key_bytes)
+
+    @classmethod
+    def generate(cls) -> "HostIdentity":
+        return cls(Ed25519PrivateKey.generate())
+
+    @classmethod
+    def load_or_generate(cls, path: pathlib.Path) -> "HostIdentity":
+        if path.exists():
+            return cls.load(path)
+        identity = cls.generate()
+        identity.save(path)
+        return identity
+
+    @classmethod
+    def load(cls, path: pathlib.Path) -> "HostIdentity":
+        with open(path, "r", encoding="utf-8") as fh:
+            stored = json.load(fh)
+        b64 = stored.get("private_key_b64")
+        if not isinstance(b64, str):
+            raise ValueError(f"identity file {path} missing private_key_b64")
+        raw = base64.b64decode(b64.encode("ascii"))
+        if len(raw) != 32:
+            raise ValueError(
+                f"identity file {path} has {len(raw)}-byte seed (need 32)"
+            )
+        return cls(Ed25519PrivateKey.from_private_bytes(raw))
+
+    def save(self, path: pathlib.Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(path.parent, 0o700)
+        except FileNotFoundError:
+            pass
+        raw = self._signing_key.private_bytes(
+            Encoding.Raw, PrivateFormat.Raw, NoEncryption()
+        )
+        payload = json.dumps(
+            {"private_key_b64": base64.b64encode(raw).decode("ascii")},
+            sort_keys=True,
+            indent=2,
+        )
+        # Atomic-ish write: temp file + rename.
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        os.replace(tmp, path)
+        try:
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass
+
+
+def host_identity_fingerprint(identity_pubkey: bytes) -> str:
+    """First 16 hex chars of SHA-256(identity_pubkey). Matches the Swift
+    and Android implementations."""
+    digest = hashlib.sha256(identity_pubkey).hexdigest()
+    return digest[:16]
+
+
+def reset_host_identity(path: pathlib.Path) -> None:
+    """Delete the identity file at ``path``; no-op if absent."""
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def build_handshake_payload(
+    ephemeral_public_key: bytes, identity: HostIdentity
+) -> bytes:
+    """128-byte handshake payload: eph || id_pub || sig(eph)."""
+    if len(ephemeral_public_key) != PUBLIC_KEY_SIZE:
+        raise ValueError(
+            f"ephemeral pubkey must be {PUBLIC_KEY_SIZE} bytes"
+        )
+    sig = identity.sign(ephemeral_public_key)
+    return ephemeral_public_key + identity.public_key_bytes + sig
 
 
 def normalized_pin_bytes(pin: str) -> Optional[bytes]:
@@ -143,9 +269,17 @@ async def perform_handshake(
     client: BleakClient,
     session: FeedbackSession,
     pin: str,
+    identity: HostIdentity,
 ) -> None:
-    """Write our 32-byte X25519 pubkey, read peer pubkey, derive session."""
-    await client.write_gatt_char(HANDSHAKE_CHAR_UUID, session.public_key, response=True)
+    """Write 128-byte handshake (eph || id_pub || sig), read peer pubkey,
+    derive session. The peripheral verifies the Ed25519 signature and
+    TOFU-pins the identity pubkey before responding GATT_SUCCESS."""
+    payload = build_handshake_payload(session.public_key, identity)
+    if len(payload) != HANDSHAKE_WRITE_PAYLOAD_SIZE:
+        raise RuntimeError(
+            f"handshake payload is {len(payload)} bytes (expected {HANDSHAKE_WRITE_PAYLOAD_SIZE})"
+        )
+    await client.write_gatt_char(HANDSHAKE_CHAR_UUID, payload, response=True)
     peer = await client.read_gatt_char(HANDSHAKE_CHAR_UUID)
     session.derive_session(bytes(peer), pin)
 
@@ -157,12 +291,13 @@ async def send_loop(
     interval: float,
     scan_timeout: float,
     pin: str,
+    identity: HostIdentity,
 ) -> None:
     counter = 0
     target = await find_target(address, scan_timeout)
     async with BleakClient(target) as client:
         session = FeedbackSession()
-        await perform_handshake(client, session, pin)
+        await perform_handshake(client, session, pin, identity)
         while True:
             packet = session.build_packet(counter, dx, dy)
             await client.write_gatt_char(FEEDBACK_CHAR_UUID, packet, response=False)
@@ -195,6 +330,23 @@ def parse_args() -> argparse.Namespace:
             "frames will not authenticate."
         ),
     )
+    parser.add_argument(
+        "--host-identity-path",
+        default=str(DEFAULT_IDENTITY_PATH),
+        help=(
+            "Override location for the long-term Ed25519 host identity file. "
+            f"Default: {DEFAULT_IDENTITY_PATH}"
+        ),
+    )
+    parser.add_argument(
+        "--reset-host-identity",
+        action="store_true",
+        help=(
+            "Delete the host identity file before this run, generating a "
+            "new one. Use after you intentionally tap \"Forget host\" on "
+            "the phone, or after the phone pinned a stale identity."
+        ),
+    )
     args = parser.parse_args()
     if normalized_pin_bytes(args.pin) is None:
         parser.error(
@@ -203,8 +355,42 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def load_host_identity_or_exit(path: pathlib.Path, reset: bool) -> HostIdentity:
+    if reset:
+        try:
+            reset_host_identity(path)
+            print(
+                f"Reset host identity at {path} (next session will TOFU-pin on the phone again).",
+                file=sys.stderr,
+            )
+        except OSError as exc:
+            print(f"Could not reset host identity at {path}: {exc}", file=sys.stderr)
+            sys.exit(72)
+    existed_before = path.exists()
+    try:
+        identity = HostIdentity.load_or_generate(path)
+    except (OSError, ValueError) as exc:
+        print(f"Could not load host identity at {path}: {exc}", file=sys.stderr)
+        sys.exit(73)
+    action = "loaded" if existed_before else "generated"
+    print(
+        f"Host identity {identity.fingerprint()} (Ed25519, {action} at {path}).",
+        file=sys.stderr,
+    )
+    if not existed_before:
+        print(
+            "This is a new identity. The phone will TOFU-pin it on the next handshake.",
+            file=sys.stderr,
+        )
+    return identity
+
+
 if __name__ == "__main__":
     args = parse_args()
+    identity = load_host_identity_or_exit(
+        pathlib.Path(args.host_identity_path),
+        args.reset_host_identity,
+    )
     asyncio.run(
         send_loop(
             args.address,
@@ -213,5 +399,6 @@ if __name__ == "__main__":
             args.interval,
             args.scan_timeout,
             args.pin,
+            identity,
         )
     )

@@ -41,6 +41,12 @@ data class GatewayStatus(
      * handshake to authenticate. Null while the GATT server is closed.
      */
     val feedbackPin: String? = null,
+    /**
+     * Short fingerprint of the trusted (TOFU-pinned) host Ed25519 identity.
+     * Null when no host has been pinned yet (next handshake will pin).
+     * Surfaced as the `Trust` row in MainActivity along with a "Forget" CTA.
+     */
+    val trustedHostFingerprint: String? = null,
 )
 
 data class CompatibilitySnapshot(
@@ -81,7 +87,8 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         val HANDSHAKE_CHARACTERISTIC_UUID: UUID = UUID.fromString("4846ff88-f2d4-4df2-9500-9bf8ed23f9e6")
     }
 
-    private val decryptor = PayloadDecryptor()
+    private val trustedHosts = TrustedHostStore(context)
+    private val decryptor = PayloadDecryptor(trustedHosts)
     private val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val adapter = btManager.adapter
     private var hid: BluetoothHidDevice? = null
@@ -737,6 +744,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             feedback = "Opening feedback GATT",
             compatibility = snapshotCompatibility(),
             feedbackPin = pin,
+            trustedHostFingerprint = trustedHosts.trustedFingerprint(),
             eventSource = "Feedback",
             eventMessage = "Opening BLE feedback GATT server (pairing pin $pin).",
         )
@@ -869,35 +877,76 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         offset: Int,
         value: ByteArray,
     ) {
-        val accepted = !preparedWrite &&
-            offset == 0 &&
-            value.size == FeedbackSession.PUBLIC_KEY_SIZE &&
-            decryptor.installPeerPublicKey(value)
-        if (accepted) {
-            updateStatus(
-                feedback = "Feedback handshake complete",
-                compatibility = snapshotCompatibility(),
-                eventSource = "Feedback",
-                eventMessage = "Installed host X25519 public key; AES-256-GCM session ready.",
-            )
+        val outcome = if (!preparedWrite && offset == 0) {
+            decryptor.installHandshake(value)
         } else {
-            rejectedFeedbackPackets += 1
-            updateStatus(
-                rejectedFeedbackPackets = rejectedFeedbackPackets,
-                error = "Rejected invalid BLE handshake packet.",
-                eventSource = "Feedback",
-                eventMessage = "Rejected handshake write of ${value.size} bytes.",
-            )
+            PayloadDecryptor.HandshakeOutcome.MALFORMED
+        }
+        when (outcome) {
+            PayloadDecryptor.HandshakeOutcome.OK -> {
+                val fingerprint = trustedHosts.trustedFingerprint()
+                updateStatus(
+                    feedback = "Feedback handshake complete",
+                    compatibility = snapshotCompatibility(),
+                    trustedHostFingerprint = fingerprint,
+                    eventSource = "Feedback",
+                    eventMessage = "Handshake verified; AES-256-GCM session ready (host id $fingerprint).",
+                )
+            }
+            PayloadDecryptor.HandshakeOutcome.UNTRUSTED_HOST -> {
+                rejectedFeedbackPackets += 1
+                updateStatus(
+                    rejectedFeedbackPackets = rejectedFeedbackPackets,
+                    error = "Rejected handshake from untrusted host (different Ed25519 identity).",
+                    eventSource = "Feedback",
+                    eventMessage = "Untrusted host attempted handshake. Tap \"Forget host\" to re-pair.",
+                )
+            }
+            PayloadDecryptor.HandshakeOutcome.BAD_SIGNATURE -> {
+                rejectedFeedbackPackets += 1
+                updateStatus(
+                    rejectedFeedbackPackets = rejectedFeedbackPackets,
+                    error = "Rejected handshake with invalid Ed25519 signature.",
+                    eventSource = "Feedback",
+                    eventMessage = "Handshake signature verification failed.",
+                )
+            }
+            PayloadDecryptor.HandshakeOutcome.MALFORMED,
+            PayloadDecryptor.HandshakeOutcome.DERIVATION_FAILED -> {
+                rejectedFeedbackPackets += 1
+                updateStatus(
+                    rejectedFeedbackPackets = rejectedFeedbackPackets,
+                    error = "Rejected invalid BLE handshake packet.",
+                    eventSource = "Feedback",
+                    eventMessage = "Rejected handshake write of ${value.size} bytes (outcome=$outcome).",
+                )
+            }
         }
         if (responseNeeded) {
             sendResponseSafely(
                 device,
                 requestId,
-                if (accepted) BluetoothGatt.GATT_SUCCESS else BluetoothGatt.GATT_FAILURE,
+                if (outcome == PayloadDecryptor.HandshakeOutcome.OK)
+                    BluetoothGatt.GATT_SUCCESS
+                else BluetoothGatt.GATT_FAILURE,
                 offset,
                 null,
             )
         }
+    }
+
+    /**
+     * Drop the pinned host identity so the next handshake TOFU-pins the
+     * caller again. Surfaced for the MainActivity "Forget host" action.
+     */
+    @Synchronized
+    fun forgetTrustedHost() {
+        trustedHosts.forget()
+        updateStatus(
+            trustedHostFingerprint = null,
+            eventSource = "Feedback",
+            eventMessage = "Forgot trusted host; next handshake will TOFU-pin a new identity.",
+        )
     }
 
     private fun handleFeedbackWrite(
@@ -1134,6 +1183,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         lastReportAtMs: Long? = _status.value.lastReportAtMs,
         lastFeedbackAtMs: Long? = _status.value.lastFeedbackAtMs,
         feedbackPin: String? = _status.value.feedbackPin,
+        trustedHostFingerprint: String? = _status.value.trustedHostFingerprint,
         eventSource: String? = null,
         eventMessage: String? = null,
     ) {
@@ -1154,6 +1204,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             lastReportAtMs = lastReportAtMs,
             lastFeedbackAtMs = lastFeedbackAtMs,
             feedbackPin = feedbackPin,
+            trustedHostFingerprint = trustedHostFingerprint,
             eventSource = eventSource,
             eventMessage = eventMessage,
         )

@@ -33,6 +33,12 @@ struct Options {
     /// Required for `feedback` and `companion`; mixed into the AES-GCM key
     /// derivation so a host without the pin produces non-decryptable frames.
     var feedbackPin: String? = nil
+    /// Override location for the long-term Ed25519 identity file. Default is
+    /// `~/.config/bluetrack-hid-inspector/host_identity_v1.json`.
+    var hostIdentityPath: String? = nil
+    /// When true, delete the identity file before continuing. Used to roll
+    /// the host identity after the peripheral pinned the wrong key.
+    var resetHostIdentity: Bool = false
 }
 
 struct DeviceSummary {
@@ -493,6 +499,13 @@ private func parseOptions(_ arguments: [String]) -> Options {
             if index < arguments.count {
                 options.feedbackPin = arguments[index]
             }
+        case "--host-identity-path":
+            index += 1
+            if index < arguments.count {
+                options.hostIdentityPath = arguments[index]
+            }
+        case "--reset-host-identity":
+            options.resetHostIdentity = true
         case "--help", "-h":
             printUsageAndExit()
         default:
@@ -529,6 +542,15 @@ private func printUsageAndExit(code: Int32 = 0) -> Never {
                          peripheral mixes it into the AES-256-GCM key
                          derivation so a host without the pin produces
                          non-decryptable frames. Required.
+      --host-identity-path PATH
+                         Override location for the long-term Ed25519 host
+                         identity file. Default:
+                         ~/.config/bluetrack-hid-inspector/host_identity_v1.json
+      --reset-host-identity
+                         Delete the host identity file before this run, so a
+                         new identity is generated. Use after you intentionally
+                         tap "Forget host" on the phone, or after the phone
+                         pinned a stale identity.
       --seconds 15       Total write window after the characteristic is ready.
       --scan-timeout 10  Seconds to scan for the BLE feedback advertiser.
       --interval-ms 5    Milliseconds between encrypted writes.
@@ -592,6 +614,41 @@ private func emptyDash(_ value: String) -> String {
     value.isEmpty ? "-" : value
 }
 
+/// Resolve the persisted Ed25519 identity (or generate one), honoring
+/// `--host-identity-path` and `--reset-host-identity`. Prints the
+/// fingerprint of the loaded/generated identity to stdout so the user
+/// can compare it against the Bluetrack `Trust` status row on the phone.
+private func loadHostIdentityOrExit(options: Options) -> HostIdentity {
+    let url: URL
+    if let path = options.hostIdentityPath {
+        url = URL(fileURLWithPath: path)
+    } else {
+        url = HostIdentity.defaultURL
+    }
+    if options.resetHostIdentity {
+        do {
+            try HostIdentity.reset(at: url)
+            print("Reset host identity at \(url.path) (next session will TOFU on the phone again).")
+        } catch {
+            print("Could not reset host identity at \(url.path): \(error)")
+            exit(72)
+        }
+    }
+    let existedBefore = FileManager.default.fileExists(atPath: url.path)
+    do {
+        let identity = try HostIdentity.loadOrGenerate(at: url)
+        let action = existedBefore ? "loaded" : "generated"
+        print("Host identity \(identity.fingerprint()) (Ed25519, \(action) at \(url.path)).")
+        if !existedBefore {
+            print("This is a new identity. The phone will TOFU-pin it on the next handshake.")
+        }
+        return identity
+    } catch {
+        print("Could not load host identity at \(url.path): \(error)")
+        exit(73)
+    }
+}
+
 let options = parseOptions(Array(CommandLine.arguments.dropFirst()))
 
 switch options.command {
@@ -614,13 +671,15 @@ case .feedback:
         print("`feedback` requires --pin <digits> (4–12 ASCII digits, shown on the Bluetrack status row).")
         exit(64)
     }
+    let identity = loadHostIdentityOrExit(options: options)
     let feedback = FeedbackCompanion(options: FeedbackOptions(
         dx: options.feedbackDx,
         dy: options.feedbackDy,
         intervalMs: options.feedbackIntervalMs,
         scanTimeout: options.feedbackScanTimeout,
         seconds: options.feedbackSeconds,
-        pin: pin
+        pin: pin,
+        hostIdentity: identity
     ))
     let exitCode = feedback.run()
     if let path = options.reportPath {
@@ -637,6 +696,7 @@ case .companion:
         print("`companion` requires --pin <digits> (4–12 ASCII digits, shown on the Bluetrack status row).")
         exit(64)
     }
+    let identity = loadHostIdentityOrExit(options: options)
     let inspector = HidInspector(options: options)
     let feedback = FeedbackCompanion(options: FeedbackOptions(
         dx: options.feedbackDx,
@@ -644,7 +704,8 @@ case .companion:
         intervalMs: options.feedbackIntervalMs,
         scanTimeout: options.feedbackScanTimeout,
         seconds: options.feedbackSeconds,
-        pin: pin
+        pin: pin,
+        hostIdentity: identity
     ))
     let total = options.feedbackScanTimeout + options.feedbackSeconds
     exit(CompanionRunner(

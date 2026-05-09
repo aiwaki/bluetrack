@@ -37,8 +37,12 @@ Service UUID `0d03f2a3-b9b2-43f6-90ca-6c4ff67c2263` exposes two
 characteristics:
 
 - handshake `4846ff88-f2d4-4df2-9500-9bf8ed23f9e6` (READ + WRITE) — host
-  writes its 32-byte X25519 public key, then reads the phone's 32-byte
-  public key.
+  writes a 128-byte payload `eph_x25519(32) || id_ed25519(32) ||
+  ed25519_sig_over_eph(64)`, then reads the phone's 32-byte X25519
+  public key. The peripheral verifies the Ed25519 signature against
+  the embedded identity pubkey and TOFU-pins the identity on the first
+  successful handshake (subsequent handshakes from a different
+  identity are rejected even if the pin is correct).
 - feedback `4846ff87-f2d4-4df2-9500-9bf8ed23f9e6` (WRITE_NO_RESPONSE) —
   28-byte authenticated frames.
 
@@ -150,10 +154,19 @@ adb logcat -s BluetrackInput Bluetrack
 - Mode switching never calls `unregisterApp()`; one composite descriptor
   is registered and only the active report path changes.
 - Feedback crypto: per-session X25519 ECDH + HKDF-SHA256 + AES-256-GCM,
-  with a 6-digit pairing pin shown on the phone mixed into HKDF. Pin
-  protects against opportunistic in-range attackers but leaks to
-  shoulder-surfers; ~20 bits of entropy means a remote brute force has
-  one chance per BLE reconnect (pin rotates per `startGatt`).
+  with a 6-digit pairing pin mixed into HKDF AND a long-term Ed25519
+  host identity TOFU-pinned on the phone. Pin gates the cryptographic
+  derivation; identity gates *which* host the phone will talk to even
+  if the pin is leaked. Identity pinning has a TOFU window — anyone
+  who completes the *very first* handshake is trusted forever (or
+  until "Forget host"). The host private key is stored unencrypted
+  under `~/.config/bluetrack-hid-inspector{,-py}/host_identity_v1.json`
+  with mode `0600`; an attacker with read access to the file can
+  impersonate the host.
+- Replay window: 64-frame sliding window on the receiver. Replays,
+  out-of-order frames more than 63 below the high-water counter, and
+  counter wrap-around are silently dropped. Host MUST rotate sessions
+  before 2³² packets.
 - Runtime Bluetooth validation still needs real Android hardware plus a
   PC.
 
@@ -171,10 +184,19 @@ UX:
 
 Security:
 
-- Strengthen pairing beyond the 6-digit pin: host pubkey pinning
-  (TOFU) or device-bound identity keys exchanged out-of-band. The
-  current pin model is opportunistic — fine against passive snoops,
-  weak against shoulder-surfing or physical access to the phone screen.
+- Close the TOFU window: out-of-band identity exchange (QR code on
+  first run) so the very first handshake is also authenticated. Today
+  anyone who guesses the pin within the first reconnect window can
+  pin themselves as the trusted host.
+- Encrypt the host identity at rest. Currently the Ed25519 private key
+  sits in `~/.config/bluetrack-hid-inspector{,-py}/host_identity_v1.json`
+  with mode `0600`. macOS Keychain (Swift) and `~/.config` umask leak
+  scenarios both deserve a follow-up.
+- Bind the handshake signature to a peripheral nonce so replayed
+  `(eph, id, sig)` triples cannot occupy the peripheral's session slot
+  (currently a slot-hijack is possible but harmless — attacker without
+  the corresponding ephemeral private cannot send valid frames, so the
+  session times out silently).
 
 ## User Preference
 
