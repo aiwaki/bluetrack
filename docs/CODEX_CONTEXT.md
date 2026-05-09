@@ -167,6 +167,12 @@ adb logcat -s BluetrackInput Bluetrack
   out-of-order frames more than 63 below the high-water counter, and
   counter wrap-around are silently dropped. Host MUST rotate sessions
   before 2³² packets.
+- Release-build crypto: `android/app/proguard-rules.pro` keeps the
+  BouncyCastle X25519/Ed25519 packages and every Bluetrack BLE
+  protocol entry class. Android CI runs `assembleRelease` (R8
+  minify enabled) and greps the resulting `app-release-unsigned.apk`
+  for the expected symbols on every PR, so a future R8 / library
+  upgrade cannot silently strip the handshake.
 - Cross-platform golden vectors: `host/test-vectors/feedback_v1.json`
   is the deterministic fixture every platform's tests load and
   byte-compare against. Regenerate via
