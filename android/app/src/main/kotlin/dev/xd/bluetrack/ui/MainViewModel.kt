@@ -127,6 +127,11 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         ble.shutdown()
     }
 
+    /** Drop the TOFU-pinned host identity (re-pair on next handshake). */
+    fun forgetTrustedHost() {
+        ble.forgetTrustedHost()
+    }
+
     fun detach() {
         started = false
         inputPacerJob?.cancel()

@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -263,7 +264,11 @@ private fun AppScreen(
                         onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
                     )
                     Row(Modifier.fillMaxWidth().height(190.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SystemPanel(status, Modifier.weight(1f).fillMaxHeight())
+                        SystemPanel(
+                            status = status,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onForgetHost = { vm.forgetTrustedHost() },
+                        )
                         TimelinePanel(status.events, now, Modifier.weight(1f).fillMaxHeight())
                     }
                 }
@@ -281,7 +286,11 @@ private fun AppScreen(
                         modifier = Modifier.weight(0.85f).fillMaxHeight(),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        SystemPanel(status, Modifier.weight(0.75f))
+                        SystemPanel(
+                            status = status,
+                            modifier = Modifier.weight(0.75f),
+                            onForgetHost = { vm.forgetTrustedHost() },
+                        )
                         TimelinePanel(status.events, now, Modifier.weight(1f))
                     }
                 }
@@ -486,7 +495,11 @@ private fun TouchpadPanel(
 }
 
 @Composable
-private fun SystemPanel(status: GatewayStatus, modifier: Modifier) {
+private fun SystemPanel(
+    status: GatewayStatus,
+    modifier: Modifier,
+    onForgetHost: () -> Unit,
+) {
     Panel(modifier) {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("System", color = Color.White, fontWeight = FontWeight.Bold)
@@ -496,6 +509,20 @@ private fun SystemPanel(status: GatewayStatus, modifier: Modifier) {
             StatusLine("BLE", status.feedback)
             status.feedbackPin?.let { pin ->
                 StatusLine("Pin", pin)
+            }
+            val trust = status.trustedHostFingerprint
+            if (trust != null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    StatusLine("Trust", trust, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onForgetHost) {
+                        Text("Forget", color = Color(0xFFFF8888))
+                    }
+                }
+            } else if (status.feedbackPin != null) {
+                StatusLine("Trust", "first run")
             }
         }
     }
@@ -524,8 +551,8 @@ private fun TimelinePanel(events: List<GatewayEvent>, now: Long, modifier: Modif
 }
 
 @Composable
-private fun StatusLine(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun StatusLine(label: String, value: String, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = Color.White.copy(alpha = 0.62f), modifier = Modifier.width(74.dp))
         Text(value, color = Color.White, modifier = Modifier.weight(1f))
     }

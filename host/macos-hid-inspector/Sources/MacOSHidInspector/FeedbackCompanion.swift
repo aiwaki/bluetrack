@@ -11,6 +11,9 @@ struct FeedbackOptions {
     /// Pairing pin shown on the Bluetrack status row. Must satisfy
     /// `FeedbackCrypto.normalizedPinBytes`. Required.
     var pin: String = ""
+    /// Long-term Ed25519 identity used to sign the BLE handshake so the
+    /// peripheral can pin the host (TOFU). Must be set before `run()`.
+    var hostIdentity: HostIdentity?
 }
 
 final class FeedbackCompanion: NSObject {
@@ -328,10 +331,26 @@ extension FeedbackCompanion: CBPeripheralDelegate {
             return
         }
         charReadyAt = Date()
-        print("Characteristics ready. Starting handshake (writing 32-byte X25519 public key)...")
-        // 1) Write our pubkey first; the peripheral derives its session in
+        guard let identity = options.hostIdentity else {
+            failHandshake("host identity is unset (compile-time wiring bug)")
+            return
+        }
+        let payloadData: Data
+        do {
+            let payload = try FeedbackHandshakePayload.build(
+                ephemeralPublicKey: session.publicKey,
+                hostIdentity: identity
+            )
+            payloadData = payload.encoded()
+        } catch {
+            failHandshake("could not build handshake: \(error)")
+            return
+        }
+        print("Characteristics ready. Starting handshake (\(payloadData.count) bytes: eph X25519 + Ed25519 id \(identity.fingerprint()) + sig)...")
+        // 1) Write the signed handshake payload first; the peripheral
+        //    verifies sig + TOFU-checks identity in
         //    onCharacteristicWriteRequest before responding.
-        peripheral.writeValue(session.publicKey, for: handshake, type: .withResponse)
+        peripheral.writeValue(payloadData, for: handshake, type: .withResponse)
     }
 
     func peripheral(

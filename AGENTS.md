@@ -45,9 +45,15 @@ lanes (Android, Host) green.
 - Compatibility matrix: more `host/snapshots/` entries from different
   Mac+phone combos. Held for community contribution; one user does
   not have enough hardware to populate this meaningfully.
-- Strengthen pairing beyond the 6-digit pin: host pubkey pinning
-  (TOFU), or device-bound identity keys exchanged out-of-band (QR
-  code on first run). Current pin model is opportunistic-only — fine
-  against passive snoops, weak against shoulder-surfing.
+- Close the TOFU window: OOB identity exchange (QR code on first run)
+  so the very first handshake is also authenticated. The peripheral
+  currently pins whoever speaks first; the pin still gates the
+  cryptographic derivation.
+- Encrypt the host identity at rest (macOS Keychain on Swift; better
+  storage than `~/.config/...host_identity_v1.json` mode 0600 on
+  Python). Identity is the master credential post-TOFU.
+- Bind the handshake signature to a peripheral nonce so replayed
+  `(eph, id, sig)` triples cannot occupy the peripheral's session
+  slot (currently a slot-hijack is harmless but ugly).
 - Refine the diagnostic touchpad into a more deliberate control
   surface once the new UI artifacts land.
