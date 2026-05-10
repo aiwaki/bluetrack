@@ -931,8 +931,10 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             }
             PayloadDecryptor.HandshakeOutcome.UNTRUSTED_HOST -> {
                 rejectedFeedbackPackets += 1
+                lifetimeCounters.addRejections(1L)
                 updateStatus(
                     rejectedFeedbackPackets = rejectedFeedbackPackets,
+                    lifetimeCounters = lifetimeCounters.current(),
                     error = "Rejected handshake from untrusted host (different Ed25519 identity).",
                     eventSource = "Feedback",
                     eventMessage = "Untrusted host attempted handshake. Tap \"Forget host\" to re-pair.",
@@ -940,8 +942,10 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             }
             PayloadDecryptor.HandshakeOutcome.BAD_SIGNATURE -> {
                 rejectedFeedbackPackets += 1
+                lifetimeCounters.addRejections(1L)
                 updateStatus(
                     rejectedFeedbackPackets = rejectedFeedbackPackets,
+                    lifetimeCounters = lifetimeCounters.current(),
                     error = "Rejected handshake with invalid Ed25519 signature.",
                     eventSource = "Feedback",
                     eventMessage = "Handshake signature verification failed.",
@@ -950,8 +954,10 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             PayloadDecryptor.HandshakeOutcome.MALFORMED,
             PayloadDecryptor.HandshakeOutcome.DERIVATION_FAILED -> {
                 rejectedFeedbackPackets += 1
+                lifetimeCounters.addRejections(1L)
                 updateStatus(
                     rejectedFeedbackPackets = rejectedFeedbackPackets,
+                    lifetimeCounters = lifetimeCounters.current(),
                     error = "Rejected invalid BLE handshake packet.",
                     eventSource = "Feedback",
                     eventMessage = "Rejected handshake write of ${value.size} bytes (outcome=$outcome).",
