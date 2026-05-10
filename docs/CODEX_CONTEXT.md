@@ -2,8 +2,8 @@
 
 Long-form mental model + hardware validation script + roadmap. The
 project shape, code map, and operating prompt live in `CLAUDE.md` and
-`AGENTS.md`; project rules live in `.claude/rules/00-project.md`. Read
-those first.
+`AGENTS.md`; project rules live in `.claude/rules/00-project.md`;
+per-PR history lives in `CHANGELOG.md`. Read those first.
 
 ## North Star
 
