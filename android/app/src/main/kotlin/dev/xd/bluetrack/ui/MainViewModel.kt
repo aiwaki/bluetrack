@@ -132,6 +132,11 @@ class MainViewModel(private val ble: BleHidGateway, private val engine: Translat
         ble.forgetTrustedHost()
     }
 
+    /** Wipe persisted lifetime counters back to zero. */
+    fun resetLifetimeCounters() {
+        ble.resetLifetimeCounters()
+    }
+
     fun detach() {
         started = false
         inputPacerJob?.cancel()

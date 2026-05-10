@@ -47,6 +47,13 @@ data class GatewayStatus(
      * Surfaced as the `Trust` row in MainActivity along with a "Forget" CTA.
      */
     val trustedHostFingerprint: String? = null,
+    /**
+     * Three lifetime counters that survive a process kill: HID reports
+     * sent, encrypted feedback packets accepted, and rejection events
+     * counted. Persisted via SharedPreferences. Useful for spotting
+     * "this phone is silently rejecting floods" weeks after the fact.
+     */
+    val lifetimeCounters: LifetimeCountersSnapshot = LifetimeCountersSnapshot(),
 )
 
 data class CompatibilitySnapshot(
@@ -90,6 +97,8 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     private val trustedHosts = TrustedHostStore(context)
     private val decryptor = PayloadDecryptor(trustedHosts)
     private val handshakeRateLimiter = HandshakeRateLimiter()
+    private val lifetimeCounters = LifetimeCountersAccumulator(LifetimeCountersStore(context))
+        .also { it.load() }
     private val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val adapter = btManager.adapter
     private var hid: BluetoothHidDevice? = null
@@ -520,8 +529,10 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                 }
                 synchronized(this@BleHidGateway) {
                     reportsSent += sentReports
+                    lifetimeCounters.addReports(sentReports.toLong())
                     updateStatus(
                         reportsSent = reportsSent,
+                        lifetimeCounters = lifetimeCounters.current(),
                         lastReportAtMs = SystemClock.elapsedRealtime(),
                         eventSource = "Gamepad",
                         eventMessage = "Sent a visible gamepad wake train after $reason.",
@@ -592,6 +603,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             synchronized(this) {
                 if (sent) {
                     reportsSent += 1
+                    lifetimeCounters.addReports(1L)
                     publishReportStatusIfDue()
                 } else {
                     updateStatus(
@@ -614,6 +626,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         val shouldLogEvent = reportsSent == 1 || reportsSent % REPORT_EVENT_INTERVAL == 0
         updateStatus(
             reportsSent = reportsSent,
+            lifetimeCounters = lifetimeCounters.current(),
             lastReportAtMs = now,
             eventSource = if (shouldLogEvent) "HID" else null,
             eventMessage = if (shouldLogEvent) {
@@ -626,6 +639,9 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
 
     @Synchronized
     fun shutdown() {
+        // Persist lifetime counters before tearing down so a forced
+        // process kill mid-session does not lose the queued deltas.
+        lifetimeCounters.flush()
         updateStatus(
             feedbackPin = null,
             eventSource = "Lifecycle",
@@ -884,8 +900,10 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         // never throttled in practice.
         if (!handshakeRateLimiter.tryAcquire(device.address, SystemClock.elapsedRealtime())) {
             rejectedFeedbackPackets += 1
+            lifetimeCounters.addRejections(1L)
             updateStatus(
                 rejectedFeedbackPackets = rejectedFeedbackPackets,
+                lifetimeCounters = lifetimeCounters.current(),
                 error = "Rate-limited a handshake flood from ${device.address}.",
                 eventSource = "Feedback",
                 eventMessage = "Rate-limited handshake from ${device.address}; dropped before crypto verify.",
@@ -967,6 +985,20 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         )
     }
 
+    /**
+     * Reset the persisted lifetime counters to zero. Surfaced for an
+     * eventual Settings → Diagnostics "Reset counters" CTA.
+     */
+    @Synchronized
+    fun resetLifetimeCounters() {
+        lifetimeCounters.reset()
+        updateStatus(
+            lifetimeCounters = lifetimeCounters.current(),
+            eventSource = "Lifecycle",
+            eventMessage = "Reset lifetime counters.",
+        )
+    }
+
     private fun handleFeedbackWrite(
         device: BluetoothDevice,
         requestId: Int,
@@ -980,9 +1012,11 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         }
         if (accepted) {
             feedbackPackets += 1
+            lifetimeCounters.addFeedback(1L)
             updateStatus(
                 feedback = "Feedback packets: $feedbackPackets",
                 feedbackPackets = feedbackPackets,
+                lifetimeCounters = lifetimeCounters.current(),
                 lastFeedbackAtMs = SystemClock.elapsedRealtime(),
                 eventSource = if (feedbackPackets == 1 || feedbackPackets % 100 == 0) "Feedback" else null,
                 eventMessage = if (feedbackPackets == 1 || feedbackPackets % 100 == 0) {
@@ -993,8 +1027,10 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             )
         } else {
             rejectedFeedbackPackets += 1
+            lifetimeCounters.addRejections(1L)
             updateStatus(
                 rejectedFeedbackPackets = rejectedFeedbackPackets,
+                lifetimeCounters = lifetimeCounters.current(),
                 error = "Rejected invalid BLE feedback packet.",
                 eventSource = "Feedback",
                 eventMessage = "Rejected feedback packet #$rejectedFeedbackPackets.",
@@ -1202,6 +1238,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         lastFeedbackAtMs: Long? = _status.value.lastFeedbackAtMs,
         feedbackPin: String? = _status.value.feedbackPin,
         trustedHostFingerprint: String? = _status.value.trustedHostFingerprint,
+        lifetimeCounters: LifetimeCountersSnapshot = _status.value.lifetimeCounters,
         eventSource: String? = null,
         eventMessage: String? = null,
     ) {
@@ -1223,6 +1260,7 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             lastFeedbackAtMs = lastFeedbackAtMs,
             feedbackPin = feedbackPin,
             trustedHostFingerprint = trustedHostFingerprint,
+            lifetimeCounters = lifetimeCounters,
             eventSource = eventSource,
             eventMessage = eventMessage,
         )
