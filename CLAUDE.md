@@ -61,8 +61,31 @@ Debug APK lands at `android/app/build/outputs/apk/debug/app-debug.apk`.
   pure-Kotlin status/event reducer used by `BleHidGateway.updateStatus`.
   Side effects (logcat, StateFlow write) stay in the gateway; reducer is
   covered by JVM tests in `GatewayStatusReducerTest`.
+- `android/app/src/main/kotlin/dev/xd/bluetrack/ble/FeedbackSession.kt`:
+  per-session BLE feedback crypto. X25519 ECDH (BouncyCastle) +
+  HKDF-SHA256 with the pairing pin in the info bytes + AES-256-GCM
+  on 28-byte frames. Sliding 64-frame replay window enforced by
+  `acceptCounter`.
+- `android/app/src/main/kotlin/dev/xd/bluetrack/ble/FeedbackHandshake.kt`:
+  128-byte handshake payload `eph_x25519 || id_ed25519 || sig` with
+  Ed25519 signature verification.
 - `android/app/src/main/kotlin/dev/xd/bluetrack/ble/PayloadDecryptor.kt`:
-  AES-128-CTR feedback frame decoding.
+  thin wrapper over `FeedbackSession` + `TrustedHostPolicy`. Owns
+  `installHandshake(bytes)` (parse + verify + TOFU-pin + derive
+  session) and `decryptPayloadTo(bytes, callback)` for incoming
+  AES-256-GCM feedback frames.
+- `android/app/src/main/kotlin/dev/xd/bluetrack/ble/TrustedHostStore.kt`:
+  `TrustedHostPolicy` interface + SharedPreferences-backed
+  `TrustedHostStore` + `InMemoryTrustedHostPolicy` (test seam) for
+  TOFU host identity pinning.
+- `android/app/src/main/kotlin/dev/xd/bluetrack/ble/HandshakeRateLimiter.kt`:
+  per-peer token-bucket (4 capacity, 4 tokens/s, LRU-capped at 64
+  peers) that drops handshake floods before any crypto runs.
+- `android/app/src/main/kotlin/dev/xd/bluetrack/ble/LifetimeCountersStore.kt`
+  + `LifetimeCountersAccumulator.kt`: SharedPreferences-backed
+  lifetime totals (HID reports / feedback packets / rejections) with
+  throttled writes (every 50 events) and synchronous flush on
+  rejections so a process kill never loses one.
 - `android/app/src/main/kotlin/dev/xd/bluetrack/engine/TranslationEngine.kt`:
   mouse and gamepad HID report generation.
 - `android/app/src/main/kotlin/dev/xd/bluetrack/engine/GamepadReportFormat.kt`:
@@ -82,5 +105,14 @@ Debug APK lands at `android/app/build/outputs/apk/debug/app-debug.apk`.
   assertions live in `Tests/BluetrackHostKitTests`.
 - `host/snapshots/`: hardware compatibility matrix, one JSON per
   `companion --report` run.
+- `host/test-vectors/`: cross-platform golden-vector fixture
+  (`feedback_v1.json`) + Python generator + Python test. Swift,
+  Android, and Python tests all byte-compare against this fixture.
+  Regenerate via `python3 host/test-vectors/generate_vectors.py`
+  after any protocol change; CI `git diff --exit-code`s the result.
 - `docs/GAMEPAD_DEBUGGING.md`: host-side gamepad debugging workflow,
   including the phone-named composite case macOS exhibits on this Mac.
+- `docs/THREAT_MODEL.md`: adversary tiers, attack-surface mitigations,
+  residual risks, out-of-scope. Reference before any security PR.
+- `CHANGELOG.md`: per-PR history since v2.0.0, with forced-re-pair
+  PRs explicitly flagged.
