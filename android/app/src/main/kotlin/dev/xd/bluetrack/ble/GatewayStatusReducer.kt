@@ -26,6 +26,7 @@ internal fun reduceGatewayStatus(
     lastFeedbackAtMs: Long? = current.lastFeedbackAtMs,
     feedbackPin: String? = current.feedbackPin,
     trustedHostFingerprint: String? = current.trustedHostFingerprint,
+    lifetimeCounters: LifetimeCountersSnapshot = current.lifetimeCounters,
     eventSource: String? = null,
     eventMessage: String? = null,
 ): GatewayReduction {
@@ -50,6 +51,7 @@ internal fun reduceGatewayStatus(
         lastFeedbackAtMs = lastFeedbackAtMs,
         feedbackPin = feedbackPin,
         trustedHostFingerprint = trustedHostFingerprint,
+        lifetimeCounters = lifetimeCounters,
         events = if (event == null) current.events else (listOf(event) + current.events).take(maxEvents),
     )
     return GatewayReduction(nextStatus, event)
