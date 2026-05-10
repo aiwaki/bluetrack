@@ -79,19 +79,23 @@ two paths can be diagnosed with one binary:
 
 ```bash
 swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector \
-    feedback --seconds 15 --interval-ms 5
+    feedback --pin 246810 --seconds 15 --interval-ms 5
 ```
 
-The `feedback` subcommand scans for the BLE feedback service UUID, connects to
-the advertiser, discovers the encrypted-correction characteristic, and writes
-AES-128-CTR-encrypted `(counter, dx, dy)` packets at the configured cadence.
-Pair it with a separate `watch` run on a second terminal to confirm both the
-BLE write side and the HID input side are healthy at the same time, or use
-`companion` to run both on a single run loop and see a combined verdict:
+The `feedback` subcommand scans for the BLE feedback service UUID, performs the
+128-byte handshake (eph X25519 + Ed25519 identity + sig over eph), TOFU-pins the
+host identity on the phone if this is the first connect, and writes
+AES-256-GCM-encrypted `(counter, dx, dy)` packets at the configured cadence. The
+`--pin <digits>` value is the 6-digit pin the phone displays on the `Pin` status
+row; without the correct pin the AES key derivation diverges and frames fail to
+authenticate. Pair it with a separate `watch` run on a second terminal to
+confirm both the BLE write side and the HID input side are healthy at the same
+time, or use `companion` to run both on a single run loop and see a combined
+verdict:
 
 ```bash
 swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector \
-    companion --seconds 15 --interval-ms 5
+    companion --pin 246810 --seconds 15 --interval-ms 5
 ```
 
 `companion` discovers the Bluetrack composite IOHID device, schedules HID
@@ -106,7 +110,7 @@ diff cleanly:
 
 ```bash
 swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector \
-    companion --seconds 15 --report ~/bluetrack-snapshot.json
+    companion --pin 246810 --seconds 15 --report ~/bluetrack-snapshot.json
 ```
 
 `--report` also works on the standalone `watch` and `feedback` subcommands.

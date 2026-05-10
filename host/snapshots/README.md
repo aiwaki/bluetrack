@@ -9,8 +9,11 @@ diff hardware behavior over time without re-running the cockpit by hand.
 
 ```bash
 swift run --package-path host/macos-hid-inspector bluetrack-hid-inspector \
-    companion --seconds 15 --report host/snapshots/<file>.json
+    companion --pin 246810 --seconds 15 --report host/snapshots/<file>.json
 ```
+
+Replace `246810` with the 6-digit pin currently shown on the phone's
+`Pin` status row. The pin rotates per `BleHidGateway.startGatt`.
 
 The standalone `watch` and `feedback` subcommands accept the same flag and
 produce a half-populated snapshot (the side that did not run is recorded

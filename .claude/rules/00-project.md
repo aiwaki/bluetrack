@@ -73,6 +73,33 @@ python3 -m py_compile android/tools/ble_encrypt_sender.py
 - After descriptor changes, tell testers to forget and re-pair the host
   device.
 
+## BLE feedback channel
+
+- Protocol: per-session X25519 ECDH + HKDF-SHA256 + AES-256-GCM,
+  6-digit pairing pin mixed into HKDF, TOFU-pinned Ed25519 host
+  identity, 64-frame sliding replay window, per-peer handshake rate
+  limit (token bucket), persistent lifetime counters that survive
+  process kill.
+- Three implementations (Swift `BluetrackHostKit`, Android
+  `FeedbackSession`, Python `ble_encrypt_sender.py`) MUST stay
+  byte-identical at the wire. Cross-platform golden vectors at
+  `host/test-vectors/feedback_v1.json` are checked on every CI run;
+  any protocol change requires regenerating that fixture and
+  diffing it in the PR.
+- Host CryptoKit Ed25519 is hedged (non-deterministic per Apple
+  design); Android (BC) and Python (`cryptography`) Ed25519 follow
+  RFC 8032. Tests on Swift compare signatures via
+  `verifySignature()`, never byte-equal; Android + Python do byte-equal.
+- Any change to the handshake characteristic shape, the HKDF info
+  bytes, or the AES frame layout is a forced-re-pair release. Bundle
+  with other forced-re-pair changes (next: keyboard HID + battery
+  descriptor) to avoid forcing the user through two re-pairings in a
+  row. Flag in CHANGELOG.md.
+- Threat model: read `docs/THREAT_MODEL.md` before any security PR.
+  TOFU window on first handshake, pin shoulder-surfing, slot-hijack
+  via replayed handshake triples, library side-channel trust are
+  documented residual risks; do not "fix" them silently.
+
 ## Input smoothness
 
 - Touchpad smoothness is a hardware-tested baseline. Do not casually
