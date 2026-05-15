@@ -15,7 +15,11 @@ internal class HidOutputBuffer(
     private var mouseWheel = 0
     private var mouseQueuedAtMs = 0L
 
-    fun enqueue(mode: HidMode, report: ByteArray, queuedAtMs: Long) {
+    fun enqueue(
+        mode: HidMode,
+        report: ByteArray,
+        queuedAtMs: Long,
+    ) {
         synchronized(lock) {
             if (this.mode != null && this.mode != mode) {
                 clearLocked()
@@ -27,14 +31,13 @@ internal class HidOutputBuffer(
         }
     }
 
-    fun poll(): OutputFrame? =
-        synchronized(lock) {
-            when (mode) {
-                HidMode.MOUSE -> pollMouse()
-                HidMode.GAMEPAD -> pollGamepad()
-                null -> null
-            }
+    fun poll(): OutputFrame? = synchronized(lock) {
+        when (mode) {
+            HidMode.MOUSE -> pollMouse()
+            HidMode.GAMEPAD -> pollGamepad()
+            null -> null
         }
+    }
 
     fun clear() {
         synchronized(lock) {
@@ -42,12 +45,14 @@ internal class HidOutputBuffer(
         }
     }
 
-    fun hasPending(): Boolean =
-        synchronized(lock) {
-            hasMouseReport || gamepadReports.isNotEmpty()
-        }
+    fun hasPending(): Boolean = synchronized(lock) {
+        hasMouseReport || gamepadReports.isNotEmpty()
+    }
 
-    private fun enqueueMouse(report: ByteArray, queuedAtMs: Long) {
+    private fun enqueueMouse(
+        report: ByteArray,
+        queuedAtMs: Long,
+    ) {
         val buttons = report.getOrElse(0) { 0 }.toInt()
         val dx = report.getOrElse(1) { 0 }.toInt()
         val dy = report.getOrElse(2) { 0 }.toInt()
@@ -65,7 +70,10 @@ internal class HidOutputBuffer(
         mouseWheel += wheel
     }
 
-    private fun enqueueGamepad(report: ByteArray, queuedAtMs: Long) {
+    private fun enqueueGamepad(
+        report: ByteArray,
+        queuedAtMs: Long,
+    ) {
         mode = HidMode.GAMEPAD
         if (gamepadReports.size >= maxGamepadReports) {
             gamepadReports.removeFirst()
@@ -86,11 +94,12 @@ internal class HidOutputBuffer(
         mouseDy -= dy
         mouseWheel -= wheel
 
-        val output = OutputFrame(
-            mode = HidMode.MOUSE,
-            report = byteArrayOf(mouseButtons.toByte(), dx.toByte(), dy.toByte(), wheel.toByte()),
-            queuedAtMs = mouseQueuedAtMs,
-        )
+        val output =
+            OutputFrame(
+                mode = HidMode.MOUSE,
+                report = byteArrayOf(mouseButtons.toByte(), dx.toByte(), dy.toByte(), wheel.toByte()),
+                queuedAtMs = mouseQueuedAtMs,
+            )
         if (mouseDx == 0 && mouseDy == 0 && mouseWheel == 0) {
             hasMouseReport = false
             mouseButtons = 0

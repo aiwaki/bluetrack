@@ -2,7 +2,6 @@ import XCTest
 @testable import BluetrackHostKit
 
 final class FeedbackHandshakeTests: XCTestCase {
-
     func testHandshakeWritePayloadSizeIs128() {
         XCTAssertEqual(FeedbackCrypto.handshakeWritePayloadSize, 128)
         XCTAssertEqual(FeedbackCrypto.identityPublicKeySize, 32)

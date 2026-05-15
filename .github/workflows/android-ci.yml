@@ -28,6 +28,9 @@ jobs:
       - name: Ensure Gradle wrapper is executable
         run: chmod +x ./gradlew
 
+      - name: Lint Kotlin (ktlint)
+        run: ./gradlew :app:ktlintCheck
+
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest
 

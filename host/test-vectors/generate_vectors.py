@@ -17,6 +17,7 @@ Re-run only when the protocol changes (new field on the handshake,
 new HKDF info string, new frame layout, etc.). Diff the JSON in the
 PR so reviewers see exactly what bytes shift.
 """
+
 from __future__ import annotations
 
 import base64
@@ -90,7 +91,9 @@ def _hkdf(shared: bytes, info: bytes, length: int) -> bytes:
     ).derive(shared)
 
 
-def _build_handshake(eph_pub: bytes, id_priv: Ed25519PrivateKey, id_pub: bytes) -> bytes:
+def _build_handshake(
+    eph_pub: bytes, id_priv: Ed25519PrivateKey, id_pub: bytes
+) -> bytes:
     sig = id_priv.sign(eph_pub)
     assert len(sig) == IDENTITY_SIGNATURE_SIZE
     payload = eph_pub + id_pub + sig
@@ -98,7 +101,9 @@ def _build_handshake(eph_pub: bytes, id_priv: Ed25519PrivateKey, id_pub: bytes) 
     return payload
 
 
-def _derive_session(host_priv: X25519PrivateKey, phone_pub: bytes, pin: str) -> tuple[bytes, bytes, bytes]:
+def _derive_session(
+    host_priv: X25519PrivateKey, phone_pub: bytes, pin: str
+) -> tuple[bytes, bytes, bytes]:
     pin_bytes = pin.encode("ascii")
     info_key = HKDF_INFO_BASE + PIN_PREFIX + pin_bytes
     info_salt = info_key + NONCE_SALT_SUFFIX

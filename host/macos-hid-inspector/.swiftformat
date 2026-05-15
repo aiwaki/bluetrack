@@ -1,0 +1,40 @@
+# SwiftFormat config for the macOS host CLI (Swift sources under
+# `Sources/` and `Tests/`).
+#
+# Run `swiftformat host/macos-hid-inspector` from repo root to apply,
+# or `swiftformat --lint host/macos-hid-inspector` to gate. CI runs
+# the lint variant on every PR.
+
+--swiftversion 5.10
+
+# Whitespace
+--indent 4
+--tabwidth unspecified
+--smarttabs enabled
+--linebreaks lf
+
+# Imports
+--importgrouping testable-bottom
+
+# Wrapping
+--maxwidth 120
+--wrapparameters before-first
+--wrapcollections preserve
+--closingparen balanced
+--funcattributes prev-line
+--typeattributes prev-line
+
+# Braces / control flow
+--allman false
+--elseposition same-line
+--guardelse same-line
+
+# Style nits handled by SwiftFormat defaults
+--commas inline
+--trimwhitespace always
+--ranges no-space
+--operatorfunc spaced
+
+# Don't reorder large enum cases or rewrite Codable mapping verbatim.
+--disable redundantSelf
+--disable wrapEnumCases

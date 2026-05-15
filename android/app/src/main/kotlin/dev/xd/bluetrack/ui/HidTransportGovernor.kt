@@ -22,7 +22,10 @@ internal class HidTransportGovernor(
         return (lastSendFinishedAtMs + currentIntervalMs - nowMs).coerceAtLeast(0L)
     }
 
-    fun recordSend(durationMs: Long, finishedAtMs: Long) {
+    fun recordSend(
+        durationMs: Long,
+        finishedAtMs: Long,
+    ) {
         lastSendFinishedAtMs = finishedAtMs
         when {
             durationMs >= severeSendMs -> {

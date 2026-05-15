@@ -18,8 +18,9 @@ class ModeCardStateTest {
 
     @Test
     fun selectedCardReportsActiveWhenHostConnected() {
-        val gamepad = modeCardStates(currentMode = HidMode.GAMEPAD, hostConnected = true)
-            .first { it.mode == HidMode.GAMEPAD }
+        val gamepad =
+            modeCardStates(currentMode = HidMode.GAMEPAD, hostConnected = true)
+                .first { it.mode == HidMode.GAMEPAD }
 
         assertTrue(gamepad.isSelected)
         assertEquals("Active", gamepad.statusLabel)
@@ -27,8 +28,9 @@ class ModeCardStateTest {
 
     @Test
     fun selectedCardReportsSelectedWhenHostMissing() {
-        val mouse = modeCardStates(currentMode = HidMode.MOUSE, hostConnected = false)
-            .first { it.mode == HidMode.MOUSE }
+        val mouse =
+            modeCardStates(currentMode = HidMode.MOUSE, hostConnected = false)
+                .first { it.mode == HidMode.MOUSE }
 
         assertTrue(mouse.isSelected)
         assertEquals("Selected", mouse.statusLabel)
@@ -36,10 +38,12 @@ class ModeCardStateTest {
 
     @Test
     fun unselectedCardAlwaysShowsTapToSwitch() {
-        val whenConnected = modeCardStates(currentMode = HidMode.MOUSE, hostConnected = true)
-            .first { it.mode == HidMode.GAMEPAD }
-        val whenIdle = modeCardStates(currentMode = HidMode.GAMEPAD, hostConnected = false)
-            .first { it.mode == HidMode.MOUSE }
+        val whenConnected =
+            modeCardStates(currentMode = HidMode.MOUSE, hostConnected = true)
+                .first { it.mode == HidMode.GAMEPAD }
+        val whenIdle =
+            modeCardStates(currentMode = HidMode.GAMEPAD, hostConnected = false)
+                .first { it.mode == HidMode.MOUSE }
 
         assertFalse(whenConnected.isSelected)
         assertEquals("Tap to switch", whenConnected.statusLabel)

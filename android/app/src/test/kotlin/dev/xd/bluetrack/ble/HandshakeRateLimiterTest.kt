@@ -6,7 +6,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HandshakeRateLimiterTest {
-
     @Test
     fun firstNAttemptsFitInCapacity() {
         val limiter = HandshakeRateLimiter(capacity = 4, tokensPerSecond = 4.0)
@@ -41,7 +40,7 @@ class HandshakeRateLimiterTest {
     fun bucketCapsAtCapacity() {
         val limiter = HandshakeRateLimiter(capacity = 4, tokensPerSecond = 4.0)
         // First touch at t=1000 with no prior history → starts full at 4.
-        assertTrue(limiter.tryAcquire("AA:BB", 1_000L))  // 3 left
+        assertTrue(limiter.tryAcquire("AA:BB", 1_000L)) // 3 left
         // Wait 100 seconds. Refill should cap at 4, not balloon to 400.
         for (i in 0 until 4) {
             assertTrue("post-cap attempt $i must accept", limiter.tryAcquire("AA:BB", 101_000L + i))
@@ -64,21 +63,27 @@ class HandshakeRateLimiterTest {
 
     @Test
     fun lruEvictionKeepsMapBounded() {
-        val limiter = HandshakeRateLimiter(
-            capacity = 1,
-            tokensPerSecond = 1.0,
-            maxTrackedPeers = 3,
-        )
+        val limiter =
+            HandshakeRateLimiter(
+                capacity = 1,
+                tokensPerSecond = 1.0,
+                maxTrackedPeers = 3,
+            )
         var t = 1_000L
         // Touch 3 peers; map fills.
-        limiter.tryAcquire("A", t); t += 1
-        limiter.tryAcquire("B", t); t += 1
-        limiter.tryAcquire("C", t); t += 1
+        limiter.tryAcquire("A", t)
+        t += 1
+        limiter.tryAcquire("B", t)
+        t += 1
+        limiter.tryAcquire("C", t)
+        t += 1
         assertEquals(3, limiter.trackedPeerCount())
         // Touch A again to bump it to most-recent.
-        limiter.tryAcquire("A", t); t += 1
+        limiter.tryAcquire("A", t)
+        t += 1
         // Add D — eldest (B) must be evicted.
-        limiter.tryAcquire("D", t); t += 1
+        limiter.tryAcquire("D", t)
+        t += 1
         assertEquals(3, limiter.trackedPeerCount())
         // Drain D.
         assertFalse(limiter.tryAcquire("D", t))
@@ -107,7 +112,7 @@ class HandshakeRateLimiterTest {
         // that briefly steps backward when SystemClock.elapsedRealtime
         // is read across cores. coerceAtLeast(0) keeps refills sane.
         assertTrue(limiter.tryAcquire("AA:BB", 5_000L))
-        assertTrue(limiter.tryAcquire("AA:BB", 4_500L))  // backwards
+        assertTrue(limiter.tryAcquire("AA:BB", 4_500L)) // backwards
         assertFalse(limiter.tryAcquire("AA:BB", 4_500L))
     }
 
@@ -120,7 +125,7 @@ class HandshakeRateLimiterTest {
         var t = 1_000L
         for (i in 0 until 1_000) {
             if (limiter.tryAcquire("FLOODER", t)) accepted += 1
-            t += 10  // 100 writes/s
+            t += 10 // 100 writes/s
         }
         // Burst of 4 + 4 tokens/s × 10 s ≈ 4 + 40 = 44. The actual
         // count fluctuates by ±1 depending on rounding, but stays

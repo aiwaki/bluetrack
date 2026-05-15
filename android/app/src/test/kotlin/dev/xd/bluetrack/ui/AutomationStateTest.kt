@@ -12,19 +12,19 @@ class AutomationStateTest {
     fun autoRequestsDiscoverabilityOnlyWhenReadyAndUnbonded() {
         assertTrue(
             status(enabled = true, bondedDevices = emptyList(), host = null)
-                .shouldAutoRequestDiscoverability()
+                .shouldAutoRequestDiscoverability(),
         )
         assertFalse(
             status(enabled = true, bondedDevices = listOf("MacBook Pro"), host = null)
-                .shouldAutoRequestDiscoverability()
+                .shouldAutoRequestDiscoverability(),
         )
         assertFalse(
             status(enabled = true, bondedDevices = emptyList(), host = "MacBook Pro")
-                .shouldAutoRequestDiscoverability()
+                .shouldAutoRequestDiscoverability(),
         )
         assertFalse(
             status(enabled = false, bondedDevices = emptyList(), host = null)
-                .shouldAutoRequestDiscoverability()
+                .shouldAutoRequestDiscoverability(),
         )
     }
 
@@ -33,17 +33,17 @@ class AutomationStateTest {
         assertEquals(
             "Connected to MacBook Pro",
             status(enabled = true, bondedDevices = listOf("MacBook Pro"), host = "MacBook Pro")
-                .automationLabel()
+                .automationLabel(),
         )
         assertEquals(
             "Auto-connecting bonded host",
             status(enabled = true, bondedDevices = listOf("MacBook Pro"), host = null)
-                .automationLabel()
+                .automationLabel(),
         )
         assertEquals(
             "Waiting for host pairing",
             status(enabled = true, bondedDevices = emptyList(), host = null, pairing = "Discoverable for 300s")
-                .automationLabel()
+                .automationLabel(),
         )
     }
 
@@ -56,10 +56,11 @@ class AutomationStateTest {
         hid = "HID ready (MOUSE)",
         pairing = pairing,
         host = host,
-        compatibility = CompatibilitySnapshot(
-            bluetoothAvailable = true,
-            bluetoothEnabled = enabled,
-            bondedDevices = bondedDevices,
-        ),
+        compatibility =
+            CompatibilitySnapshot(
+                bluetoothAvailable = true,
+                bluetoothEnabled = enabled,
+                bondedDevices = bondedDevices,
+            ),
     )
 }

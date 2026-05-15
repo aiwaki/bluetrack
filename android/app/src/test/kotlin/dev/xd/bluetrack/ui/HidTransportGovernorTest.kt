@@ -19,12 +19,13 @@ class HidTransportGovernorTest {
 
     @Test
     fun slowSendAppliesTemporaryBackoff() {
-        val governor = HidTransportGovernor(
-            baseIntervalMs = 6L,
-            moderateBackoffIntervalMs = 10L,
-            moderateSendMs = 12L,
-            moderateBackoffWindowMs = 500L,
-        )
+        val governor =
+            HidTransportGovernor(
+                baseIntervalMs = 6L,
+                moderateBackoffIntervalMs = 10L,
+                moderateSendMs = 12L,
+                moderateBackoffWindowMs = 500L,
+            )
 
         governor.recordSend(durationMs = 20L, finishedAtMs = 100L)
 
@@ -35,13 +36,14 @@ class HidTransportGovernorTest {
 
     @Test
     fun severeSendUsesLongerBackoffAndRecoversAfterFastReports() {
-        val governor = HidTransportGovernor(
-            baseIntervalMs = 6L,
-            severeBackoffIntervalMs = 16L,
-            severeSendMs = 48L,
-            severeBackoffWindowMs = 100L,
-            fastRecoveryReports = 2,
-        )
+        val governor =
+            HidTransportGovernor(
+                baseIntervalMs = 6L,
+                severeBackoffIntervalMs = 16L,
+                severeSendMs = 48L,
+                severeBackoffWindowMs = 100L,
+                fastRecoveryReports = 2,
+            )
 
         governor.recordSend(durationMs = 90L, finishedAtMs = 100L)
 

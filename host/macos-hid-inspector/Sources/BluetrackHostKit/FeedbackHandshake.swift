@@ -87,8 +87,8 @@ public struct FeedbackHandshakePayload: Equatable {
     public func verifySignature() -> Bool {
         guard ephemeralPublicKey.count == FeedbackCrypto.publicKeySize,
               identityPublicKey.count == FeedbackCrypto.identityPublicKeySize,
-              signature.count == FeedbackCrypto.identitySignatureSize
-        else {
+              signature.count == FeedbackCrypto.identitySignatureSize else
+        {
             return false
         }
         do {

@@ -122,13 +122,15 @@ public final class FeedbackSession {
     /// (e.g. derived from a fixed seed). Used by `GoldenVectorsTests`
     /// to load the cross-platform fixture; production code should
     /// always go through the random `init()` above.
-    internal init(privateKey: Curve25519.KeyAgreement.PrivateKey) {
+    init(privateKey: Curve25519.KeyAgreement.PrivateKey) {
         self.privateKey = privateKey
         self.publicKey = privateKey.publicKey.rawRepresentation
     }
 
     /// True after `deriveSession(peerPublicKey:)` has installed key material.
-    public var isReady: Bool { symmetricKey != nil && nonceSalt != nil }
+    public var isReady: Bool {
+        symmetricKey != nil && nonceSalt != nil
+    }
 
     /// Run X25519 against the peer's 32-byte public key, then HKDF-SHA256
     /// to install the AES-256-GCM key and 8-byte nonce salt. The pairing
@@ -200,8 +202,11 @@ public final class FeedbackSession {
         guard packet.count == FeedbackCrypto.frameSize else { return nil }
         let bytes = Array(packet)
         let counterBytes = Array(bytes[0..<FeedbackCrypto.counterPrefixSize])
-        let cipher = Array(bytes[FeedbackCrypto.counterPrefixSize..<(FeedbackCrypto.counterPrefixSize + FeedbackCrypto.plaintextSize)])
-        let tag = Array(bytes[(FeedbackCrypto.counterPrefixSize + FeedbackCrypto.plaintextSize)..<FeedbackCrypto.frameSize])
+        let cipher =
+            Array(bytes[FeedbackCrypto
+                    .counterPrefixSize..<(FeedbackCrypto.counterPrefixSize + FeedbackCrypto.plaintextSize)])
+        let tag =
+            Array(bytes[(FeedbackCrypto.counterPrefixSize + FeedbackCrypto.plaintextSize)..<FeedbackCrypto.frameSize])
         var nonceBytes = [UInt8]()
         nonceBytes.reserveCapacity(12)
         nonceBytes.append(contentsOf: salt)
@@ -224,7 +229,7 @@ public final class FeedbackSession {
     }
 
     private func floatLE(_ value: Float) -> [UInt8] {
-        return uint32LE(value.bitPattern)
+        uint32LE(value.bitPattern)
     }
 
     private func floatFromLE(_ bytes: [UInt8], offset: Int) -> Float {

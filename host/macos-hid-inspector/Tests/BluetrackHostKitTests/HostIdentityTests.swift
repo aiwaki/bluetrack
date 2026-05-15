@@ -2,7 +2,6 @@ import XCTest
 @testable import BluetrackHostKit
 
 final class HostIdentityTests: XCTestCase {
-
     func testFreshIdentityHas32BytePublicKey() {
         let id = HostIdentity()
         XCTAssertEqual(id.publicKeyBytes.count, FeedbackCrypto.identityPublicKeySize)
@@ -104,7 +103,7 @@ final class HostIdentityTests: XCTestCase {
         XCTAssertEqual(
             (attrs[.posixPermissions] as? NSNumber)?.intValue,
             0o600,
-            "exported identity must keep mode 0600",
+            "exported identity must keep mode 0600"
         )
     }
 
@@ -189,4 +188,5 @@ final class HostIdentityTests: XCTestCase {
 // route through the BluetrackHostKit test bundle while keeping the
 // CryptoKit dependency private to that module.
 import CryptoKit
+
 private typealias CryptoKitPublicKey = Curve25519.Signing.PublicKey

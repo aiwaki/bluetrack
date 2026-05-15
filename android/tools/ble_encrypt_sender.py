@@ -19,6 +19,7 @@ The host MUST keep counters unique within a session. Wrap-around is
 handled by treating the counter as `& 0xFFFFFFFF`; the peripheral rejects
 duplicate (key, counter) pairs via tag failure since GCM nonces collide.
 """
+
 import argparse
 import asyncio
 import base64
@@ -121,9 +122,7 @@ class HostIdentity:
             raise ValueError(f"identity file {path} missing private_key_b64")
         raw = base64.b64decode(b64.encode("ascii"))
         if len(raw) != 32:
-            raise ValueError(
-                f"identity file {path} has {len(raw)}-byte seed (need 32)"
-            )
+            raise ValueError(f"identity file {path} has {len(raw)}-byte seed (need 32)")
         return cls(Ed25519PrivateKey.from_private_bytes(raw))
 
     def save(self, path: pathlib.Path) -> None:
@@ -166,7 +165,9 @@ def reset_host_identity(path: pathlib.Path) -> None:
         pass
 
 
-def export_host_identity(source: pathlib.Path, destination: pathlib.Path) -> HostIdentity:
+def export_host_identity(
+    source: pathlib.Path, destination: pathlib.Path
+) -> HostIdentity:
     """Validate the identity at ``source`` and write a canonical copy
     to ``destination`` with mode 0600. Returns the loaded identity so
     the caller can print its fingerprint. Raises ``ValueError`` /
@@ -206,9 +207,7 @@ def build_handshake_payload(
 ) -> bytes:
     """128-byte handshake payload: eph || id_pub || sig(eph)."""
     if len(ephemeral_public_key) != PUBLIC_KEY_SIZE:
-        raise ValueError(
-            f"ephemeral pubkey must be {PUBLIC_KEY_SIZE} bytes"
-        )
+        raise ValueError(f"ephemeral pubkey must be {PUBLIC_KEY_SIZE} bytes")
     sig = identity.sign(ephemeral_public_key)
     return ephemeral_public_key + identity.public_key_bytes + sig
 
@@ -238,9 +237,7 @@ class FeedbackSession:
 
     @property
     def public_key(self) -> bytes:
-        return self._private.public_key().public_bytes(
-            Encoding.Raw, PublicFormat.Raw
-        )
+        return self._private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
 
     @property
     def is_ready(self) -> bool:
@@ -397,7 +394,7 @@ def parse_args() -> argparse.Namespace:
             action="store_true",
             help=(
                 "Delete the host identity file before this run, generating a "
-                "new one. Use after you intentionally tap \"Forget host\" on "
+                'new one. Use after you intentionally tap "Forget host" on '
                 "the phone, or after the phone pinned a stale identity."
             ),
         )
@@ -508,9 +505,7 @@ def run_import_identity(args: argparse.Namespace) -> None:
         sys.exit(75)
     backup = destination.with_suffix(destination.suffix + ".bak")
     backup_note = (
-        f" (previous identity preserved at {backup})"
-        if backup.exists()
-        else ""
+        f" (previous identity preserved at {backup})" if backup.exists() else ""
     )
     print(
         f"Imported host identity {identity.fingerprint()} from {source} to "

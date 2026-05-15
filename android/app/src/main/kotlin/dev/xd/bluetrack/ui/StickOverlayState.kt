@@ -14,15 +14,19 @@ internal data class StickOverlayState(
     val normalizedY: Float,
 )
 
-internal fun stickOverlayState(stickX: Int, stickY: Int): StickOverlayState {
+internal fun stickOverlayState(
+    stickX: Int,
+    stickY: Int,
+): StickOverlayState {
     val clampedX = stickX.coerceIn(-STICK_AXIS_MAX, STICK_AXIS_MAX)
     val clampedY = stickY.coerceIn(-STICK_AXIS_MAX, STICK_AXIS_MAX)
     val magnitude = sqrt((clampedX * clampedX + clampedY * clampedY).toDouble())
-    val deflection = when {
-        magnitude < 16.0 -> StickDeflection.IDLE
-        magnitude < 96.0 -> StickDeflection.LIGHT
-        else -> StickDeflection.STRONG
-    }
+    val deflection =
+        when {
+            magnitude < 16.0 -> StickDeflection.IDLE
+            magnitude < 96.0 -> StickDeflection.LIGHT
+            else -> StickDeflection.STRONG
+        }
     return StickOverlayState(
         deflection = deflection,
         xLabel = formatSigned(clampedX),

@@ -23,14 +23,23 @@ class TranslationEngine(
     private var mouseCarryX = 0f
     private var mouseCarryY = 0f
     private var lastTelemetryAtMs = -1L
+
     @Volatile var sensitivity: Float = 2.0f
 
-    fun updateCorrection(x: Float, y: Float) {
+    fun updateCorrection(
+        x: Float,
+        y: Float,
+    ) {
         correctionX.set(x.roundToInt())
         correctionY.set(y.roundToInt())
     }
 
-    fun processMouseToStick(dx: Float, dy: Float, mode: HidMode, send: (ByteArray) -> Unit) {
+    fun processMouseToStick(
+        dx: Float,
+        dy: Float,
+        mode: HidMode,
+        send: (ByteArray) -> Unit,
+    ) {
         val rx = dx.roundToInt()
         val ry = dy.roundToInt()
         val cx = correctionX.get()
@@ -46,15 +55,16 @@ class TranslationEngine(
             gamepadReport[GamepadReportFormat.RIGHT_Y_INDEX] = 0
             send(gamepadReport)
             deadmanJob?.cancel()
-            deadmanJob = scope.launch {
-                delay(20)
-                gamepadReport[GamepadReportFormat.HAT_INDEX] = GamepadReportFormat.HAT_NEUTRAL
-                gamepadReport[GamepadReportFormat.LEFT_X_INDEX] = 0
-                gamepadReport[GamepadReportFormat.LEFT_Y_INDEX] = 0
-                gamepadReport[GamepadReportFormat.RIGHT_X_INDEX] = 0
-                gamepadReport[GamepadReportFormat.RIGHT_Y_INDEX] = 0
-                send(gamepadReport)
-            }
+            deadmanJob =
+                scope.launch {
+                    delay(20)
+                    gamepadReport[GamepadReportFormat.HAT_INDEX] = GamepadReportFormat.HAT_NEUTRAL
+                    gamepadReport[GamepadReportFormat.LEFT_X_INDEX] = 0
+                    gamepadReport[GamepadReportFormat.LEFT_Y_INDEX] = 0
+                    gamepadReport[GamepadReportFormat.RIGHT_X_INDEX] = 0
+                    gamepadReport[GamepadReportFormat.RIGHT_Y_INDEX] = 0
+                    send(gamepadReport)
+                }
         } else {
             val mouseX = quantizeMouseDelta(dx + cx, isX = true)
             val mouseY = quantizeMouseDelta(dy + cy, isX = false)
@@ -65,7 +75,10 @@ class TranslationEngine(
         publishTelemetry(Telemetry(rx, ry, sx, sy))
     }
 
-    private fun quantizeMouseDelta(delta: Float, isX: Boolean): Int {
+    private fun quantizeMouseDelta(
+        delta: Float,
+        isX: Boolean,
+    ): Int {
         val carried = delta + if (isX) mouseCarryX else mouseCarryY
         val rounded = carried.roundToInt()
         val clamped = rounded.coerceIn(-127, 127)
@@ -92,4 +105,9 @@ class TranslationEngine(
 }
 
 enum class HidMode { MOUSE, GAMEPAD }
-data class Telemetry(val rawX: Int = 0, val rawY: Int = 0, val stickX: Int = 0, val stickY: Int = 0)
+data class Telemetry(
+    val rawX: Int = 0,
+    val rawY: Int = 0,
+    val stickX: Int = 0,
+    val stickY: Int = 0,
+)

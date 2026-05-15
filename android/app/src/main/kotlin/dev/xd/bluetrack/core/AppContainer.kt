@@ -8,7 +8,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 
-class AppContainer(context: Context) {
+class AppContainer(
+    context: Context,
+) {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val translationEngine = TranslationEngine(appScope)
     val bleGateway = BleHidGateway(context.applicationContext, translationEngine)

@@ -1,0 +1,43 @@
+# ktlint reads `.editorconfig` for rule overrides. Project-wide knobs
+# live here; specific rule disables go in `[*.{kt,kts}]`.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+indent_style = space
+indent_size = 4
+max_line_length = 120
+# Wildcard imports stay out — explicit imports keep diffs readable.
+ij_kotlin_packages_to_use_import_on_demand = ""
+# Single-line argument lists are fine even when they brush the limit.
+ktlint_function_signature_body_expression_wrapping = default
+# We use a few long lambda blocks; keep ktlint from inserting blank
+# lines that hurt readability around inline crypto + DSL code.
+ktlint_standard_blank-line-before-declaration = disabled
+# Compose @Composable functions are PascalCase by convention; this
+# project's UI builds on that, so the standard ktlint rule fights
+# Compose. Disable function-naming wholesale (we still get camelCase
+# everywhere else from common sense).
+ktlint_standard_function-naming = disabled
+# Expression-body multiline wrapping rules fight the existing
+# expression-body style across `engine/`, `ble/`, `ui/`. Keep them
+# disabled to avoid a churn pass on otherwise-idiomatic Kotlin.
+ktlint_standard_multiline-expression-wrapping = disabled
+ktlint_standard_function-signature = disabled
+# Android bluetooth + Compose layout packages are conventionally
+# imported with `*` because the API surface is huge. Allow it.
+ktlint_standard_no-wildcard-imports = disabled
+# File naming follows concept-not-class convention here
+# (`FeedbackHandshake.kt` carries `FeedbackHandshakePayload`,
+# `HidHostClassifier.kt` carries `HidHostCandidate`). Disable
+# rather than rename existing files just to satisfy ktlint.
+ktlint_standard_filename = disabled
+# Inline comments are allowed at end-of-line; do not force them onto
+# their own line.
+ktlint_standard_no-trailing-spaces-in-multiline-string = enabled

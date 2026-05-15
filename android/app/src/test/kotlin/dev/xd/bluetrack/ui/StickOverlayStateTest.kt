@@ -5,7 +5,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StickOverlayStateTest {
-
     @Test
     fun centeredInputsReportIdle() {
         val state = stickOverlayState(stickX = 0, stickY = 0)

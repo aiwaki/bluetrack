@@ -2,7 +2,6 @@ import XCTest
 @testable import BluetrackHostKit
 
 final class FeedbackCryptoTests: XCTestCase {
-
     private static let testPin = "246810"
     private static let otherPin = "135790"
 
@@ -35,7 +34,10 @@ final class FeedbackCryptoTests: XCTestCase {
 
     func testDeriveSessionRejectsInvalidPeerPublicKeyLength() {
         let session = FeedbackSession()
-        XCTAssertThrowsError(try session.deriveSession(peerPublicKey: Data(repeating: 0, count: 16), pin: Self.testPin)) { error in
+        XCTAssertThrowsError(try session.deriveSession(
+            peerPublicKey: Data(repeating: 0, count: 16),
+            pin: Self.testPin
+        )) { error in
             XCTAssertEqual(error as? FeedbackSessionError, .invalidPeerPublicKey)
         }
     }
@@ -89,7 +91,7 @@ final class FeedbackCryptoTests: XCTestCase {
             (0, 1.25, -0.75),
             (7, -12.5, 99.125),
             (UInt32.max, 0, 0),
-            (42, 127.0, -127.0),
+            (42, 127.0, -127.0)
         ]
         for (counter, dx, dy) in cases {
             let packet = try host.buildPacket(counter: counter, dx: dx, dy: dy)
@@ -101,7 +103,7 @@ final class FeedbackCryptoTests: XCTestCase {
                     UInt8(counter & 0xFF),
                     UInt8((counter >> 8) & 0xFF),
                     UInt8((counter >> 16) & 0xFF),
-                    UInt8((counter >> 24) & 0xFF),
+                    UInt8((counter >> 24) & 0xFF)
                 ],
                 "counter prefix is little-endian"
             )

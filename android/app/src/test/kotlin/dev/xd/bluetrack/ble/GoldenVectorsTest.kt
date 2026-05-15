@@ -1,10 +1,5 @@
 package dev.xd.bluetrack.ble
 
-import java.io.File
-import java.util.Base64
-import javax.crypto.Cipher
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 import org.bouncycastle.math.ec.rfc7748.X25519
 import org.bouncycastle.math.ec.rfc8032.Ed25519
 import org.json.JSONObject
@@ -13,6 +8,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.util.Base64
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * Loads the cross-platform golden-vector fixture at
@@ -28,7 +28,6 @@ import org.junit.Test
  * the full handshake payload byte-for-byte.
  */
 class GoldenVectorsTest {
-
     @Test
     fun goldenVectorsMatchAndroidImplementation() {
         val json = loadFixture()
@@ -73,21 +72,25 @@ class GoldenVectorsTest {
         val host = json.getJSONObject("host")
         val hostXSeed = b64(host.getString("ephemeral_x25519_private_seed_b64"))
         val expectedHostXPub = b64(host.getString("ephemeral_x25519_public_b64"))
-        val derivedHostXPub = ByteArray(32).also {
-            X25519.scalarMultBase(hostXSeed, 0, it, 0)
-        }
+        val derivedHostXPub =
+            ByteArray(32).also {
+                X25519.scalarMultBase(hostXSeed, 0, it, 0)
+            }
         assertArrayEquals(
             "BC X25519.scalarMultBase produced different pub from seed",
-            expectedHostXPub, derivedHostXPub,
+            expectedHostXPub,
+            derivedHostXPub,
         )
         val hostIdSeed = b64(host.getString("identity_ed25519_private_seed_b64"))
         val expectedHostIdPub = b64(host.getString("identity_ed25519_public_b64"))
-        val derivedHostIdPub = ByteArray(32).also {
-            Ed25519.generatePublicKey(hostIdSeed, 0, it, 0)
-        }
+        val derivedHostIdPub =
+            ByteArray(32).also {
+                Ed25519.generatePublicKey(hostIdSeed, 0, it, 0)
+            }
         assertArrayEquals(
             "BC Ed25519.generatePublicKey produced different pub from seed",
-            expectedHostIdPub, derivedHostIdPub,
+            expectedHostIdPub,
+            derivedHostIdPub,
         )
         assertEquals(
             host.getString("identity_fingerprint"),
@@ -98,9 +101,10 @@ class GoldenVectorsTest {
         val phone = json.getJSONObject("phone")
         val phoneXSeed = b64(phone.getString("ephemeral_x25519_private_seed_b64"))
         val expectedPhoneXPub = b64(phone.getString("ephemeral_x25519_public_b64"))
-        val derivedPhoneXPub = ByteArray(32).also {
-            X25519.scalarMultBase(phoneXSeed, 0, it, 0)
-        }
+        val derivedPhoneXPub =
+            ByteArray(32).also {
+                X25519.scalarMultBase(phoneXSeed, 0, it, 0)
+            }
         assertArrayEquals(expectedPhoneXPub, derivedPhoneXPub)
 
         // 5. Build the handshake payload locally with BC Ed25519. Bytes
@@ -111,7 +115,8 @@ class GoldenVectorsTest {
         val expectedHandshake = b64(json.getString("handshake_write_payload_b64"))
         assertArrayEquals(
             "BC handshake payload diverged from cross-platform fixture",
-            expectedHandshake, builtHandshake,
+            expectedHandshake,
+            builtHandshake,
         )
         // Locally-built handshake must verify too.
         val parsed = FeedbackHandshakePayload.parse(builtHandshake)
@@ -128,11 +133,13 @@ class GoldenVectorsTest {
         val expectedNonceSalt = b64(json.getString("nonce_salt_b64"))
         assertArrayEquals(
             "Android HKDF AES key diverged",
-            expectedAesKey, phoneSession.testOnlyAesKeyBytes(),
+            expectedAesKey,
+            phoneSession.testOnlyAesKeyBytes(),
         )
         assertArrayEquals(
             "Android HKDF nonce salt diverged",
-            expectedNonceSalt, phoneSession.testOnlyNonceSaltBytes(),
+            expectedNonceSalt,
+            phoneSession.testOnlyNonceSaltBytes(),
         )
 
         // 7. Decrypt every fixture frame via the Android session.
@@ -148,9 +155,10 @@ class GoldenVectorsTest {
             // not reject the deliberately non-monotonic test counters.
             phoneSession.deriveSession(derivedHostXPub, pin)
             var calledWith: Pair<Float, Float>? = null
-            val ok = phoneSession.decryptPayloadTo(frameBytes) { dx, dy ->
-                calledWith = Pair(dx, dy)
-            }
+            val ok =
+                phoneSession.decryptPayloadTo(frameBytes) { dx, dy ->
+                    calledWith = Pair(dx, dy)
+                }
             assertTrue("decrypt counter=$counter failed", ok)
             assertNotNull(calledWith)
             assertEquals(expectedDx, calledWith!!.first, 1e-6f)
@@ -167,12 +175,13 @@ class GoldenVectorsTest {
             val expectedDx = entry.getDouble("dx").toFloat()
             val expectedDy = entry.getDouble("dy").toFloat()
             val expectedFrame = b64(entry.getString("frame_b64"))
-            val counterBytes = byteArrayOf(
-                (counter and 0xFF).toByte(),
-                ((counter ushr 8) and 0xFF).toByte(),
-                ((counter ushr 16) and 0xFF).toByte(),
-                ((counter ushr 24) and 0xFF).toByte(),
-            )
+            val counterBytes =
+                byteArrayOf(
+                    (counter and 0xFF).toByte(),
+                    ((counter ushr 8) and 0xFF).toByte(),
+                    ((counter ushr 16) and 0xFF).toByte(),
+                    ((counter ushr 24) and 0xFF).toByte(),
+                )
             val nonce = expectedNonceSalt + counterBytes
             val plain = ByteArray(8)
             val xBits = expectedDx.toRawBits()
@@ -185,25 +194,28 @@ class GoldenVectorsTest {
             val encrypted = counterBytes + ciphertextWithTag
             assertArrayEquals(
                 "Android AES-GCM encrypt diverged for counter=$counter",
-                expectedFrame, encrypted,
+                expectedFrame,
+                encrypted,
             )
         }
     }
 
     private fun loadFixture(): JSONObject {
-        val candidates = listOf(
-            // gradle test cwd is android/ → fixture is one level up.
-            File("../host/test-vectors/feedback_v1.json"),
-            // some IDE runners cwd at module root.
-            File("../../host/test-vectors/feedback_v1.json"),
-            // and some at repo root.
-            File("host/test-vectors/feedback_v1.json"),
-        ).map { it.absoluteFile }
-        val resolved = candidates.firstOrNull { it.exists() }
-            ?: error(
-                "fixture not found. Tried: " +
-                    candidates.joinToString(", ") { it.path },
-            )
+        val candidates =
+            listOf(
+                // gradle test cwd is android/ → fixture is one level up.
+                File("../host/test-vectors/feedback_v1.json"),
+                // some IDE runners cwd at module root.
+                File("../../host/test-vectors/feedback_v1.json"),
+                // and some at repo root.
+                File("host/test-vectors/feedback_v1.json"),
+            ).map { it.absoluteFile }
+        val resolved =
+            candidates.firstOrNull { it.exists() }
+                ?: error(
+                    "fixture not found. Tried: " +
+                        candidates.joinToString(", ") { it.path },
+                )
         return JSONObject(resolved.readText())
     }
 

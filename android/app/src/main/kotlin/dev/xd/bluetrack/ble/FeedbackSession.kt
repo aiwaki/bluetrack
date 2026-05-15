@@ -1,5 +1,6 @@
 package dev.xd.bluetrack.ble
 
+import org.bouncycastle.math.ec.rfc7748.X25519
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.GeneralSecurityException
@@ -8,7 +9,6 @@ import javax.crypto.Cipher
 import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
-import org.bouncycastle.math.ec.rfc7748.X25519
 
 /**
  * Per-connection BLE feedback session. Each side generates an ephemeral
@@ -31,7 +31,6 @@ import org.bouncycastle.math.ec.rfc7748.X25519
  * counters are dropped even when the cryptographic tag is valid.
  */
 class FeedbackSession {
-
     companion object {
         const val PUBLIC_KEY_SIZE: Int = 32
         const val PRIVATE_KEY_SIZE: Int = 32
@@ -42,6 +41,7 @@ class FeedbackSession {
         const val NONCE_SALT_SIZE: Int = 8
         const val PIN_MIN_LENGTH: Int = 4
         const val PIN_MAX_LENGTH: Int = 12
+
         /**
          * Sliding-window size for replay-protection on the receiver. Frames
          * with a counter older than this from the highest accepted counter
@@ -134,14 +134,18 @@ class FeedbackSession {
      * bytes or [pin] does not satisfy `normalizedPinBytes` (digits only,
      * length `PIN_MIN_LENGTH..PIN_MAX_LENGTH`).
      */
-    fun deriveSession(peerPublicKey: ByteArray, pin: String) {
+    fun deriveSession(
+        peerPublicKey: ByteArray,
+        pin: String,
+    ) {
         require(peerPublicKey.size == PUBLIC_KEY_SIZE) {
             "peer public key must be $PUBLIC_KEY_SIZE bytes, got ${peerPublicKey.size}"
         }
-        val pinBytes = normalizedPinBytes(pin)
-            ?: throw IllegalArgumentException(
-                "pin must be $PIN_MIN_LENGTH..$PIN_MAX_LENGTH ASCII digits"
-            )
+        val pinBytes =
+            normalizedPinBytes(pin)
+                ?: throw IllegalArgumentException(
+                    "pin must be $PIN_MIN_LENGTH..$PIN_MAX_LENGTH ASCII digits",
+                )
         val shared = ByteArray(32)
         X25519.scalarMult(privateKey, 0, peerPublicKey, 0, shared, 0)
 
@@ -171,7 +175,10 @@ class FeedbackSession {
      * true when the 28-byte frame decrypts and verifies; the callback is
      * invoked exactly once on success.
      */
-    fun decryptPayloadTo(bleData: ByteArray, onDecrypted: (Float, Float) -> Unit): Boolean {
+    fun decryptPayloadTo(
+        bleData: ByteArray,
+        onDecrypted: (Float, Float) -> Unit,
+    ): Boolean {
         if (bleData.size != FRAME_SIZE) return false
         val key = symmetricKey ?: return false
         val salt = nonceSalt ?: return false
@@ -224,8 +231,12 @@ class FeedbackSession {
         return when {
             c > last -> {
                 val shift = c - last
-                replayBitmap = if (shift >= REPLAY_WINDOW_SIZE) 1L
-                else (replayBitmap shl shift.toInt()) or 1L
+                replayBitmap =
+                    if (shift >= REPLAY_WINDOW_SIZE) {
+                        1L
+                    } else {
+                        (replayBitmap shl shift.toInt()) or 1L
+                    }
                 lastCounter = c
                 true
             }
@@ -245,26 +256,35 @@ class FeedbackSession {
      * Encode (dx, dy) into a 28-byte frame using the current session.
      * Returns null if the session is not ready or AES-GCM fails.
      */
-    fun buildPacket(counter: Int, dx: Float, dy: Float): ByteArray? {
+    fun buildPacket(
+        counter: Int,
+        dx: Float,
+        dy: Float,
+    ): ByteArray? {
         val key = symmetricKey ?: return null
         val salt = nonceSalt ?: return null
-        val counterBytes = ByteBuffer.allocate(4)
-            .order(ByteOrder.LITTLE_ENDIAN)
-            .putInt(counter)
-            .array()
+        val counterBytes =
+            ByteBuffer
+                .allocate(4)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(counter)
+                .array()
         val nonce = ByteArray(NONCE_SALT_SIZE + COUNTER_PREFIX_SIZE)
         System.arraycopy(salt, 0, nonce, 0, NONCE_SALT_SIZE)
         System.arraycopy(counterBytes, 0, nonce, NONCE_SALT_SIZE, COUNTER_PREFIX_SIZE)
-        val plain = ByteBuffer.allocate(PLAINTEXT_SIZE)
-            .order(ByteOrder.LITTLE_ENDIAN)
-            .putFloat(dx)
-            .putFloat(dy)
-            .array()
+        val plain =
+            ByteBuffer
+                .allocate(PLAINTEXT_SIZE)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putFloat(dx)
+                .putFloat(dy)
+                .array()
         return try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, nonce))
             val ciphertextWithTag = cipher.doFinal(plain)
-            ByteBuffer.allocate(FRAME_SIZE)
+            ByteBuffer
+                .allocate(FRAME_SIZE)
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .put(counterBytes)
                 .put(ciphertextWithTag)
@@ -274,18 +294,25 @@ class FeedbackSession {
         }
     }
 
-    private fun readIntLe(bytes: ByteArray, offset: Int): Int =
-        (bytes[offset].toInt() and 0xFF) or
-            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
-            ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
-            ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+    private fun readIntLe(
+        bytes: ByteArray,
+        offset: Int,
+    ): Int = (bytes[offset].toInt() and 0xFF) or
+        ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+        ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+        ((bytes[offset + 3].toInt() and 0xFF) shl 24)
 
     /**
      * Minimal HKDF-SHA256 (RFC 5869) Expand step composed with Extract.
      * Avoids pulling BouncyCastle's higher-level digest wiring; only Mac
      * "HmacSHA256" is needed and that is on every Android JCE.
      */
-    private fun hkdfExpand(ikm: ByteArray, salt: ByteArray, info: ByteArray, length: Int): ByteArray {
+    private fun hkdfExpand(
+        ikm: ByteArray,
+        salt: ByteArray,
+        info: ByteArray,
+        length: Int,
+    ): ByteArray {
         val hmac = Mac.getInstance("HmacSHA256")
         // Extract: PRK = HMAC-SHA256(salt, IKM)
         hmac.init(SecretKeySpec(salt, "HmacSHA256"))

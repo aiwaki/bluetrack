@@ -7,7 +7,6 @@ import XCTest
 /// generator script produced. Catches drift between Swift / Android /
 /// Python implementations of the BLE feedback protocol.
 final class GoldenVectorsTests: XCTestCase {
-
     func testGoldenVectorsMatchSwiftImplementation() throws {
         let fixture = try loadFixture()
 
@@ -61,7 +60,10 @@ final class GoldenVectorsTests: XCTestCase {
         )
         XCTAssertEqual(builtHandshake.ephemeralPublicKey, fixture.host.ephemeralX25519Public)
         XCTAssertEqual(builtHandshake.identityPublicKey, fixture.host.identityEd25519Public)
-        XCTAssertTrue(builtHandshake.verifySignature(), "Locally-built Swift handshake must verify against its embedded identity")
+        XCTAssertTrue(
+            builtHandshake.verifySignature(),
+            "Locally-built Swift handshake must verify against its embedded identity"
+        )
         let fixtureHandshake = try XCTUnwrap(
             FeedbackHandshakePayload.parse(fixture.handshakeWritePayload),
             "Fixture handshake payload must parse"
@@ -184,10 +186,21 @@ private struct GoldenFixture: Decodable {
     let nonceSaltB64: String
     let frames: [Frame]
 
-    var handshakeWritePayload: Data { Data(base64Encoded: handshakeWritePayloadB64)! }
-    var sharedSecret: Data { Data(base64Encoded: sharedSecretB64)! }
-    var aesKey: Data { Data(base64Encoded: aesKeyB64)! }
-    var nonceSalt: Data { Data(base64Encoded: nonceSaltB64)! }
+    var handshakeWritePayload: Data {
+        Data(base64Encoded: handshakeWritePayloadB64)!
+    }
+
+    var sharedSecret: Data {
+        Data(base64Encoded: sharedSecretB64)!
+    }
+
+    var aesKey: Data {
+        Data(base64Encoded: aesKeyB64)!
+    }
+
+    var nonceSalt: Data {
+        Data(base64Encoded: nonceSaltB64)!
+    }
 
     enum CodingKeys: String, CodingKey {
         case protocolVersion = "protocol_version"
@@ -238,10 +251,21 @@ private struct GoldenFixture: Decodable {
         let identityEd25519PublicB64: String
         let identityFingerprint: String
 
-        var ephemeralX25519PrivateSeed: Data { Data(base64Encoded: ephemeralX25519PrivateSeedB64)! }
-        var ephemeralX25519Public: Data { Data(base64Encoded: ephemeralX25519PublicB64)! }
-        var identityEd25519PrivateSeed: Data { Data(base64Encoded: identityEd25519PrivateSeedB64)! }
-        var identityEd25519Public: Data { Data(base64Encoded: identityEd25519PublicB64)! }
+        var ephemeralX25519PrivateSeed: Data {
+            Data(base64Encoded: ephemeralX25519PrivateSeedB64)!
+        }
+
+        var ephemeralX25519Public: Data {
+            Data(base64Encoded: ephemeralX25519PublicB64)!
+        }
+
+        var identityEd25519PrivateSeed: Data {
+            Data(base64Encoded: identityEd25519PrivateSeedB64)!
+        }
+
+        var identityEd25519Public: Data {
+            Data(base64Encoded: identityEd25519PublicB64)!
+        }
 
         enum CodingKeys: String, CodingKey {
             case ephemeralX25519PrivateSeedB64 = "ephemeral_x25519_private_seed_b64"
@@ -256,8 +280,13 @@ private struct GoldenFixture: Decodable {
         let ephemeralX25519PrivateSeedB64: String
         let ephemeralX25519PublicB64: String
 
-        var ephemeralX25519PrivateSeed: Data { Data(base64Encoded: ephemeralX25519PrivateSeedB64)! }
-        var ephemeralX25519Public: Data { Data(base64Encoded: ephemeralX25519PublicB64)! }
+        var ephemeralX25519PrivateSeed: Data {
+            Data(base64Encoded: ephemeralX25519PrivateSeedB64)!
+        }
+
+        var ephemeralX25519Public: Data {
+            Data(base64Encoded: ephemeralX25519PublicB64)!
+        }
 
         enum CodingKeys: String, CodingKey {
             case ephemeralX25519PrivateSeedB64 = "ephemeral_x25519_private_seed_b64"
@@ -271,7 +300,9 @@ private struct GoldenFixture: Decodable {
         let dy: Float
         let frameB64: String
 
-        var frame: Data { Data(base64Encoded: frameB64)! }
+        var frame: Data {
+            Data(base64Encoded: frameB64)!
+        }
 
         enum CodingKeys: String, CodingKey {
             case counter

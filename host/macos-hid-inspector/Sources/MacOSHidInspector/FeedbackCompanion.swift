@@ -50,7 +50,9 @@ final class FeedbackCompanion: NSObject {
 
     /// Advertised name of the peripheral discovered during scanning, or nil
     /// if no peripheral has been seen yet.
-    var discoveredPeripheralName: String? { peripheral?.name }
+    var discoveredPeripheralName: String? {
+        peripheral?.name
+    }
 
     init(options: FeedbackOptions) {
         self.options = options
@@ -84,31 +86,28 @@ final class FeedbackCompanion: NSObject {
     /// Build a JSON-serializable snapshot of the BLE side. Call after `finish()`
     /// so timings reflect the full run.
     func snapshot(exitCode: Int32) -> BleFeedbackSnapshot {
-        let scanDuration: Double?
-        if let scanStartedAt {
+        let scanDuration: Double? = if let scanStartedAt {
             if let connectedAt {
-                scanDuration = connectedAt.timeIntervalSince(scanStartedAt)
+                connectedAt.timeIntervalSince(scanStartedAt)
             } else if scanFailed {
-                scanDuration = options.scanTimeout
+                options.scanTimeout
             } else {
-                scanDuration = nil
+                nil
             }
         } else {
-            scanDuration = nil
+            nil
         }
-        let connectDuration: Double?
-        if let connectedAt, let charReadyAt {
-            connectDuration = charReadyAt.timeIntervalSince(connectedAt)
+        let connectDuration: Double? = if let connectedAt, let charReadyAt {
+            charReadyAt.timeIntervalSince(connectedAt)
         } else {
-            connectDuration = nil
+            nil
         }
-        let writeDuration: Double?
-        if let sessionReadyAt {
-            writeDuration = Date().timeIntervalSince(sessionReadyAt)
+        let writeDuration: Double? = if let sessionReadyAt {
+            Date().timeIntervalSince(sessionReadyAt)
         } else if let charReadyAt {
-            writeDuration = Date().timeIntervalSince(charReadyAt)
+            Date().timeIntervalSince(charReadyAt)
         } else {
-            writeDuration = nil
+            nil
         }
         return BleFeedbackSnapshot(
             exitCode: exitCode,
@@ -150,15 +149,21 @@ final class FeedbackCompanion: NSObject {
                 return 4
             }
             print("No Bluetrack feedback advertiser found within \(Int(options.scanTimeout))s.")
-            print("Hints: open Bluetrack on the phone, confirm the BLE feedback service is advertising, and grant Terminal Bluetooth permission in System Settings.")
+            print(
+                "Hints: open Bluetrack on the phone, confirm the BLE feedback service is advertising, and grant Terminal Bluetooth permission in System Settings."
+            )
             return 4
         }
         if feedbackCharacteristic == nil {
-            print("Peripheral connected but characteristic \(FeedbackCrypto.feedbackCharacteristicUUIDString) was not discovered.")
+            print(
+                "Peripheral connected but characteristic \(FeedbackCrypto.feedbackCharacteristicUUIDString) was not discovered."
+            )
             return 5
         }
         if handshakeCharacteristic == nil {
-            print("Peripheral connected but handshake characteristic \(FeedbackCrypto.handshakeCharacteristicUUIDString) was not discovered. The phone may be running an older Bluetrack build.")
+            print(
+                "Peripheral connected but handshake characteristic \(FeedbackCrypto.handshakeCharacteristicUUIDString) was not discovered. The phone may be running an older Bluetrack build."
+            )
             return 5
         }
         if handshakeFailed {
@@ -171,12 +176,16 @@ final class FeedbackCompanion: NSObject {
         }
         print("Wrote \(packetsSent) feedback packets.")
         if packetsSent == 0 {
-            print("No packets were written even though the session was ready. The send timer never fired or seconds was too short.")
+            print(
+                "No packets were written even though the session was ready. The send timer never fired or seconds was too short."
+            )
             return 6
         }
         if let sessionReadyAt {
             let writeWindow = Date().timeIntervalSince(sessionReadyAt)
-            print("Write window: \(String(format: "%.1f", writeWindow))s. If the Android timeline shows feedback packets, the BLE path is healthy.")
+            print(
+                "Write window: \(String(format: "%.1f", writeWindow))s. If the Android timeline shows feedback packets, the BLE path is healthy."
+            )
         }
         return 0
     }
@@ -241,7 +250,9 @@ extension FeedbackCompanion: CBCentralManagerDelegate {
             fireFirstScanResult(name: nil)
             stopRunLoopSoon()
         case .unauthorized:
-            print("Bluetooth permission denied for this process. Grant Terminal access in System Settings → Privacy & Security → Bluetooth.")
+            print(
+                "Bluetooth permission denied for this process. Grant Terminal access in System Settings → Privacy & Security → Bluetooth."
+            )
             fireFirstScanResult(name: nil)
             stopRunLoopSoon()
         case .unsupported:
@@ -259,15 +270,14 @@ extension FeedbackCompanion: CBCentralManagerDelegate {
     func centralManager(
         _ central: CBCentralManager,
         didDiscover peripheral: CBPeripheral,
-        advertisementData: [String: Any],
+        advertisementData _: [String: Any],
         rssi RSSI: NSNumber
     ) {
         guard self.peripheral == nil else { return }
-        let scanMs: Int
-        if let started = scanStartedAt {
-            scanMs = Int(Date().timeIntervalSince(started) * 1000)
+        let scanMs = if let started = scanStartedAt {
+            Int(Date().timeIntervalSince(started) * 1000)
         } else {
-            scanMs = 0
+            0
         }
         let name = peripheral.name ?? "(unnamed)"
         print("Found \(name) at \(peripheral.identifier) after \(scanMs)ms, RSSI \(RSSI). Connecting...")
@@ -279,18 +289,18 @@ extension FeedbackCompanion: CBCentralManagerDelegate {
         fireFirstScanResult(name: peripheral.name)
     }
 
-    func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+    func centralManager(_: CBCentralManager, didConnect peripheral: CBPeripheral) {
         connectedAt = Date()
         print("Connected. Discovering service...")
         peripheral.discoverServices([serviceUUID])
     }
 
-    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+    func centralManager(_: CBCentralManager, didFailToConnect _: CBPeripheral, error: Error?) {
         print("Connection failed: \(error?.localizedDescription ?? "unknown error").")
         stopRunLoopSoon()
     }
 
-    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+    func centralManager(_: CBCentralManager, didDisconnectPeripheral _: CBPeripheral, error: Error?) {
         if let error {
             print("Disconnected: \(error.localizedDescription).")
         }
@@ -321,7 +331,9 @@ extension FeedbackCompanion: CBPeripheralDelegate {
         feedbackCharacteristic = service.characteristics?.first { $0.uuid == feedbackCharUUID }
         handshakeCharacteristic = service.characteristics?.first { $0.uuid == handshakeCharUUID }
         guard let handshake = handshakeCharacteristic else {
-            print("Service did not expose handshake characteristic \(FeedbackCrypto.handshakeCharacteristicUUIDString).")
+            print(
+                "Service did not expose handshake characteristic \(FeedbackCrypto.handshakeCharacteristicUUIDString)."
+            )
             stopRunLoopSoon()
             return
         }
@@ -346,7 +358,9 @@ extension FeedbackCompanion: CBPeripheralDelegate {
             failHandshake("could not build handshake: \(error)")
             return
         }
-        print("Characteristics ready. Starting handshake (\(payloadData.count) bytes: eph X25519 + Ed25519 id \(identity.fingerprint()) + sig)...")
+        print(
+            "Characteristics ready. Starting handshake (\(payloadData.count) bytes: eph X25519 + Ed25519 id \(identity.fingerprint()) + sig)..."
+        )
         // 1) Write the signed handshake payload first; the peripheral
         //    verifies sig + TOFU-checks identity in
         //    onCharacteristicWriteRequest before responding.
@@ -370,7 +384,7 @@ extension FeedbackCompanion: CBPeripheralDelegate {
     }
 
     func peripheral(
-        _ peripheral: CBPeripheral,
+        _: CBPeripheral,
         didUpdateValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
@@ -380,7 +394,9 @@ extension FeedbackCompanion: CBPeripheralDelegate {
             return
         }
         guard let value = characteristic.value, value.count == FeedbackCrypto.publicKeySize else {
-            failHandshake("peripheral returned \(characteristic.value?.count ?? 0)-byte handshake (expected \(FeedbackCrypto.publicKeySize))")
+            failHandshake(
+                "peripheral returned \(characteristic.value?.count ?? 0)-byte handshake (expected \(FeedbackCrypto.publicKeySize))"
+            )
             return
         }
         do {
@@ -390,11 +406,10 @@ extension FeedbackCompanion: CBPeripheralDelegate {
             return
         }
         sessionReadyAt = Date()
-        let handshakeMs: Int
-        if let charReadyAt {
-            handshakeMs = Int(Date().timeIntervalSince(charReadyAt) * 1000)
+        let handshakeMs = if let charReadyAt {
+            Int(Date().timeIntervalSince(charReadyAt) * 1000)
         } else {
-            handshakeMs = 0
+            0
         }
         print("Handshake complete in \(handshakeMs)ms. Writing every \(options.intervalMs)ms.")
         startSendTimer()

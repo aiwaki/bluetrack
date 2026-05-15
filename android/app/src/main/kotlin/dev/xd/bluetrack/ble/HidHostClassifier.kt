@@ -18,46 +18,46 @@ internal fun HidHostCandidate.hidHostRank(): Int? {
         BluetoothClass.Device.Major.HEALTH,
         BluetoothClass.Device.Major.PERIPHERAL,
         BluetoothClass.Device.Major.TOY,
-        BluetoothClass.Device.Major.WEARABLE
+        BluetoothClass.Device.Major.WEARABLE,
         -> null
         else -> if (normalizedName.looksLikeComputer()) 75 else null
     }
 }
 
-private fun String.looksLikeAudioOrAccessory(): Boolean =
-    AUDIO_OR_ACCESSORY_KEYWORDS.any { contains(it) }
+private fun String.looksLikeAudioOrAccessory(): Boolean = AUDIO_OR_ACCESSORY_KEYWORDS.any { contains(it) }
 
-private fun String.looksLikeComputer(): Boolean =
-    COMPUTER_KEYWORDS.any { contains(it) }
+private fun String.looksLikeComputer(): Boolean = COMPUTER_KEYWORDS.any { contains(it) }
 
-private val AUDIO_OR_ACCESSORY_KEYWORDS = listOf(
-    "airpods",
-    "airpod",
-    "beats",
-    "headphone",
-    "headphones",
-    "headset",
-    "earbud",
-    "earbuds",
-    "speaker",
-    "buds",
-    "wh-",
-    "wf-",
-    "keyboard",
-    "mouse",
-    "trackpad",
-)
+private val AUDIO_OR_ACCESSORY_KEYWORDS =
+    listOf(
+        "airpods",
+        "airpod",
+        "beats",
+        "headphone",
+        "headphones",
+        "headset",
+        "earbud",
+        "earbuds",
+        "speaker",
+        "buds",
+        "wh-",
+        "wf-",
+        "keyboard",
+        "mouse",
+        "trackpad",
+    )
 
-private val COMPUTER_KEYWORDS = listOf(
-    "macbook",
-    "mac mini",
-    "mac studio",
-    "imac",
-    "windows",
-    "desktop",
-    "laptop",
-    "notebook",
-    "thinkpad",
-    "surface",
-    "pc",
-)
+private val COMPUTER_KEYWORDS =
+    listOf(
+        "macbook",
+        "mac mini",
+        "mac studio",
+        "imac",
+        "windows",
+        "desktop",
+        "laptop",
+        "notebook",
+        "thinkpad",
+        "surface",
+        "pc",
+    )

@@ -5,11 +5,11 @@ import PackageDescription
 let package = Package(
     name: "MacOSHidInspector",
     platforms: [
-        .macOS(.v13),
+        .macOS(.v13)
     ],
     products: [
         .executable(name: "bluetrack-hid-inspector", targets: ["MacOSHidInspector"]),
-        .library(name: "BluetrackHostKit", targets: ["BluetrackHostKit"]),
+        .library(name: "BluetrackHostKit", targets: ["BluetrackHostKit"])
     ],
     targets: [
         .target(
@@ -34,9 +34,9 @@ let package = Package(
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
-                    "-Xlinker", "Sources/MacOSHidInspector/Info.plist",
-                ]),
+                    "-Xlinker", "Sources/MacOSHidInspector/Info.plist"
+                ])
             ]
-        ),
+        )
     ]
 )

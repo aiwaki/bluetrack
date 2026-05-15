@@ -1,6 +1,5 @@
 package dev.xd.bluetrack.ble
 
-import java.security.SecureRandom
 import org.bouncycastle.math.ec.rfc8032.Ed25519
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -8,9 +7,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.SecureRandom
 
 class FeedbackHandshakeTest {
-
     private fun newIdentity(): Pair<ByteArray, ByteArray> {
         val priv = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val pub = ByteArray(32)
@@ -18,7 +17,11 @@ class FeedbackHandshakeTest {
         return priv to pub
     }
 
-    private fun build(eph: ByteArray, idPriv: ByteArray, idPub: ByteArray): ByteArray {
+    private fun build(
+        eph: ByteArray,
+        idPriv: ByteArray,
+        idPub: ByteArray,
+    ): ByteArray {
         val sig = ByteArray(64)
         Ed25519.sign(idPriv, 0, eph, 0, eph.size, sig, 0)
         return eph + idPub + sig

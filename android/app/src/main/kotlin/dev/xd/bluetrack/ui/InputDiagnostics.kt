@@ -49,7 +49,10 @@ internal class InputDiagnostics(
     }
 
     @Synchronized
-    fun recordFrame(nowMs: Long, queuedAtMs: Long) {
+    fun recordFrame(
+        nowMs: Long,
+        queuedAtMs: Long,
+    ) {
         frames += 1
         val latency = (nowMs - queuedAtMs).coerceAtLeast(0L)
         if (latency > maxQueueLatencyMs) maxQueueLatencyMs = latency
@@ -60,7 +63,10 @@ internal class InputDiagnostics(
     }
 
     @Synchronized
-    fun recordOutputFrame(nowMs: Long, queuedAtMs: Long) {
+    fun recordOutputFrame(
+        nowMs: Long,
+        queuedAtMs: Long,
+    ) {
         val latency = (nowMs - queuedAtMs).coerceAtLeast(0L)
         if (latency > maxOutputQueueLatencyMs) maxOutputQueueLatencyMs = latency
         if (latency > outputQueueLatencyWarningMs) {
@@ -70,7 +76,10 @@ internal class InputDiagnostics(
     }
 
     @Synchronized
-    fun recordHidSend(durationNs: Long, nowMs: Long) {
+    fun recordHidSend(
+        durationNs: Long,
+        nowMs: Long,
+    ) {
         val durationMs = durationNs / NANOS_PER_MS
         if (durationMs > maxHidSendMs) maxHidSendMs = durationMs
         if (durationMs > hidSendWarningMs) {
@@ -104,7 +113,10 @@ internal class InputDiagnostics(
         maxHidSendMs = maxHidSendMs,
     )
 
-    private fun maybeLog(nowMs: Long, reason: String) {
+    private fun maybeLog(
+        nowMs: Long,
+        reason: String,
+    ) {
         if (nowMs - lastWarningAtMs < warningCooldownMs) return
         lastWarningAtMs = nowMs
         val snapshot = snapshot()
@@ -115,7 +127,7 @@ internal class InputDiagnostics(
                 "maxHidSend=${snapshot.maxHidSendMs}ms; warnings=" +
                 "touch:${snapshot.touchGapWarnings},pacer:${snapshot.pacerGapWarnings}," +
                 "queue:${snapshot.queueLatencyWarnings},output:${snapshot.outputQueueLatencyWarnings}," +
-                "hid:${snapshot.hidSendWarnings}"
+                "hid:${snapshot.hidSendWarnings}",
         )
     }
 

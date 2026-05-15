@@ -104,7 +104,7 @@ final class CompanionRunner {
         print("Companion verdict:")
         print("  HID watch:    \(label(for: hidExit))")
         print("  BLE feedback: \(label(for: bleExit))")
-        if hidExit == 0 && bleExit == 0 {
+        if hidExit == 0, bleExit == 0 {
             print("Both Bluetrack paths look healthy.")
             return 0
         }
