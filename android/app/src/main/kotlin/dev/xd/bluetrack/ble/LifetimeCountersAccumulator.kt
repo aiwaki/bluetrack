@@ -18,7 +18,6 @@ class LifetimeCountersAccumulator(
     private val store: LifetimeCountersPolicy,
     private val flushEveryN: Int = DEFAULT_FLUSH_EVERY_N,
 ) {
-
     init {
         require(flushEveryN > 0) { "flushEveryN must be > 0" }
     }

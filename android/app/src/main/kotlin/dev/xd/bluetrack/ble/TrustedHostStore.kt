@@ -24,10 +24,9 @@ interface TrustedHostPolicy {
     fun forget()
 
     /** Short fingerprint of the pinned host identity, or null when unset. */
-    fun trustedFingerprint(): String? =
-        trustedIdentityPublicKey()?.let {
-            FeedbackHandshakePayload.fingerprintOf(it)
-        }
+    fun trustedFingerprint(): String? = trustedIdentityPublicKey()?.let {
+        FeedbackHandshakePayload.fingerprintOf(it)
+    }
 }
 
 /**
@@ -37,11 +36,13 @@ interface TrustedHostPolicy {
  * secret; only its integrity matters, and the OS already protects per-app
  * SharedPreferences from other apps under the standard Android sandbox.
  */
-class TrustedHostStore(context: Context) : TrustedHostPolicy {
-
-    private val prefs = context
-        .applicationContext
-        .getSharedPreferences("bluetrack_trusted_host", Context.MODE_PRIVATE)
+class TrustedHostStore(
+    context: Context,
+) : TrustedHostPolicy {
+    private val prefs =
+        context
+            .applicationContext
+            .getSharedPreferences("bluetrack_trusted_host", Context.MODE_PRIVATE)
 
     override fun trustedIdentityPublicKey(): ByteArray? {
         val b64 = prefs.getString(KEY_TRUSTED_PUBKEY_B64, null) ?: return null
@@ -59,12 +60,12 @@ class TrustedHostStore(context: Context) : TrustedHostPolicy {
         }
         val existing = trustedIdentityPublicKey()
         if (existing == null) {
-            prefs.edit()
+            prefs
+                .edit()
                 .putString(
                     KEY_TRUSTED_PUBKEY_B64,
                     Base64.encodeToString(identityPublicKey, Base64.NO_WRAP),
-                )
-                .apply()
+                ).apply()
             return true
         }
         return existing.contentEquals(identityPublicKey)

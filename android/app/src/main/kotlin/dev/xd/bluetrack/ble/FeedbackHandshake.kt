@@ -1,7 +1,7 @@
 package dev.xd.bluetrack.ble
 
-import java.security.MessageDigest
 import org.bouncycastle.math.ec.rfc8032.Ed25519
+import java.security.MessageDigest
 
 /**
  * 128-byte payload the host writes to the handshake characteristic.
@@ -31,20 +31,18 @@ data class FeedbackHandshakePayload(
     }
 
     /** Verify the Ed25519 signature over `ephemeralPublicKey`. */
-    fun verifySignature(): Boolean {
-        return try {
-            Ed25519.verify(
-                signature,
-                0,
-                identityPublicKey,
-                0,
-                ephemeralPublicKey,
-                0,
-                ephemeralPublicKey.size,
-            )
-        } catch (_: Throwable) {
-            false
-        }
+    fun verifySignature(): Boolean = try {
+        Ed25519.verify(
+            signature,
+            0,
+            identityPublicKey,
+            0,
+            ephemeralPublicKey,
+            0,
+            ephemeralPublicKey.size,
+        )
+    } catch (_: Throwable) {
+        false
     }
 
     /** Stable short fingerprint of `identityPublicKey` — first 16 hex chars
@@ -69,9 +67,10 @@ data class FeedbackHandshakePayload(
     companion object {
         const val IDENTITY_PUBLIC_KEY_SIZE: Int = 32
         const val IDENTITY_SIGNATURE_SIZE: Int = 64
-        const val WIRE_SIZE: Int = FeedbackSession.PUBLIC_KEY_SIZE +
-            IDENTITY_PUBLIC_KEY_SIZE +
-            IDENTITY_SIGNATURE_SIZE  // 128
+        const val WIRE_SIZE: Int =
+            FeedbackSession.PUBLIC_KEY_SIZE +
+                IDENTITY_PUBLIC_KEY_SIZE +
+                IDENTITY_SIGNATURE_SIZE // 128
 
         /** Parse exactly 128 bytes. Returns null on length mismatch. */
         fun parse(bytes: ByteArray): FeedbackHandshakePayload? {

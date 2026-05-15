@@ -178,6 +178,16 @@ adb logcat -s BluetrackInput Bluetrack
   before touching the destination and preserves the previous
   identity at `<destination>.bak` for one-shot recovery from a
   mistaken import.
+- Lint gates: `ktlint` runs on every Android CI lane
+  (`./gradlew :app:ktlintCheck`; auto-fix locally via
+  `./gradlew :app:ktlintFormat`). SwiftFormat runs on the Host
+  lane (`swiftformat --lint host/macos-hid-inspector`; auto-fix via
+  `swiftformat host/macos-hid-inspector`). Black runs on the Host
+  lane too (`python3 -m black --check`). Project rule overrides
+  live in `android/.editorconfig` (Compose PascalCase + wildcard
+  imports + filename-equals-class relaxations) and
+  `host/macos-hid-inspector/.swiftformat`. Format drift fails CI
+  before review touches the PR.
 - Release-build crypto: `android/app/proguard-rules.pro` keeps the
   BouncyCastle X25519/Ed25519 packages and every Bluetrack BLE
   protocol entry class. Android CI runs `assembleRelease` (R8

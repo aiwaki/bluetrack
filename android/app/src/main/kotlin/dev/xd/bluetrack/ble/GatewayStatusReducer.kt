@@ -30,29 +30,31 @@ internal fun reduceGatewayStatus(
     eventSource: String? = null,
     eventMessage: String? = null,
 ): GatewayReduction {
-    val event = if (!eventSource.isNullOrBlank() && !eventMessage.isNullOrBlank()) {
-        GatewayEvent(nowMs, eventSource, eventMessage)
-    } else {
-        null
-    }
-    val nextStatus = current.copy(
-        hid = hid ?: current.hid,
-        feedback = feedback ?: current.feedback,
-        pairing = pairing ?: current.pairing,
-        compatibility = compatibility ?: current.compatibility,
-        host = host,
-        error = error,
-        reportsSent = reportsSent ?: current.reportsSent,
-        feedbackPackets = feedbackPackets ?: current.feedbackPackets,
-        rejectedFeedbackPackets = rejectedFeedbackPackets ?: current.rejectedFeedbackPackets,
-        lastInputSource = lastInputSource,
-        lastInputAtMs = lastInputAtMs,
-        lastReportAtMs = lastReportAtMs,
-        lastFeedbackAtMs = lastFeedbackAtMs,
-        feedbackPin = feedbackPin,
-        trustedHostFingerprint = trustedHostFingerprint,
-        lifetimeCounters = lifetimeCounters,
-        events = if (event == null) current.events else (listOf(event) + current.events).take(maxEvents),
-    )
+    val event =
+        if (!eventSource.isNullOrBlank() && !eventMessage.isNullOrBlank()) {
+            GatewayEvent(nowMs, eventSource, eventMessage)
+        } else {
+            null
+        }
+    val nextStatus =
+        current.copy(
+            hid = hid ?: current.hid,
+            feedback = feedback ?: current.feedback,
+            pairing = pairing ?: current.pairing,
+            compatibility = compatibility ?: current.compatibility,
+            host = host,
+            error = error,
+            reportsSent = reportsSent ?: current.reportsSent,
+            feedbackPackets = feedbackPackets ?: current.feedbackPackets,
+            rejectedFeedbackPackets = rejectedFeedbackPackets ?: current.rejectedFeedbackPackets,
+            lastInputSource = lastInputSource,
+            lastInputAtMs = lastInputAtMs,
+            lastReportAtMs = lastReportAtMs,
+            lastFeedbackAtMs = lastFeedbackAtMs,
+            feedbackPin = feedbackPin,
+            trustedHostFingerprint = trustedHostFingerprint,
+            lifetimeCounters = lifetimeCounters,
+            events = if (event == null) current.events else (listOf(event) + current.events).take(maxEvents),
+        )
     return GatewayReduction(nextStatus, event)
 }

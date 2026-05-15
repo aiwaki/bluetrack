@@ -1,14 +1,13 @@
 package dev.xd.bluetrack.ble
 
-import kotlin.random.Random
 import org.bouncycastle.math.ec.rfc8032.Ed25519
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.random.Random
 
 /**
  * Fuzz tests for the handshake parser and the feedback decryption
@@ -22,7 +21,6 @@ import org.junit.Test
  * regression is reproducible from the failing log line.
  */
 class FeedbackHandshakeFuzzTest {
-
     private val pin = "246810"
 
     @Test
@@ -64,14 +62,15 @@ class FeedbackHandshakeFuzzTest {
             // Wrong-length inputs short-circuit to MALFORMED.
             // 128-byte inputs that fail signature verification go
             // to BAD_SIGNATURE.
-            val expectedFamily = if (len == FeedbackHandshakePayload.WIRE_SIZE) {
-                listOf(
-                    PayloadDecryptor.HandshakeOutcome.BAD_SIGNATURE,
-                    PayloadDecryptor.HandshakeOutcome.MALFORMED,
-                )
-            } else {
-                listOf(PayloadDecryptor.HandshakeOutcome.MALFORMED)
-            }
+            val expectedFamily =
+                if (len == FeedbackHandshakePayload.WIRE_SIZE) {
+                    listOf(
+                        PayloadDecryptor.HandshakeOutcome.BAD_SIGNATURE,
+                        PayloadDecryptor.HandshakeOutcome.MALFORMED,
+                    )
+                } else {
+                    listOf(PayloadDecryptor.HandshakeOutcome.MALFORMED)
+                }
             assertTrue(
                 "iteration $iteration len=$len outcome=$outcome not in $expectedFamily",
                 outcome in expectedFamily,
@@ -152,15 +151,16 @@ class FeedbackHandshakeFuzzTest {
         val (host, phone) = pairedSessions()
         val rng = Random(0x600D_F00DL)
         for (iteration in 0 until 5000) {
-            val size = listOf(
-                FeedbackSession.FRAME_SIZE,  // most common
-                FeedbackSession.FRAME_SIZE,
-                FeedbackSession.FRAME_SIZE,
-                FeedbackSession.FRAME_SIZE - 1,
-                FeedbackSession.FRAME_SIZE + 1,
-                0,
-                FeedbackSession.FRAME_SIZE + 64,
-            ).random(rng)
+            val size =
+                listOf(
+                    FeedbackSession.FRAME_SIZE, // most common
+                    FeedbackSession.FRAME_SIZE,
+                    FeedbackSession.FRAME_SIZE,
+                    FeedbackSession.FRAME_SIZE - 1,
+                    FeedbackSession.FRAME_SIZE + 1,
+                    0,
+                    FeedbackSession.FRAME_SIZE + 64,
+                ).random(rng)
             val bytes = ByteArray(size).also { rng.nextBytes(it) }
             var fired = false
             val accepted = phone.decryptPayloadTo(bytes) { _, _ -> fired = true }

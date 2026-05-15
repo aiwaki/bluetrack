@@ -19,8 +19,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -40,8 +40,8 @@ import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.ui.MainViewModel
 import dev.xd.bluetrack.ui.ModeCardState
-import dev.xd.bluetrack.ui.automationLabel
 import dev.xd.bluetrack.ui.StickDeflection
+import dev.xd.bluetrack.ui.automationLabel
 import dev.xd.bluetrack.ui.modeCardStates
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
@@ -75,11 +75,12 @@ class MainActivity : ComponentActivity() {
         }
     private val discoverableBluetooth =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            val seconds = when {
-                result.resultCode > 0 -> result.resultCode
-                result.resultCode == RESULT_OK -> 300
-                else -> 0
-            }
+            val seconds =
+                when {
+                    result.resultCode > 0 -> result.resultCode
+                    result.resultCode == RESULT_OK -> 300
+                    else -> 0
+                }
             if (seconds > 0) {
                 vm.discoverable(seconds)
             } else {
@@ -115,11 +116,12 @@ class MainActivity : ComponentActivity() {
 
     private fun requestBtPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val permissions = arrayOf(
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_ADVERTISE,
-            )
+            val permissions =
+                arrayOf(
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.BLUETOOTH_SCAN,
+                    Manifest.permission.BLUETOOTH_ADVERTISE,
+                )
             if (permissions.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
                 ensureBluetoothReady()
             } else {
@@ -132,10 +134,11 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("MissingPermission")
     private fun ensureBluetoothReady() {
-        val adapter = bluetoothAdapter() ?: run {
-            vm.start()
-            return
-        }
+        val adapter =
+            bluetoothAdapter() ?: run {
+                vm.start()
+                return
+            }
         if (!adapter.isEnabled) {
             if (!autoBluetoothEnableRequested) {
                 autoBluetoothEnableRequested = true
@@ -158,16 +161,18 @@ class MainActivity : ComponentActivity() {
             requestBtPermissions()
             return
         }
-        val adapter = bluetoothAdapter() ?: run {
-            vm.start()
-            return
-        }
+        val adapter =
+            bluetoothAdapter() ?: run {
+                vm.start()
+                return
+            }
         if (!adapter.isEnabled) {
             ensureBluetoothReady()
             return
         }
-        val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
-            .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+        val intent =
+            Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+                .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
         vm.discoverabilityRequested(auto)
         discoverableBluetooth.launch(intent)
     }
@@ -184,13 +189,12 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("MissingPermission")
     private fun isBluetoothEnabled(): Boolean = bluetoothAdapter()?.isEnabled == true
 
-    private fun hasBluetoothPermissions(): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            arrayOf(
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_ADVERTISE,
-            ).all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+    private fun hasBluetoothPermissions(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+        arrayOf(
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_ADVERTISE,
+        ).all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
     private fun bluetoothAdapter(): BluetoothAdapter? =
         (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
@@ -207,9 +211,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AppScreen(
-    vm: MainViewModel,
-) {
+private fun AppScreen(vm: MainViewModel) {
     val mode by vm.mode.collectAsState()
     val status by vm.status.collectAsState()
     val telemetry by vm.telemetry.collectAsState()
@@ -222,11 +224,12 @@ private fun AppScreen(
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF031018), Color(0xFF102333), Color(0xFF07140F))))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(Brush.verticalGradient(listOf(Color(0xFF031018), Color(0xFF102333), Color(0xFF07140F))))
+                .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         HeaderPanel(status = status, now = now)
         ConnectionPanel(status = status, now = now)
@@ -300,7 +303,10 @@ private fun AppScreen(
 }
 
 @Composable
-private fun HeaderPanel(status: GatewayStatus, now: Long) {
+private fun HeaderPanel(
+    status: GatewayStatus,
+    now: Long,
+) {
     Panel(Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("Bluetrack", color = Color(0xFF00F5A0), fontWeight = FontWeight.Bold)
@@ -336,10 +342,11 @@ private fun ModeCard(
     val accent = if (state.isSelected) Color(0xFF00F5A0) else Color.White.copy(alpha = 0.62f)
     val backgroundAlpha = if (state.isSelected) 0.16f else 0.06f
     Column(
-        modifier = modifier
-            .background(Color.White.copy(alpha = backgroundAlpha), RoundedCornerShape(8.dp))
-            .clickable(enabled = !state.isSelected, onClick = onTap)
-            .padding(14.dp),
+        modifier =
+            modifier
+                .background(Color.White.copy(alpha = backgroundAlpha), RoundedCornerShape(8.dp))
+                .clickable(enabled = !state.isSelected, onClick = onTap)
+                .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(state.title, color = accent, fontWeight = FontWeight.Bold)
@@ -375,12 +382,13 @@ private fun TouchpadPanel(
 ) {
     val isGamepad = mode == HidMode.GAMEPAD
     val stick = stickOverlayState(stickX = telemetryX, stickY = telemetryY)
-    val dotColor = when {
-        !isGamepad -> Color(0xFF00F5A0)
-        stick.deflection == StickDeflection.IDLE -> Color.White.copy(alpha = 0.55f)
-        stick.deflection == StickDeflection.LIGHT -> Color(0xFF00E5FF)
-        else -> Color(0xFF00F5A0)
-    }
+    val dotColor =
+        when {
+            !isGamepad -> Color(0xFF00F5A0)
+            stick.deflection == StickDeflection.IDLE -> Color.White.copy(alpha = 0.55f)
+            stick.deflection == StickDeflection.LIGHT -> Color(0xFF00E5FF)
+            else -> Color(0xFF00F5A0)
+        }
     Panel(modifier) {
         Box(Modifier.fillMaxSize()) {
             Canvas(Modifier.fillMaxSize().padding(24.dp)) {
@@ -396,18 +404,20 @@ private fun TouchpadPanel(
                     drawCircle(ringColor, travelRadius, Offset(cx, cy), style = Stroke(width = 2f))
                     drawCircle(ringColor, baseRadius * 0.4f, Offset(cx, cy), style = Stroke(width = 1.5f))
                 }
-                val dotOffset = if (isGamepad) {
-                    Offset(cx + stick.normalizedX * travelRadius, cy + stick.normalizedY * travelRadius)
-                } else {
-                    Offset(cx + telemetryX * 1.5f, cy + telemetryY * 1.5f)
-                }
+                val dotOffset =
+                    if (isGamepad) {
+                        Offset(cx + stick.normalizedX * travelRadius, cy + stick.normalizedY * travelRadius)
+                    } else {
+                        Offset(cx + telemetryX * 1.5f, cy + telemetryY * 1.5f)
+                    }
                 drawCircle(dotColor, if (isGamepad) 14f else 13f, dotOffset)
             }
             if (isGamepad) {
                 Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(12.dp),
+                    modifier =
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(12.dp),
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
@@ -422,74 +432,81 @@ private fun TouchpadPanel(
                     )
                 }
             }
-            AndroidView(factory = { ctx -> FrameLayout(ctx).apply {
-                var lastX = 0f
-                var lastY = 0f
-                var filteredX = 0f
-                var filteredY = 0f
-                isFocusableInTouchMode = true
-                isClickable = true
-                setOnGenericMotionListener { _, ev ->
-                    if (ev.action == MotionEvent.ACTION_HOVER_MOVE && ev.isFromSource(InputDevice.SOURCE_MOUSE)) {
-                        onMotion(
-                            ev.getAxisValue(MotionEvent.AXIS_RELATIVE_X),
-                            ev.getAxisValue(MotionEvent.AXIS_RELATIVE_Y),
-                            "External mouse",
-                        )
-                        true
-                    } else false
-                }
-                setOnTouchListener { _, ev ->
-                    var batchX = 0f
-                    var batchY = 0f
-
-                    fun processPoint(x: Float, y: Float) {
-                        val dx = ((x - lastX) * 0.42f).coerceIn(-22f, 22f)
-                        val dy = ((y - lastY) * 0.42f).coerceIn(-22f, 22f)
-                        lastX = x
-                        lastY = y
-                        filteredX = filteredX * 0.18f + dx * 0.82f
-                        filteredY = filteredY * 0.18f + dy * 0.82f
-                        if (abs(filteredX) > 0.04f || abs(filteredY) > 0.04f) {
-                            batchX += filteredX
-                            batchY += filteredY
-                        }
-                    }
-
-                    fun emitBatch() {
-                        if (abs(batchX) > 0.04f || abs(batchY) > 0.04f) {
-                            onMotion(batchX, batchY, "Touchpad")
-                        }
-                    }
-
-                    when (ev.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> {
-                            parent.requestDisallowInterceptTouchEvent(true)
-                            requestFocus()
-                            onTouchStart()
-                            lastX = ev.x
-                            lastY = ev.y
-                            filteredX = 0f
-                            filteredY = 0f
+            AndroidView(factory = { ctx ->
+                FrameLayout(ctx).apply {
+                    var lastX = 0f
+                    var lastY = 0f
+                    var filteredX = 0f
+                    var filteredY = 0f
+                    isFocusableInTouchMode = true
+                    isClickable = true
+                    setOnGenericMotionListener { _, ev ->
+                        if (ev.action == MotionEvent.ACTION_HOVER_MOVE && ev.isFromSource(InputDevice.SOURCE_MOUSE)) {
+                            onMotion(
+                                ev.getAxisValue(MotionEvent.AXIS_RELATIVE_X),
+                                ev.getAxisValue(MotionEvent.AXIS_RELATIVE_Y),
+                                "External mouse",
+                            )
                             true
+                        } else {
+                            false
                         }
-                        MotionEvent.ACTION_MOVE -> {
-                            for (i in 0 until ev.historySize) {
-                                processPoint(ev.getHistoricalX(i), ev.getHistoricalY(i))
+                    }
+                    setOnTouchListener { _, ev ->
+                        var batchX = 0f
+                        var batchY = 0f
+
+                        fun processPoint(
+                            x: Float,
+                            y: Float,
+                        ) {
+                            val dx = ((x - lastX) * 0.42f).coerceIn(-22f, 22f)
+                            val dy = ((y - lastY) * 0.42f).coerceIn(-22f, 22f)
+                            lastX = x
+                            lastY = y
+                            filteredX = filteredX * 0.18f + dx * 0.82f
+                            filteredY = filteredY * 0.18f + dy * 0.82f
+                            if (abs(filteredX) > 0.04f || abs(filteredY) > 0.04f) {
+                                batchX += filteredX
+                                batchY += filteredY
                             }
-                            processPoint(ev.x, ev.y)
-                            emitBatch()
-                            true
                         }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                            parent.requestDisallowInterceptTouchEvent(false)
-                            performClick()
-                            true
+
+                        fun emitBatch() {
+                            if (abs(batchX) > 0.04f || abs(batchY) > 0.04f) {
+                                onMotion(batchX, batchY, "Touchpad")
+                            }
                         }
-                        else -> false
+
+                        when (ev.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                parent.requestDisallowInterceptTouchEvent(true)
+                                requestFocus()
+                                onTouchStart()
+                                lastX = ev.x
+                                lastY = ev.y
+                                filteredX = 0f
+                                filteredY = 0f
+                                true
+                            }
+                            MotionEvent.ACTION_MOVE -> {
+                                for (i in 0 until ev.historySize) {
+                                    processPoint(ev.getHistoricalX(i), ev.getHistoricalY(i))
+                                }
+                                processPoint(ev.x, ev.y)
+                                emitBatch()
+                                true
+                            }
+                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                                parent.requestDisallowInterceptTouchEvent(false)
+                                performClick()
+                                true
+                            }
+                            else -> false
+                        }
                     }
                 }
-            } }, modifier = Modifier.fillMaxSize())
+            }, modifier = Modifier.fillMaxSize())
         }
     }
 }
@@ -529,16 +546,26 @@ private fun SystemPanel(
 }
 
 @Composable
-private fun TimelinePanel(events: List<GatewayEvent>, now: Long, modifier: Modifier) {
+private fun TimelinePanel(
+    events: List<GatewayEvent>,
+    now: Long,
+    modifier: Modifier,
+) {
     Panel(modifier) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Text("Activity", color = Color.White, fontWeight = FontWeight.Bold)
             if (events.isEmpty()) {
                 Text("Quiet", color = Color.White.copy(alpha = 0.7f))
             } else {
                 events.take(5).forEach { event ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Text(ageLabel(now, event.timestampMs), color = Color(0xFF00E5FF))
                             Text(event.source, color = Color.White, fontWeight = FontWeight.Bold)
                         }
@@ -551,8 +578,16 @@ private fun TimelinePanel(events: List<GatewayEvent>, now: Long, modifier: Modif
 }
 
 @Composable
-private fun StatusLine(label: String, value: String, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun StatusLine(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(label, color = Color.White.copy(alpha = 0.62f), modifier = Modifier.width(74.dp))
         Text(value, color = Color.White, modifier = Modifier.weight(1f))
     }
@@ -577,7 +612,10 @@ private fun MetricTile(
 }
 
 @Composable
-private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+private fun Panel(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Column(
         modifier
             .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
@@ -586,7 +624,10 @@ private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScop
     )
 }
 
-private fun primaryStatus(status: GatewayStatus, now: Long): String = when {
+private fun primaryStatus(
+    status: GatewayStatus,
+    now: Long,
+): String = when {
     status.error != null -> "Needs attention"
     isConnected(status) && isInputLive(status, now) -> "Ready - input live"
     isConnected(status) -> "Ready"
@@ -597,7 +638,10 @@ private fun primaryStatus(status: GatewayStatus, now: Long): String = when {
     else -> "Preparing"
 }
 
-private fun primaryStatusColor(status: GatewayStatus, now: Long): Color = when {
+private fun primaryStatusColor(
+    status: GatewayStatus,
+    now: Long,
+): Color = when {
     status.error != null -> Color(0xFFFFB4AB)
     isConnected(status) && isInputLive(status, now) -> Color(0xFF00F5A0)
     isConnected(status) -> Color(0xFF00E5FF)
@@ -610,24 +654,31 @@ private fun hostFallback(status: GatewayStatus): String = when {
     else -> "Searching"
 }
 
-private fun inputLabel(status: GatewayStatus, now: Long): String = when {
+private fun inputLabel(
+    status: GatewayStatus,
+    now: Long,
+): String = when {
     isInputLive(status, now) -> "${status.lastInputSource ?: "Input"} live"
     status.lastInputSource != null -> status.lastInputSource
     else -> "Idle"
 }
 
-private fun isConnected(status: GatewayStatus): Boolean =
-    status.host != null ||
-        status.hid.contains("connected", ignoreCase = true) ||
-        status.pairing.contains("HID connected", ignoreCase = true)
+private fun isConnected(status: GatewayStatus): Boolean = status.host != null ||
+    status.hid.contains("connected", ignoreCase = true) ||
+    status.pairing.contains("HID connected", ignoreCase = true)
 
-private fun isInputLive(status: GatewayStatus, now: Long): Boolean =
-    status.lastInputAtMs?.let { now - it < 1400L } == true
+private fun isInputLive(
+    status: GatewayStatus,
+    now: Long,
+): Boolean = status.lastInputAtMs?.let { now - it < 1400L } == true
 
 private fun compactCount(value: Int): String =
     if (value < 1000) value.toString() else "${value / 1000}.${(value % 1000) / 100}k"
 
-private fun ageLabel(now: Long, timestampMs: Long): String {
+private fun ageLabel(
+    now: Long,
+    timestampMs: Long,
+): String {
     val seconds = ((now - timestampMs) / 1000).coerceAtLeast(0)
     return if (seconds < 60) "${seconds}s" else "${seconds / 60}m"
 }

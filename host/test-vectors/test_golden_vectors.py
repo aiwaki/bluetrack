@@ -6,6 +6,7 @@ the generator produced. Runs alongside the Swift and Android tests
 of the same fixture so any drift between the three platforms is
 caught at PR time.
 """
+
 from __future__ import annotations
 
 import base64
@@ -17,7 +18,6 @@ import struct
 import sys
 import types
 import unittest
-
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 FIXTURE_PATH = pathlib.Path(__file__).resolve().parent / "feedback_v1.json"
@@ -100,16 +100,12 @@ class GoldenVectorsTest(unittest.TestCase):
         )
         self.assertEqual(c["nonce_salt_size"], self.sender.NONCE_SALT_SIZE)
         self.assertEqual(c["frame_size"], self.sender.FRAME_SIZE)
-        self.assertEqual(
-            c["hkdf_salt_utf8"].encode("ascii"), self.sender.HKDF_SALT
-        )
+        self.assertEqual(c["hkdf_salt_utf8"].encode("ascii"), self.sender.HKDF_SALT)
         self.assertEqual(
             c["hkdf_info_base_utf8"].encode("ascii"),
             self.sender.HKDF_INFO_BASE,
         )
-        self.assertEqual(
-            c["pin_prefix_utf8"].encode("ascii"), self.sender.PIN_PREFIX
-        )
+        self.assertEqual(c["pin_prefix_utf8"].encode("ascii"), self.sender.PIN_PREFIX)
         self.assertEqual(
             c["nonce_salt_suffix_utf8"].encode("ascii"),
             self.sender.NONCE_SALT_SUFFIX,
@@ -199,9 +195,7 @@ class GoldenVectorsTest(unittest.TestCase):
             _b64(phone["ephemeral_x25519_private_seed_b64"])
         )
         host_pub = _b64(host["ephemeral_x25519_public_b64"])
-        shared_phone = phone_priv.exchange(
-            X25519PublicKey.from_public_bytes(host_pub)
-        )
+        shared_phone = phone_priv.exchange(X25519PublicKey.from_public_bytes(host_pub))
         self.assertEqual(shared, shared_phone)
 
     def test_frames_round_trip_and_byte_equal(self) -> None:
@@ -243,7 +237,9 @@ class GoldenVectorsTest(unittest.TestCase):
 
         for entry in self.fixture["frames"]:
             counter = entry["counter"]
-            built = session.build_packet(counter, float(entry["dx"]), float(entry["dy"]))
+            built = session.build_packet(
+                counter, float(entry["dx"]), float(entry["dy"])
+            )
             self.assertEqual(_b64(entry["frame_b64"]), built, f"counter={counter}")
 
 

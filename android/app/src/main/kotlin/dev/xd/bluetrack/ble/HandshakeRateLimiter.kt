@@ -34,14 +34,17 @@ class HandshakeRateLimiter(
     private val tokensPerSecond: Double = DEFAULT_TOKENS_PER_SECOND,
     private val maxTrackedPeers: Int = DEFAULT_MAX_TRACKED_PEERS,
 ) {
-
     init {
         require(capacity > 0) { "capacity must be > 0" }
         require(tokensPerSecond > 0.0) { "tokensPerSecond must be > 0" }
         require(maxTrackedPeers > 0) { "maxTrackedPeers must be > 0" }
     }
 
-    private data class Bucket(var tokens: Double, var lastRefillMs: Long, var lastTouchMs: Long)
+    private data class Bucket(
+        var tokens: Double,
+        var lastRefillMs: Long,
+        var lastTouchMs: Long,
+    )
 
     // LinkedHashMap preserves insertion order; we re-insert on every
     // touch so the eldest entry is the least-recently-touched peer.
@@ -52,12 +55,16 @@ class HandshakeRateLimiter(
      * its rate limit at [nowMs]; false (no token consumed) otherwise.
      */
     @Synchronized
-    fun tryAcquire(peerAddress: String, nowMs: Long): Boolean {
+    fun tryAcquire(
+        peerAddress: String,
+        nowMs: Long,
+    ): Boolean {
         val bucket = touch(peerAddress, nowMs)
         // Refill since last visit.
         val elapsedSec = (nowMs - bucket.lastRefillMs).coerceAtLeast(0L) / 1_000.0
-        bucket.tokens = (bucket.tokens + elapsedSec * tokensPerSecond)
-            .coerceAtMost(capacity.toDouble())
+        bucket.tokens =
+            (bucket.tokens + elapsedSec * tokensPerSecond)
+                .coerceAtMost(capacity.toDouble())
         bucket.lastRefillMs = nowMs
         bucket.lastTouchMs = nowMs
 
@@ -79,13 +86,17 @@ class HandshakeRateLimiter(
     @Synchronized
     internal fun trackedPeerCount(): Int = buckets.size
 
-    private fun touch(peerAddress: String, nowMs: Long): Bucket {
+    private fun touch(
+        peerAddress: String,
+        nowMs: Long,
+    ): Bucket {
         val existing = buckets.remove(peerAddress)
-        val bucket = existing ?: Bucket(
-            tokens = capacity.toDouble(),
-            lastRefillMs = nowMs,
-            lastTouchMs = nowMs,
-        )
+        val bucket =
+            existing ?: Bucket(
+                tokens = capacity.toDouble(),
+                lastRefillMs = nowMs,
+                lastTouchMs = nowMs,
+            )
         // Evict oldest if we're about to exceed the cap.
         while (buckets.size >= maxTrackedPeers) {
             val iter = buckets.entries.iterator()

@@ -73,7 +73,10 @@ data class GatewayEvent(
 )
 
 @SuppressLint("MissingPermission")
-class BleHidGateway(private val context: Context, private val engine: TranslationEngine) {
+class BleHidGateway(
+    private val context: Context,
+    private val engine: TranslationEngine,
+) {
     private companion object {
         const val TAG = "Bluetrack"
         const val MOUSE_REPORT_ID = 1
@@ -86,9 +89,10 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         const val GAMEPAD_WAKE_REPEATS = 3
         const val GAMEPAD_WAKE_MIN_INTERVAL_MS = 1500L
         const val GAMEPAD_DISCOVERY_WAKE_INTERVAL_MS = 15000L
-        val COMPOSITE_HID_SUBCLASS: Byte = (
-            BluetoothHidDevice.SUBCLASS1_COMBO.toInt() or BluetoothHidDevice.SUBCLASS2_GAMEPAD.toInt()
-        ).toByte()
+        val COMPOSITE_HID_SUBCLASS: Byte =
+            (
+                BluetoothHidDevice.SUBCLASS1_COMBO.toInt() or BluetoothHidDevice.SUBCLASS2_GAMEPAD.toInt()
+            ).toByte()
         val FEEDBACK_SERVICE_UUID: UUID = UUID.fromString("0d03f2a3-b9b2-43f6-90ca-6c4ff67c2263")
         val FEEDBACK_CHARACTERISTIC_UUID: UUID = UUID.fromString("4846ff87-f2d4-4df2-9500-9bf8ed23f9e6")
         val HANDSHAKE_CHARACTERISTIC_UUID: UUID = UUID.fromString("4846ff88-f2d4-4df2-9500-9bf8ed23f9e6")
@@ -97,8 +101,9 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     private val trustedHosts = TrustedHostStore(context)
     private val decryptor = PayloadDecryptor(trustedHosts)
     private val handshakeRateLimiter = HandshakeRateLimiter()
-    private val lifetimeCounters = LifetimeCountersAccumulator(LifetimeCountersStore(context))
-        .also { it.load() }
+    private val lifetimeCounters =
+        LifetimeCountersAccumulator(LifetimeCountersStore(context))
+            .also { it.load() }
     private val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val adapter = btManager.adapter
     private var hid: BluetoothHidDevice? = null
@@ -126,73 +131,195 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     private val _status = MutableStateFlow(GatewayStatus())
     val status: StateFlow<GatewayStatus> = _status
 
-    private val profileListener = object : BluetoothProfile.ServiceListener {
-        override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
-            if (profile != BluetoothProfile.HID_DEVICE) return
-            hid = proxy as BluetoothHidDevice
-            updateStatus(
-                hid = "HID proxy ready",
-                compatibility = snapshotCompatibility(),
-                error = null,
-                eventSource = "HID",
-                eventMessage = "HID Device profile proxy connected.",
-            )
-            register(pendingMode)
+    private val profileListener =
+        object : BluetoothProfile.ServiceListener {
+            override fun onServiceConnected(
+                profile: Int,
+                proxy: BluetoothProfile,
+            ) {
+                if (profile != BluetoothProfile.HID_DEVICE) return
+                hid = proxy as BluetoothHidDevice
+                updateStatus(
+                    hid = "HID proxy ready",
+                    compatibility = snapshotCompatibility(),
+                    error = null,
+                    eventSource = "HID",
+                    eventMessage = "HID Device profile proxy connected.",
+                )
+                register(pendingMode)
+            }
+
+            override fun onServiceDisconnected(profile: Int) {
+                if (profile != BluetoothProfile.HID_DEVICE) return
+                hid = null
+                host = null
+                registeredMode = null
+                registrationInFlight = false
+                profileProxyRequested = false
+                updateStatus(
+                    hid = "HID proxy disconnected",
+                    compatibility = snapshotCompatibility(),
+                    host = null,
+                    eventSource = "HID",
+                    eventMessage = "HID Device profile proxy disconnected.",
+                )
+            }
         }
 
-        override fun onServiceDisconnected(profile: Int) {
-            if (profile != BluetoothProfile.HID_DEVICE) return
-            hid = null
-            host = null
-            registeredMode = null
-            registrationInFlight = false
-            profileProxyRequested = false
-            updateStatus(
-                hid = "HID proxy disconnected",
-                compatibility = snapshotCompatibility(),
-                host = null,
-                eventSource = "HID",
-                eventMessage = "HID Device profile proxy disconnected.",
-            )
-        }
-    }
-
-    private val mouseDesc = byteArrayOf(
-        0x05, 0x01, 0x09, 0x02, 0xA1.toByte(), 0x01, 0x85.toByte(), MOUSE_REPORT_ID.toByte(),
-        0x09, 0x01, 0xA1.toByte(), 0x00, 0x05, 0x09, 0x19, 0x01, 0x29, 0x03, 0x15, 0x00,
-        0x25, 0x01, 0x95.toByte(), 0x03, 0x75, 0x01, 0x81.toByte(), 0x02, 0x95.toByte(),
-        0x01, 0x75, 0x05, 0x81.toByte(), 0x01, 0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09,
-        0x38, 0x15, 0x81.toByte(), 0x25, 0x7F, 0x75, 0x08, 0x95.toByte(), 0x03,
-        0x81.toByte(), 0x06, 0xC0.toByte(), 0xC0.toByte(),
-    )
-    private val gamepadDesc = byteArrayOf(
-        0x05, 0x01, 0x09, 0x05, 0xA1.toByte(), 0x01, 0x85.toByte(), GAMEPAD_REPORT_ID.toByte(),
-        0x05, 0x09, 0x19, 0x01, 0x29, 0x10, 0x15, 0x00, 0x25, 0x01,
-        0x95.toByte(), 0x10, 0x75, 0x01, 0x81.toByte(), 0x02,
-        0x05, 0x01, 0x09, 0x39, 0x15, 0x00, 0x25, 0x07, 0x35, 0x00,
-        0x46, 0x3B, 0x01, 0x65, 0x14, 0x75, 0x04, 0x95.toByte(), 0x01,
-        0x81.toByte(), 0x42, 0x65, 0x00, 0x75, 0x04, 0x95.toByte(), 0x01,
-        0x81.toByte(), 0x01,
-        0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x32, 0x09, 0x35,
-        0x35, 0x81.toByte(), 0x45, 0x7F,
-        0x15, 0x81.toByte(), 0x25, 0x7F, 0x75, 0x08, 0x95.toByte(), 0x04, 0x81.toByte(), 0x02,
-        0xC0.toByte(),
-    )
+    private val mouseDesc =
+        byteArrayOf(
+            0x05,
+            0x01,
+            0x09,
+            0x02,
+            0xA1.toByte(),
+            0x01,
+            0x85.toByte(),
+            MOUSE_REPORT_ID.toByte(),
+            0x09,
+            0x01,
+            0xA1.toByte(),
+            0x00,
+            0x05,
+            0x09,
+            0x19,
+            0x01,
+            0x29,
+            0x03,
+            0x15,
+            0x00,
+            0x25,
+            0x01,
+            0x95.toByte(),
+            0x03,
+            0x75,
+            0x01,
+            0x81.toByte(),
+            0x02,
+            0x95.toByte(),
+            0x01,
+            0x75,
+            0x05,
+            0x81.toByte(),
+            0x01,
+            0x05,
+            0x01,
+            0x09,
+            0x30,
+            0x09,
+            0x31,
+            0x09,
+            0x38,
+            0x15,
+            0x81.toByte(),
+            0x25,
+            0x7F,
+            0x75,
+            0x08,
+            0x95.toByte(),
+            0x03,
+            0x81.toByte(),
+            0x06,
+            0xC0.toByte(),
+            0xC0.toByte(),
+        )
+    private val gamepadDesc =
+        byteArrayOf(
+            0x05,
+            0x01,
+            0x09,
+            0x05,
+            0xA1.toByte(),
+            0x01,
+            0x85.toByte(),
+            GAMEPAD_REPORT_ID.toByte(),
+            0x05,
+            0x09,
+            0x19,
+            0x01,
+            0x29,
+            0x10,
+            0x15,
+            0x00,
+            0x25,
+            0x01,
+            0x95.toByte(),
+            0x10,
+            0x75,
+            0x01,
+            0x81.toByte(),
+            0x02,
+            0x05,
+            0x01,
+            0x09,
+            0x39,
+            0x15,
+            0x00,
+            0x25,
+            0x07,
+            0x35,
+            0x00,
+            0x46,
+            0x3B,
+            0x01,
+            0x65,
+            0x14,
+            0x75,
+            0x04,
+            0x95.toByte(),
+            0x01,
+            0x81.toByte(),
+            0x42,
+            0x65,
+            0x00,
+            0x75,
+            0x04,
+            0x95.toByte(),
+            0x01,
+            0x81.toByte(),
+            0x01,
+            0x05,
+            0x01,
+            0x09,
+            0x30,
+            0x09,
+            0x31,
+            0x09,
+            0x32,
+            0x09,
+            0x35,
+            0x35,
+            0x81.toByte(),
+            0x45,
+            0x7F,
+            0x15,
+            0x81.toByte(),
+            0x25,
+            0x7F,
+            0x75,
+            0x08,
+            0x95.toByte(),
+            0x04,
+            0x81.toByte(),
+            0x02,
+            0xC0.toByte(),
+        )
     private val compositeDesc = mouseDesc + gamepadDesc
 
     @Synchronized
     fun initialize(announceCompatibility: Boolean = true) {
         refreshCompatibility(announce = announceCompatibility)
-        val bluetoothAdapter = adapter ?: run {
-            updateStatus(
-                hid = "Bluetooth unavailable",
-                feedback = "Bluetooth unavailable",
-                compatibility = snapshotCompatibility(),
-                eventSource = "Bluetooth",
-                eventMessage = "No Bluetooth adapter was found.",
-            )
-            return
-        }
+        val bluetoothAdapter =
+            adapter ?: run {
+                updateStatus(
+                    hid = "Bluetooth unavailable",
+                    feedback = "Bluetooth unavailable",
+                    compatibility = snapshotCompatibility(),
+                    eventSource = "Bluetooth",
+                    eventMessage = "No Bluetooth adapter was found.",
+                )
+                return
+            }
         if (!bluetoothAdapter.isEnabled) {
             updateStatus(
                 hid = "Bluetooth off",
@@ -207,11 +334,12 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
 
         try {
             if (!profileProxyRequested) {
-                profileProxyRequested = bluetoothAdapter.getProfileProxy(
-                    context,
-                    profileListener,
-                    BluetoothProfile.HID_DEVICE,
-                )
+                profileProxyRequested =
+                    bluetoothAdapter.getProfileProxy(
+                        context,
+                        profileListener,
+                        BluetoothProfile.HID_DEVICE,
+                    )
                 if (!profileProxyRequested) {
                     updateStatus(
                         hid = "HID profile unavailable",
@@ -237,10 +365,11 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     @Synchronized
     fun register(mode: HidMode) {
         pendingMode = mode
-        val device = hid ?: run {
-            updateStatus(hid = "Waiting for HID proxy")
-            return
-        }
+        val device =
+            hid ?: run {
+                updateStatus(hid = "Waiting for HID proxy")
+                return
+            }
 
         try {
             if (registeredMode != null) {
@@ -254,11 +383,12 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                     hid = if (host == null) "HID ready (${mode.name})" else "Connected (${mode.name})",
                     compatibility = snapshotCompatibility(),
                     eventSource = if (previousMode == mode) null else "HID",
-                    eventMessage = if (previousMode == mode) {
-                        null
-                    } else {
-                        "Switched active mode from ${previousMode?.name} to ${mode.name} without reconnecting."
-                    },
+                    eventMessage =
+                        if (previousMode == mode) {
+                            null
+                        } else {
+                            "Switched active mode from ${previousMode?.name} to ${mode.name} without reconnecting."
+                        },
                 )
                 if (previousMode != HidMode.GAMEPAD && mode == HidMode.GAMEPAD) {
                     sendGamepadWakePulse("mode switch")
@@ -276,80 +406,103 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                 return
             }
 
-            val q = BluetoothHidDeviceAppQosSettings(
-                BluetoothHidDeviceAppQosSettings.SERVICE_GUARANTEED,
-                800,
-                9,
-                0,
-                11250,
-                11250,
-            )
-            val sdp = BluetoothHidDeviceAppSdpSettings(
-                "Bluetrack Pro Engine",
-                "Input Translation",
-                "Bluetrack",
-                COMPOSITE_HID_SUBCLASS,
-                compositeDesc,
-            )
+            val q =
+                BluetoothHidDeviceAppQosSettings(
+                    BluetoothHidDeviceAppQosSettings.SERVICE_GUARANTEED,
+                    800,
+                    9,
+                    0,
+                    11250,
+                    11250,
+                )
+            val sdp =
+                BluetoothHidDeviceAppSdpSettings(
+                    "Bluetrack Pro Engine",
+                    "Input Translation",
+                    "Bluetrack",
+                    COMPOSITE_HID_SUBCLASS,
+                    compositeDesc,
+                )
             val modeAtRegistration = mode
-            val accepted = device.registerApp(sdp, null, q, ioExecutor, object : BluetoothHidDevice.Callback() {
-                override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
-                    registrationInFlight = false
-                    val hadRegisteredBefore = hasRegisteredOnce
-                    if (registered) {
-                        hasRegisteredOnce = true
-                        if (modeAtRegistration == HidMode.GAMEPAD) gamepadWakeArmed = true
-                    }
-                    registeredMode = if (registered) modeAtRegistration else null
-                    updateStatus(
-                        hid = if (registered) "HID ready (${modeAtRegistration.name})" else "HID app inactive",
-                        compatibility = snapshotCompatibility(),
-                        error = when {
-                            registered -> null
-                            hadRegisteredBefore -> "HID registration stopped; Bluetrack will retry automatically."
-                            else -> "Android rejected the HID app registration."
-                        },
-                        eventSource = "HID",
-                        eventMessage = if (registered) {
-                            "Composite HID app registered with mouse and gamepad reports; active mode ${modeAtRegistration.name}."
-                        } else if (hadRegisteredBefore) {
-                            "HID app registration became inactive; maintenance will retry."
-                        } else {
-                            "HID app registration failed."
-                        },
-                    )
-                    if (registered) maybeAutoConnectHost("HID registration")
-                }
+            val accepted =
+                device.registerApp(
+                    sdp,
+                    null,
+                    q,
+                    ioExecutor,
+                    object : BluetoothHidDevice.Callback() {
+                        override fun onAppStatusChanged(
+                            pluggedDevice: BluetoothDevice?,
+                            registered: Boolean,
+                        ) {
+                            registrationInFlight = false
+                            val hadRegisteredBefore = hasRegisteredOnce
+                            if (registered) {
+                                hasRegisteredOnce = true
+                                if (modeAtRegistration == HidMode.GAMEPAD) gamepadWakeArmed = true
+                            }
+                            registeredMode = if (registered) modeAtRegistration else null
+                            updateStatus(
+                                hid = if (registered) "HID ready (${modeAtRegistration.name})" else "HID app inactive",
+                                compatibility = snapshotCompatibility(),
+                                error =
+                                    when {
+                                        registered -> null
+                                        hadRegisteredBefore ->
+                                            "HID registration stopped; " +
+                                                "Bluetrack will retry automatically."
+                                        else -> "Android rejected the HID app registration."
+                                    },
+                                eventSource = "HID",
+                                eventMessage =
+                                    if (registered) {
+                                        "Composite HID app registered with mouse and gamepad reports; active mode ${modeAtRegistration.name}."
+                                    } else if (hadRegisteredBefore) {
+                                        "HID app registration became inactive; maintenance will retry."
+                                    } else {
+                                        "HID app registration failed."
+                                    },
+                            )
+                            if (registered) maybeAutoConnectHost("HID registration")
+                        }
 
-                override fun onConnectionStateChanged(device: BluetoothDevice, state: Int) {
-                    host = if (state == BluetoothProfile.STATE_CONNECTED) device else null
-                    if (state == BluetoothProfile.STATE_CONNECTED && registeredMode == HidMode.GAMEPAD) {
-                        gamepadWakeArmed = true
-                    }
-                    updateStatus(
-                        hid = when (state) {
-                            BluetoothProfile.STATE_CONNECTING -> "Connecting"
-                            BluetoothProfile.STATE_CONNECTED -> "Connected (${registeredMode?.name ?: modeAtRegistration.name})"
-                            BluetoothProfile.STATE_DISCONNECTING -> "Disconnecting"
-                            else -> "HID ready (${registeredMode?.name ?: modeAtRegistration.name})"
-                        },
-                        compatibility = snapshotCompatibility(),
-                        pairing = if (state == BluetoothProfile.STATE_CONNECTED) {
-                            "Paired and HID connected"
-                        } else {
-                            pairingLabel(snapshotCompatibility())
-                        },
-                        host = if (state == BluetoothProfile.STATE_CONNECTED) device.safeName() else null,
-                        error = if (state == BluetoothProfile.STATE_CONNECTED) null else _status.value.error,
-                        eventSource = "HID",
-                        eventMessage = "Host ${device.safeName()} is ${state.connectionStateLabel()}.",
-                    )
-                    if (state == BluetoothProfile.STATE_CONNECTED && registeredMode == HidMode.GAMEPAD) {
-                        sendGamepadWakePulse("host connected")
-                        gamepadWakeArmed = true
-                    }
-                }
-            })
+                        override fun onConnectionStateChanged(
+                            device: BluetoothDevice,
+                            state: Int,
+                        ) {
+                            host = if (state == BluetoothProfile.STATE_CONNECTED) device else null
+                            if (state == BluetoothProfile.STATE_CONNECTED && registeredMode == HidMode.GAMEPAD) {
+                                gamepadWakeArmed = true
+                            }
+                            updateStatus(
+                                hid =
+                                    when (state) {
+                                        BluetoothProfile.STATE_CONNECTING -> "Connecting"
+                                        BluetoothProfile.STATE_CONNECTED ->
+                                            "Connected (${registeredMode?.name ?: modeAtRegistration.name})"
+                                        BluetoothProfile.STATE_DISCONNECTING -> "Disconnecting"
+                                        else ->
+                                            "HID ready (${registeredMode?.name ?: modeAtRegistration.name})"
+                                    },
+                                compatibility = snapshotCompatibility(),
+                                pairing =
+                                    if (state == BluetoothProfile.STATE_CONNECTED) {
+                                        "Paired and HID connected"
+                                    } else {
+                                        pairingLabel(snapshotCompatibility())
+                                    },
+                                host = if (state == BluetoothProfile.STATE_CONNECTED) device.safeName() else null,
+                                error = if (state == BluetoothProfile.STATE_CONNECTED) null else _status.value.error,
+                                eventSource = "HID",
+                                eventMessage = "Host ${device.safeName()} is ${state.connectionStateLabel()}.",
+                            )
+                            if (state == BluetoothProfile.STATE_CONNECTED && registeredMode == HidMode.GAMEPAD) {
+                                sendGamepadWakePulse("host connected")
+                                gamepadWakeArmed = true
+                            }
+                        }
+                    },
+                )
             registrationInFlight = accepted
             if (!accepted) {
                 updateStatus(
@@ -367,53 +520,59 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
 
     @Synchronized
     fun connectBondedHost() {
-        val device = hid ?: run {
-            updateStatus(
-                hid = "Waiting for HID proxy",
-                eventSource = "HID",
-                eventMessage = "Cannot connect host until HID proxy is ready.",
-            )
-            return
-        }
-        val mode = registeredMode ?: run {
-            updateStatus(
-                hid = "Waiting for HID registration",
-                eventSource = "HID",
-                eventMessage = "Cannot connect host until HID app registration finishes.",
-            )
-            return
-        }
-        val bluetoothAdapter = adapter ?: run {
-            updateStatus(
-                hid = "Bluetooth unavailable",
-                eventSource = "Bluetooth",
-                eventMessage = "Cannot connect host without a Bluetooth adapter.",
-            )
-            return
-        }
+        val device =
+            hid ?: run {
+                updateStatus(
+                    hid = "Waiting for HID proxy",
+                    eventSource = "HID",
+                    eventMessage = "Cannot connect host until HID proxy is ready.",
+                )
+                return
+            }
+        val mode =
+            registeredMode ?: run {
+                updateStatus(
+                    hid = "Waiting for HID registration",
+                    eventSource = "HID",
+                    eventMessage = "Cannot connect host until HID app registration finishes.",
+                )
+                return
+            }
+        val bluetoothAdapter =
+            adapter ?: run {
+                updateStatus(
+                    hid = "Bluetooth unavailable",
+                    eventSource = "Bluetooth",
+                    eventMessage = "Cannot connect host without a Bluetooth adapter.",
+                )
+                return
+            }
 
         try {
             val bondedDevices = bluetoothAdapter.bondedDevices
             val candidate = bondedDevices.bestHidHost()
 
             if (candidate == null) {
-                val ignoredDevices = bondedDevices
-                    .map { it.safeName() }
-                    .sorted()
+                val ignoredDevices =
+                    bondedDevices
+                        .map { it.safeName() }
+                        .sorted()
                 updateStatus(
                     pairing = if (ignoredDevices.isEmpty()) "No bonded host" else "No computer HID host",
                     compatibility = snapshotCompatibility(),
-                    error = if (ignoredDevices.isEmpty()) {
-                        "Pair the PC first; Bluetrack will connect the HID host automatically."
-                    } else {
-                        "Ignoring bonded devices that do not look like computer HID hosts."
-                    },
+                    error =
+                        if (ignoredDevices.isEmpty()) {
+                            "Pair the PC first; Bluetrack will connect the HID host automatically."
+                        } else {
+                            "Ignoring bonded devices that do not look like computer HID hosts."
+                        },
                     eventSource = "HID",
-                    eventMessage = if (ignoredDevices.isEmpty()) {
-                        "No bonded Bluetooth devices are available for HID connect."
-                    } else {
-                        "Ignored non-host bonded devices: ${ignoredDevices.joinToString()}."
-                    },
+                    eventMessage =
+                        if (ignoredDevices.isEmpty()) {
+                            "No bonded Bluetooth devices are available for HID connect."
+                        } else {
+                            "Ignored non-host bonded devices: ${ignoredDevices.joinToString()}."
+                        },
                 )
                 return
             }
@@ -439,11 +598,12 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                 compatibility = snapshotCompatibility(),
                 error = if (accepted) null else "Android rejected the HID connect request.",
                 eventSource = "HID",
-                eventMessage = if (accepted) {
-                    "Requested HID connection to ${candidate.safeName()} as $mode."
-                } else {
-                    "BluetoothHidDevice.connect returned false for ${candidate.safeName()}."
-                },
+                eventMessage =
+                    if (accepted) {
+                        "Requested HID connection to ${candidate.safeName()} as $mode."
+                    } else {
+                        "BluetoothHidDevice.connect returned false for ${candidate.safeName()}."
+                    },
             )
         } catch (_: SecurityException) {
             reportPermissionMissing()
@@ -456,24 +616,26 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         if (hid == null || registeredMode == null || host != null || snapshot.bondedDevices.isEmpty()) return
         if (now - lastAutoConnectAttemptMs < 4000L) return
         val bluetoothAdapter = adapter ?: return
-        val candidate = try {
-            bluetoothAdapter.bondedDevices.bestHidHost()
-        } catch (_: SecurityException) {
-            reportPermissionMissing()
-            return
-        }
+        val candidate =
+            try {
+                bluetoothAdapter.bondedDevices.bestHidHost()
+            } catch (_: SecurityException) {
+                reportPermissionMissing()
+                return
+            }
         if (candidate == null) {
             updateStatus(
                 pairing = "No computer HID host",
                 compatibility = snapshot,
                 error = "Bonded devices exist, but none look like a computer HID host.",
                 eventSource = if (now - lastNoComputerHostWarningMs > 30000L) "HID" else null,
-                eventMessage = if (now - lastNoComputerHostWarningMs > 30000L) {
-                    lastNoComputerHostWarningMs = now
-                    "Skipped auto-connect because no bonded device looks like a computer HID host."
-                } else {
-                    null
-                },
+                eventMessage =
+                    if (now - lastNoComputerHostWarningMs > 30000L) {
+                        lastNoComputerHostWarningMs = now
+                        "Skipped auto-connect because no bonded device looks like a computer HID host."
+                    } else {
+                        null
+                    },
             )
             return
         }
@@ -571,7 +733,10 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         )
     }
 
-    fun send(mode: HidMode, report: ByteArray) {
+    fun send(
+        mode: HidMode,
+        report: ByteArray,
+    ) {
         val target: BluetoothDevice
         val device: BluetoothHidDevice?
         try {
@@ -595,11 +760,12 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                     sendGamepadWakePulse("first gamepad input")
                 }
             }
-            val sent = device?.sendReport(
-                target,
-                if (mode == HidMode.MOUSE) MOUSE_REPORT_ID else GAMEPAD_REPORT_ID,
-                report,
-            ) == true
+            val sent =
+                device?.sendReport(
+                    target,
+                    if (mode == HidMode.MOUSE) MOUSE_REPORT_ID else GAMEPAD_REPORT_ID,
+                    report,
+                ) == true
             synchronized(this) {
                 if (sent) {
                     reportsSent += 1
@@ -629,11 +795,12 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             lifetimeCounters = lifetimeCounters.current(),
             lastReportAtMs = now,
             eventSource = if (shouldLogEvent) "HID" else null,
-            eventMessage = if (shouldLogEvent) {
-                "Sent $reportsSent HID reports."
-            } else {
-                null
-            },
+            eventMessage =
+                if (shouldLogEvent) {
+                    "Sent $reportsSent HID reports."
+                } else {
+                    null
+                },
         )
     }
 
@@ -733,11 +900,12 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             compatibility = snapshotCompatibility(),
             error = null,
             eventSource = "Pairing",
-            eventMessage = if (auto) {
-                "Autopilot requested Android discoverability."
-            } else {
-                "Requested Android discoverability."
-            },
+            eventMessage =
+                if (auto) {
+                    "Autopilot requested Android discoverability."
+                } else {
+                    "Requested Android discoverability."
+                },
         )
     }
 
@@ -765,101 +933,113 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             eventSource = "Feedback",
             eventMessage = "Opening BLE feedback GATT server (pairing pin $pin).",
         )
-        gattServer = try {
-            btManager.openGattServer(context, object : BluetoothGattServerCallback() {
-                override fun onServiceAdded(status: Int, service: BluetoothGattService) {
-                    if (service.uuid != FEEDBACK_SERVICE_UUID) return
-                    if (status == BluetoothGatt.GATT_SUCCESS) {
-                        updateStatus(
-                            feedback = "Feedback service ready",
-                            compatibility = snapshotCompatibility(),
-                            eventSource = "Feedback",
-                            eventMessage = "Feedback GATT service was added.",
-                        )
-                        startFeedbackAdvertising()
-                    } else {
-                        updateStatus(
-                            feedback = "Feedback service failed",
-                            compatibility = snapshotCompatibility(),
-                            error = "Android rejected the BLE feedback GATT service: $status.",
-                            eventSource = "Feedback",
-                            eventMessage = "Feedback GATT service add failed with status $status.",
-                        )
-                    }
-                }
+        gattServer =
+            try {
+                btManager.openGattServer(
+                    context,
+                    object : BluetoothGattServerCallback() {
+                        override fun onServiceAdded(
+                            status: Int,
+                            service: BluetoothGattService,
+                        ) {
+                            if (service.uuid != FEEDBACK_SERVICE_UUID) return
+                            if (status == BluetoothGatt.GATT_SUCCESS) {
+                                updateStatus(
+                                    feedback = "Feedback service ready",
+                                    compatibility = snapshotCompatibility(),
+                                    eventSource = "Feedback",
+                                    eventMessage = "Feedback GATT service was added.",
+                                )
+                                startFeedbackAdvertising()
+                            } else {
+                                updateStatus(
+                                    feedback = "Feedback service failed",
+                                    compatibility = snapshotCompatibility(),
+                                    error = "Android rejected the BLE feedback GATT service: $status.",
+                                    eventSource = "Feedback",
+                                    eventMessage = "Feedback GATT service add failed with status $status.",
+                                )
+                            }
+                        }
 
-                override fun onCharacteristicReadRequest(
-                    device: BluetoothDevice,
-                    requestId: Int,
-                    offset: Int,
-                    characteristic: BluetoothGattCharacteristic,
-                ) {
-                    if (characteristic.uuid != HANDSHAKE_CHARACTERISTIC_UUID) {
-                        sendResponseSafely(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
-                        return
-                    }
-                    val pub = decryptor.publicKey
-                    if (offset > pub.size) {
-                        sendResponseSafely(device, requestId, BluetoothGatt.GATT_INVALID_OFFSET, offset, null)
-                        return
-                    }
-                    val slice = pub.copyOfRange(offset, pub.size)
-                    sendResponseSafely(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, slice)
-                }
+                        override fun onCharacteristicReadRequest(
+                            device: BluetoothDevice,
+                            requestId: Int,
+                            offset: Int,
+                            characteristic: BluetoothGattCharacteristic,
+                        ) {
+                            if (characteristic.uuid != HANDSHAKE_CHARACTERISTIC_UUID) {
+                                sendResponseSafely(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
+                                return
+                            }
+                            val pub = decryptor.publicKey
+                            if (offset > pub.size) {
+                                sendResponseSafely(device, requestId, BluetoothGatt.GATT_INVALID_OFFSET, offset, null)
+                                return
+                            }
+                            val slice = pub.copyOfRange(offset, pub.size)
+                            sendResponseSafely(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, slice)
+                        }
 
-                override fun onCharacteristicWriteRequest(
-                    device: BluetoothDevice,
-                    requestId: Int,
-                    characteristic: BluetoothGattCharacteristic,
-                    preparedWrite: Boolean,
-                    responseNeeded: Boolean,
-                    offset: Int,
-                    value: ByteArray,
-                ) {
-                    when (characteristic.uuid) {
-                        HANDSHAKE_CHARACTERISTIC_UUID -> handleHandshakeWrite(
-                            device = device,
-                            requestId = requestId,
-                            preparedWrite = preparedWrite,
-                            responseNeeded = responseNeeded,
-                            offset = offset,
-                            value = value,
-                        )
-                        FEEDBACK_CHARACTERISTIC_UUID -> handleFeedbackWrite(
-                            device = device,
-                            requestId = requestId,
-                            preparedWrite = preparedWrite,
-                            responseNeeded = responseNeeded,
-                            offset = offset,
-                            value = value,
-                        )
-                        else -> sendResponseSafely(
-                            device,
-                            requestId,
-                            BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED,
-                            offset,
-                            null,
-                        )
-                    }
-                }
-            })
-        } catch (_: SecurityException) {
-            reportPermissionMissing()
-            null
-        }
-        val server = gattServer ?: run {
-            updateStatus(
-                feedback = "Feedback GATT unavailable",
-                compatibility = snapshotCompatibility(),
-                eventSource = "Feedback",
-                eventMessage = "openGattServer returned null.",
+                        override fun onCharacteristicWriteRequest(
+                            device: BluetoothDevice,
+                            requestId: Int,
+                            characteristic: BluetoothGattCharacteristic,
+                            preparedWrite: Boolean,
+                            responseNeeded: Boolean,
+                            offset: Int,
+                            value: ByteArray,
+                        ) {
+                            when (characteristic.uuid) {
+                                HANDSHAKE_CHARACTERISTIC_UUID ->
+                                    handleHandshakeWrite(
+                                        device = device,
+                                        requestId = requestId,
+                                        preparedWrite = preparedWrite,
+                                        responseNeeded = responseNeeded,
+                                        offset = offset,
+                                        value = value,
+                                    )
+                                FEEDBACK_CHARACTERISTIC_UUID ->
+                                    handleFeedbackWrite(
+                                        device = device,
+                                        requestId = requestId,
+                                        preparedWrite = preparedWrite,
+                                        responseNeeded = responseNeeded,
+                                        offset = offset,
+                                        value = value,
+                                    )
+                                else ->
+                                    sendResponseSafely(
+                                        device,
+                                        requestId,
+                                        BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED,
+                                        offset,
+                                        null,
+                                    )
+                            }
+                        }
+                    },
+                )
+            } catch (_: SecurityException) {
+                reportPermissionMissing()
+                null
+            }
+        val server =
+            gattServer ?: run {
+                updateStatus(
+                    feedback = "Feedback GATT unavailable",
+                    compatibility = snapshotCompatibility(),
+                    eventSource = "Feedback",
+                    eventMessage = "openGattServer returned null.",
+                )
+                return
+            }
+        val service =
+            BluetoothGattService(
+                FEEDBACK_SERVICE_UUID,
+                BluetoothGattService.SERVICE_TYPE_PRIMARY,
             )
-            return
-        }
-        val service = BluetoothGattService(
-            FEEDBACK_SERVICE_UUID,
-            BluetoothGattService.SERVICE_TYPE_PRIMARY,
-        )
         service.addCharacteristic(
             BluetoothGattCharacteristic(
                 HANDSHAKE_CHARACTERISTIC_UUID,
@@ -867,14 +1047,14 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                     BluetoothGattCharacteristic.PROPERTY_WRITE,
                 BluetoothGattCharacteristic.PERMISSION_READ or
                     BluetoothGattCharacteristic.PERMISSION_WRITE,
-            )
+            ),
         )
         service.addCharacteristic(
             BluetoothGattCharacteristic(
                 FEEDBACK_CHARACTERISTIC_UUID,
                 BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE,
                 BluetoothGattCharacteristic.PERMISSION_WRITE,
-            )
+            ),
         )
         if (!server.addService(service)) {
             updateStatus(
@@ -913,11 +1093,12 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             }
             return
         }
-        val outcome = if (!preparedWrite && offset == 0) {
-            decryptor.installHandshake(value)
-        } else {
-            PayloadDecryptor.HandshakeOutcome.MALFORMED
-        }
+        val outcome =
+            if (!preparedWrite && offset == 0) {
+                decryptor.installHandshake(value)
+            } else {
+                PayloadDecryptor.HandshakeOutcome.MALFORMED
+            }
         when (outcome) {
             PayloadDecryptor.HandshakeOutcome.OK -> {
                 val fingerprint = trustedHosts.trustedFingerprint()
@@ -952,7 +1133,8 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                 )
             }
             PayloadDecryptor.HandshakeOutcome.MALFORMED,
-            PayloadDecryptor.HandshakeOutcome.DERIVATION_FAILED -> {
+            PayloadDecryptor.HandshakeOutcome.DERIVATION_FAILED,
+            -> {
                 rejectedFeedbackPackets += 1
                 lifetimeCounters.addRejections(1L)
                 updateStatus(
@@ -968,9 +1150,11 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
             sendResponseSafely(
                 device,
                 requestId,
-                if (outcome == PayloadDecryptor.HandshakeOutcome.OK)
+                if (outcome == PayloadDecryptor.HandshakeOutcome.OK) {
                     BluetoothGatt.GATT_SUCCESS
-                else BluetoothGatt.GATT_FAILURE,
+                } else {
+                    BluetoothGatt.GATT_FAILURE
+                },
                 offset,
                 null,
             )
@@ -1013,9 +1197,12 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         offset: Int,
         value: ByteArray,
     ) {
-        val accepted = !preparedWrite && offset == 0 && decryptor.decryptPayloadTo(value) { correctionX, correctionY ->
-            engine.updateCorrection(correctionX, correctionY)
-        }
+        val accepted =
+            !preparedWrite &&
+                offset == 0 &&
+                decryptor.decryptPayloadTo(value) { correctionX, correctionY ->
+                    engine.updateCorrection(correctionX, correctionY)
+                }
         if (accepted) {
             feedbackPackets += 1
             lifetimeCounters.addFeedback(1L)
@@ -1025,11 +1212,12 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
                 lifetimeCounters = lifetimeCounters.current(),
                 lastFeedbackAtMs = SystemClock.elapsedRealtime(),
                 eventSource = if (feedbackPackets == 1 || feedbackPackets % 100 == 0) "Feedback" else null,
-                eventMessage = if (feedbackPackets == 1 || feedbackPackets % 100 == 0) {
-                    "Received $feedbackPackets feedback packets."
-                } else {
-                    null
-                },
+                eventMessage =
+                    if (feedbackPackets == 1 || feedbackPackets % 100 == 0) {
+                        "Received $feedbackPackets feedback packets."
+                    } else {
+                        null
+                    },
             )
         } else {
             rejectedFeedbackPackets += 1
@@ -1070,47 +1258,53 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     private fun startFeedbackAdvertising() {
         if (advertiseCallback != null) return
         val bluetoothAdapter = adapter ?: return
-        val leAdvertiser = bluetoothAdapter.bluetoothLeAdvertiser ?: run {
-            updateStatus(
-                feedback = "BLE advertising unavailable",
-                compatibility = snapshotCompatibility(),
-                eventSource = "Feedback",
-                eventMessage = "BluetoothLeAdvertiser is unavailable.",
-            )
-            return
-        }
+        val leAdvertiser =
+            bluetoothAdapter.bluetoothLeAdvertiser ?: run {
+                updateStatus(
+                    feedback = "BLE advertising unavailable",
+                    compatibility = snapshotCompatibility(),
+                    eventSource = "Feedback",
+                    eventMessage = "BluetoothLeAdvertiser is unavailable.",
+                )
+                return
+            }
         advertiser = leAdvertiser
-        val callback = object : AdvertiseCallback() {
-            override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
-                updateStatus(
-                    feedback = "Advertising feedback service",
-                    compatibility = snapshotCompatibility(),
-                    eventSource = "Feedback",
-                    eventMessage = "BLE feedback advertising started.",
-                )
-            }
+        val callback =
+            object : AdvertiseCallback() {
+                override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
+                    updateStatus(
+                        feedback = "Advertising feedback service",
+                        compatibility = snapshotCompatibility(),
+                        eventSource = "Feedback",
+                        eventMessage = "BLE feedback advertising started.",
+                    )
+                }
 
-            override fun onStartFailure(errorCode: Int) {
-                advertiseCallback = null
-                updateStatus(
-                    feedback = "Feedback advertising failed",
-                    compatibility = snapshotCompatibility(),
-                    error = "BLE advertising failed with Android error code $errorCode.",
-                    eventSource = "Feedback",
-                    eventMessage = "BLE feedback advertising failed with code $errorCode.",
-                )
+                override fun onStartFailure(errorCode: Int) {
+                    advertiseCallback = null
+                    updateStatus(
+                        feedback = "Feedback advertising failed",
+                        compatibility = snapshotCompatibility(),
+                        error = "BLE advertising failed with Android error code $errorCode.",
+                        eventSource = "Feedback",
+                        eventMessage = "BLE feedback advertising failed with code $errorCode.",
+                    )
+                }
             }
-        }
         advertiseCallback = callback
-        val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-            .setConnectable(true)
-            .build()
-        val data = AdvertiseData.Builder()
-            .addServiceUuid(ParcelUuid(FEEDBACK_SERVICE_UUID))
-            .setIncludeDeviceName(false)
-            .build()
+        val settings =
+            AdvertiseSettings
+                .Builder()
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+                .setConnectable(true)
+                .build()
+        val data =
+            AdvertiseData
+                .Builder()
+                .addServiceUuid(ParcelUuid(FEEDBACK_SERVICE_UUID))
+                .setIncludeDeviceName(false)
+                .build()
         try {
             updateStatus(
                 feedback = "Starting feedback advertising",
@@ -1144,35 +1338,40 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
     }
 
     private fun snapshotCompatibility(): CompatibilitySnapshot {
-        val bluetoothAdapter = adapter ?: return CompatibilitySnapshot(
-            bluetoothAvailable = false,
-            bluetoothEnabled = false,
-            hidProfile = "No adapter",
-            scanMode = "Unavailable",
-        )
+        val bluetoothAdapter =
+            adapter ?: return CompatibilitySnapshot(
+                bluetoothAvailable = false,
+                bluetoothEnabled = false,
+                hidProfile = "No adapter",
+                scanMode = "Unavailable",
+            )
 
         return try {
             val enabled = bluetoothAdapter.isEnabled
             CompatibilitySnapshot(
                 bluetoothAvailable = true,
                 bluetoothEnabled = enabled,
-                bleAdvertiserAvailable = if (enabled) bluetoothAdapter.bluetoothLeAdvertiser != null else null,
-                multipleAdvertisementSupported = if (enabled) bluetoothAdapter.isMultipleAdvertisementSupported else null,
-                hidProfile = when {
-                    hid != null && registeredMode != null -> "Composite active ${registeredMode?.name}"
-                    hid != null -> "Proxy ready"
-                    profileProxyRequested -> "Proxy requested"
-                    enabled -> "Not requested"
-                    else -> "Bluetooth off"
-                },
+                bleAdvertiserAvailable =
+                    if (enabled) bluetoothAdapter.bluetoothLeAdvertiser != null else null,
+                multipleAdvertisementSupported =
+                    if (enabled) bluetoothAdapter.isMultipleAdvertisementSupported else null,
+                hidProfile =
+                    when {
+                        hid != null && registeredMode != null -> "Composite active ${registeredMode?.name}"
+                        hid != null -> "Proxy ready"
+                        profileProxyRequested -> "Proxy requested"
+                        enabled -> "Not requested"
+                        else -> "Bluetooth off"
+                    },
                 scanMode = if (enabled) bluetoothAdapter.scanMode.scanModeLabel() else "Bluetooth off",
-                bondedDevices = if (enabled) {
-                    bluetoothAdapter.bondedDevices
-                        .map { it.safeName() }
-                        .sorted()
-                } else {
-                    emptyList()
-                },
+                bondedDevices =
+                    if (enabled) {
+                        bluetoothAdapter.bondedDevices
+                            .map { it.safeName() }
+                            .sorted()
+                    } else {
+                        emptyList()
+                    },
             )
         } catch (_: SecurityException) {
             CompatibilitySnapshot(
@@ -1191,27 +1390,24 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         else -> _status.value.pairing
     }
 
-    private fun BluetoothDevice.safeName(): String =
-        try {
-            name ?: address ?: "Host"
-        } catch (_: SecurityException) {
-            "Host"
-        }
+    private fun BluetoothDevice.safeName(): String = try {
+        name ?: address ?: "Host"
+    } catch (_: SecurityException) {
+        "Host"
+    }
 
-    private fun Set<BluetoothDevice>.bestHidHost(): BluetoothDevice? =
-        mapNotNull { device ->
-            val candidate = HidHostCandidate(
+    private fun Set<BluetoothDevice>.bestHidHost(): BluetoothDevice? = mapNotNull { device ->
+        val candidate =
+            HidHostCandidate(
                 name = device.safeName(),
                 majorDeviceClass = device.bluetoothClass?.majorDeviceClass,
             )
-            candidate.hidHostRank()?.let { rank -> rank to device }
-        }
-            .sortedWith(
-                compareByDescending<Pair<Int, BluetoothDevice>> { it.first }
-                    .thenBy { it.second.safeName() }
-            )
-            .firstOrNull()
-            ?.second
+        candidate.hidHostRank()?.let { rank -> rank to device }
+    }.sortedWith(
+        compareByDescending<Pair<Int, BluetoothDevice>> { it.first }
+            .thenBy { it.second.safeName() },
+    ).firstOrNull()
+        ?.second
 
     private fun Int.connectionStateLabel(): String = when (this) {
         BluetoothProfile.STATE_CONNECTING -> "connecting"
@@ -1248,28 +1444,29 @@ class BleHidGateway(private val context: Context, private val engine: Translatio
         eventSource: String? = null,
         eventMessage: String? = null,
     ) {
-        val reduction = reduceGatewayStatus(
-            current = _status.value,
-            nowMs = SystemClock.elapsedRealtime(),
-            hid = hid,
-            feedback = feedback,
-            pairing = pairing,
-            compatibility = compatibility,
-            host = host,
-            error = error,
-            reportsSent = reportsSent,
-            feedbackPackets = feedbackPackets,
-            rejectedFeedbackPackets = rejectedFeedbackPackets,
-            lastInputSource = lastInputSource,
-            lastInputAtMs = lastInputAtMs,
-            lastReportAtMs = lastReportAtMs,
-            lastFeedbackAtMs = lastFeedbackAtMs,
-            feedbackPin = feedbackPin,
-            trustedHostFingerprint = trustedHostFingerprint,
-            lifetimeCounters = lifetimeCounters,
-            eventSource = eventSource,
-            eventMessage = eventMessage,
-        )
+        val reduction =
+            reduceGatewayStatus(
+                current = _status.value,
+                nowMs = SystemClock.elapsedRealtime(),
+                hid = hid,
+                feedback = feedback,
+                pairing = pairing,
+                compatibility = compatibility,
+                host = host,
+                error = error,
+                reportsSent = reportsSent,
+                feedbackPackets = feedbackPackets,
+                rejectedFeedbackPackets = rejectedFeedbackPackets,
+                lastInputSource = lastInputSource,
+                lastInputAtMs = lastInputAtMs,
+                lastReportAtMs = lastReportAtMs,
+                lastFeedbackAtMs = lastFeedbackAtMs,
+                feedbackPin = feedbackPin,
+                trustedHostFingerprint = trustedHostFingerprint,
+                lifetimeCounters = lifetimeCounters,
+                eventSource = eventSource,
+                eventMessage = eventMessage,
+            )
         reduction.event?.let { Log.i(TAG, "${it.source}: ${it.message}") }
         _status.value = reduction.status
     }

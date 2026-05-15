@@ -30,7 +30,11 @@ class HidKeepAliveService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         (application as BluetrackApplication).container.bleGateway.maintainRegistration()
         return START_STICKY
     }
@@ -44,25 +48,28 @@ class HidKeepAliveService : Service() {
 
     private fun notification(): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Bluetrack HID",
-                NotificationManager.IMPORTANCE_LOW,
-            )
+            val channel =
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "Bluetrack HID",
+                    NotificationManager.IMPORTANCE_LOW,
+                )
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
-        val openApp = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-        }
+        val openApp =
+            PendingIntent.getActivity(
+                this,
+                0,
+                Intent(this, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+        val builder =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(this, CHANNEL_ID)
+            } else {
+                @Suppress("DEPRECATION")
+                Notification.Builder(this)
+            }
         return builder
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Bluetrack active")

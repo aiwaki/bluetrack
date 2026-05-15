@@ -1,6 +1,24 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jlleitschuh.gradle.ktlint")
+}
+
+ktlint {
+    // Pin a recent ktlint that matches the Kotlin 1.9.x toolchain we
+    // build with; bumping it should be a deliberate PR. `verbose`
+    // makes the CI output actionable when a rule fires.
+    version.set("1.3.1")
+    android.set(true)
+    verbose.set(true)
+    outputToConsole.set(true)
+    ignoreFailures.set(false)
+    filter {
+        // ktlint walks `build/` by default which pulls in generated
+        // Compose code. Exclude it so the gate stays focused on
+        // hand-written sources.
+        exclude { it.file.path.contains("/build/") }
+    }
 }
 
 android {
@@ -20,7 +38,7 @@ android {
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
         debug {

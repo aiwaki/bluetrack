@@ -19,17 +19,22 @@ internal class TouchMotionPredictor(
     private var predictedDebtY = 0f
     private var hasVelocity = false
 
-    fun recordTouch(dx: Float, dy: Float, nowMs: Long): MotionDelta {
+    fun recordTouch(
+        dx: Float,
+        dy: Float,
+        nowMs: Long,
+    ): MotionDelta {
         val gapMs = if (lastTouchAtMs < 0L) -1L else nowMs - lastTouchAtMs
         val shouldReconcile = gapMs in 0..resetGapMs
-        val adjusted = if (shouldReconcile) {
-            MotionDelta(
-                dx = reconcilePredictedAxis(dx, predictedDebtX),
-                dy = reconcilePredictedAxis(dy, predictedDebtY),
-            )
-        } else {
-            MotionDelta(dx, dy)
-        }
+        val adjusted =
+            if (shouldReconcile) {
+                MotionDelta(
+                    dx = reconcilePredictedAxis(dx, predictedDebtX),
+                    dy = reconcilePredictedAxis(dy, predictedDebtY),
+                )
+            } else {
+                MotionDelta(dx, dy)
+            }
 
         predictedDebtX = 0f
         predictedDebtY = 0f
@@ -65,7 +70,11 @@ internal class TouchMotionPredictor(
         hasVelocity = false
     }
 
-    private fun updateVelocity(dx: Float, dy: Float, gapMs: Long) {
+    private fun updateVelocity(
+        dx: Float,
+        dy: Float,
+        gapMs: Long,
+    ) {
         if (gapMs <= 0L || gapMs > resetGapMs) {
             hasVelocity = false
             velocityX = 0f
@@ -91,7 +100,10 @@ internal class TouchMotionPredictor(
         return (1f - (touchAgeMs - holdMs).toFloat() / fadeWindow).coerceIn(0f, 1f)
     }
 
-    private fun reconcilePredictedAxis(actual: Float, predicted: Float): Float {
+    private fun reconcilePredictedAxis(
+        actual: Float,
+        predicted: Float,
+    ): Float {
         if (abs(actual) <= epsilon || abs(predicted) <= epsilon) return actual
         if (actual.sign != predicted.sign) return actual
 
@@ -99,5 +111,8 @@ internal class TouchMotionPredictor(
         return actual.sign * remaining
     }
 
-    data class MotionDelta(val dx: Float, val dy: Float)
+    data class MotionDelta(
+        val dx: Float,
+        val dy: Float,
+    )
 }

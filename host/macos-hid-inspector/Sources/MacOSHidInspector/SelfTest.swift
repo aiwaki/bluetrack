@@ -36,7 +36,7 @@ enum FeedbackSelfTest {
 
         check("counter prefix is little-endian", &passed, &failed) {
             guard let (host, _) = pairedSessions() else { return false }
-            guard let packet = try? host.buildPacket(counter: 0x01020304, dx: 0, dy: 0) else { return false }
+            guard let packet = try? host.buildPacket(counter: 0x0102_0304, dx: 0, dy: 0) else { return false }
             return Array(packet.prefix(4)) == [0x04, 0x03, 0x02, 0x01]
         }
 
@@ -44,7 +44,7 @@ enum FeedbackSelfTest {
             (0, 1.25, -0.75),
             (7, -12.5, 99.125),
             (UInt32.max, 0, 0),
-            (42, 127.0, -127.0),
+            (42, 127.0, -127.0)
         ]
         for (counter, dx, dy) in cases {
             check("roundtrip counter=\(counter) dx=\(dx) dy=\(dy)", &passed, &failed) {
@@ -58,8 +58,7 @@ enum FeedbackSelfTest {
         check("counter changes ciphertext for identical payload", &passed, &failed) {
             guard let (host, _) = pairedSessions() else { return false }
             guard let a = try? host.buildPacket(counter: 0, dx: 1.0, dy: 1.0),
-                  let b = try? host.buildPacket(counter: 1, dx: 1.0, dy: 1.0)
-            else { return false }
+                  let b = try? host.buildPacket(counter: 1, dx: 1.0, dy: 1.0) else { return false }
             return Array(a.suffix(from: FeedbackCrypto.counterPrefixSize))
                 != Array(b.suffix(from: FeedbackCrypto.counterPrefixSize))
         }
@@ -80,8 +79,7 @@ enum FeedbackSelfTest {
 
         check("different sessions cannot decrypt each other", &passed, &failed) {
             guard let (hostA, _) = pairedSessions(),
-                  let (_, phoneB) = pairedSessions()
-            else { return false }
+                  let (_, phoneB) = pairedSessions() else { return false }
             guard let packet = try? hostA.buildPacket(counter: 0, dx: 1.0, dy: 1.0) else { return false }
             return ((try? phoneB.decodePacket(packet)) ?? nil) == nil
         }
@@ -112,7 +110,7 @@ enum FeedbackSelfTest {
         }
 
         check("invalid pin lengths and characters are rejected", &passed, &failed) {
-            return FeedbackCrypto.normalizedPinBytes("123") == nil &&
+            FeedbackCrypto.normalizedPinBytes("123") == nil &&
                 FeedbackCrypto.normalizedPinBytes("1234567890123") == nil &&
                 FeedbackCrypto.normalizedPinBytes("12ab56") == nil &&
                 FeedbackCrypto.normalizedPinBytes("") == nil &&
@@ -206,7 +204,7 @@ enum FeedbackSelfTest {
                         usage: 2,
                         vendorID: 0x004C,
                         productID: 0x1234,
-                        locationID: 0x1F010000,
+                        locationID: 0x1F01_0000,
                         looksLikeGamepad: false
                     )
                 ]

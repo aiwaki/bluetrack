@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class RelativeTimeTest {
-
     private val now: Long = 1_000_000L
 
     @Test

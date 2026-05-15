@@ -24,6 +24,13 @@ jobs:
           swift --version
           xcrun --find swift
 
+      - name: Install SwiftFormat
+        run: brew install swiftformat
+
+      - name: Lint Swift (SwiftFormat --lint)
+        working-directory: ${{ github.workspace }}
+        run: swiftformat --lint host/macos-hid-inspector
+
       - name: Build SwiftPM package
         run: swift build
 
@@ -38,9 +45,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install cryptography for the vector tests
-        run: pip install --upgrade pip && pip install cryptography
+      - name: Install Python deps (cryptography for vectors, black for lint)
+        run: pip install --upgrade pip && pip install cryptography black
         working-directory: ${{ github.workspace }}
+
+      - name: Lint Python (black --check)
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 -m black --check \
+            android/tools/ble_encrypt_sender.py \
+            host/test-vectors/generate_vectors.py \
+            host/test-vectors/test_golden_vectors.py
 
       - name: Regenerate golden vectors fixture (must be byte-identical to committed file)
         working-directory: ${{ github.workspace }}

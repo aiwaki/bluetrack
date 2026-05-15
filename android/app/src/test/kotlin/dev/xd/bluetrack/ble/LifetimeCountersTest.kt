@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LifetimeCountersTest {
-
     @Test
     fun inMemoryStoreRoundTripsSnapshot() {
         val store = InMemoryLifetimeCountersStore()
@@ -16,18 +15,20 @@ class LifetimeCountersTest {
 
     @Test
     fun inMemoryStoreResetClearsState() {
-        val store = InMemoryLifetimeCountersStore(
-            LifetimeCountersSnapshot(reports = 1, feedback = 2, rejections = 3),
-        )
+        val store =
+            InMemoryLifetimeCountersStore(
+                LifetimeCountersSnapshot(reports = 1, feedback = 2, rejections = 3),
+            )
         store.reset()
         assertEquals(LifetimeCountersSnapshot(), store.read())
     }
 
     @Test
     fun accumulatorLoadsPersistedSnapshot() {
-        val store = InMemoryLifetimeCountersStore(
-            LifetimeCountersSnapshot(reports = 5, feedback = 6, rejections = 7),
-        )
+        val store =
+            InMemoryLifetimeCountersStore(
+                LifetimeCountersSnapshot(reports = 5, feedback = 6, rejections = 7),
+            )
         val acc = LifetimeCountersAccumulator(store)
         acc.load()
         assertEquals(LifetimeCountersSnapshot(5, 6, 7), acc.current())
@@ -73,9 +74,9 @@ class LifetimeCountersTest {
     fun rejectionFlushAlsoPushesQueuedReportDelta() {
         val store = InMemoryLifetimeCountersStore()
         val acc = LifetimeCountersAccumulator(store, flushEveryN = 1_000)
-        acc.addReports(40L)        // below threshold, not flushed
-        acc.addFeedback(20L)       // below threshold, not flushed
-        acc.addRejections(1L)      // forces flush; reports + feedback land too
+        acc.addReports(40L) // below threshold, not flushed
+        acc.addFeedback(20L) // below threshold, not flushed
+        acc.addRejections(1L) // forces flush; reports + feedback land too
         assertEquals(LifetimeCountersSnapshot(40, 20, 1), store.read())
     }
 

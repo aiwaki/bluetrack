@@ -46,7 +46,9 @@ enum SelfDisclaim {
         var argvBuf = CommandLine.arguments.map { strdup($0) }
         argvBuf.append(nil)
         defer {
-            for ptr in argvBuf where ptr != nil { free(ptr) }
+            for ptr in argvBuf where ptr != nil {
+                free(ptr)
+            }
         }
 
         var env = ProcessInfo.processInfo.environment
@@ -56,7 +58,9 @@ enum SelfDisclaim {
             .map { strdup("\($0.key)=\($0.value)") }
         envBuf.append(nil)
         defer {
-            for ptr in envBuf where ptr != nil { free(ptr) }
+            for ptr in envBuf where ptr != nil {
+                free(ptr)
+            }
         }
 
         var pid: pid_t = 0
@@ -71,11 +75,10 @@ enum SelfDisclaim {
 
         var status: Int32 = 0
         waitpid(pid, &status, 0)
-        let exitCode: Int32
-        if (status & 0x7f) == 0 {
-            exitCode = (status >> 8) & 0xff
+        let exitCode: Int32 = if (status & 0x7F) == 0 {
+            (status >> 8) & 0xFF
         } else {
-            exitCode = 128 + (status & 0x7f)
+            128 + (status & 0x7F)
         }
         exit(exitCode)
     }
@@ -102,7 +105,8 @@ enum SelfDisclaim {
 
     private static func loadSetDisclaim() -> SetDisclaimFn? {
         guard let handle = dlopen(nil, RTLD_NOW),
-              let sym = dlsym(handle, "responsibility_spawnattrs_setdisclaim") else {
+              let sym = dlsym(handle, "responsibility_spawnattrs_setdisclaim") else
+        {
             return nil
         }
         return unsafeBitCast(sym, to: SetDisclaimFn.self)

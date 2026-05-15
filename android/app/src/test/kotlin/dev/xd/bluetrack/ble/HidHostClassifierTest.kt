@@ -12,13 +12,13 @@ class HidHostClassifierTest {
             HidHostCandidate(
                 name = "AirPods Pro",
                 majorDeviceClass = BluetoothClass.Device.Major.AUDIO_VIDEO,
-            ).hidHostRank()
+            ).hidHostRank(),
         )
         assertNull(
             HidHostCandidate(
                 name = "WH-1000XM5",
                 majorDeviceClass = null,
-            ).hidHostRank()
+            ).hidHostRank(),
         )
     }
 
@@ -29,14 +29,14 @@ class HidHostClassifierTest {
             HidHostCandidate(
                 name = "MacBook Pro",
                 majorDeviceClass = BluetoothClass.Device.Major.COMPUTER,
-            ).hidHostRank()
+            ).hidHostRank(),
         )
         assertEquals(
             75,
             HidHostCandidate(
                 name = "aiwaki's MacBook Pro",
                 majorDeviceClass = null,
-            ).hidHostRank()
+            ).hidHostRank(),
         )
     }
 
@@ -46,7 +46,7 @@ class HidHostClassifierTest {
             HidHostCandidate(
                 name = "Magic Trackpad",
                 majorDeviceClass = BluetoothClass.Device.Major.PERIPHERAL,
-            ).hidHostRank()
+            ).hidHostRank(),
         )
     }
 }

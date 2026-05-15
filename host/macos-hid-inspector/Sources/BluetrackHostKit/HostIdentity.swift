@@ -75,7 +75,8 @@ public struct HostIdentity {
         let data = try Data(contentsOf: url)
         let parsed = try JSONDecoder().decode(StoredIdentity.self, from: data)
         guard let raw = Data(base64Encoded: parsed.privateKeyB64),
-              raw.count == 32 else {
+              raw.count == 32 else
+        {
             throw HostIdentityError.malformed
         }
         let key = try Curve25519.Signing.PrivateKey(rawRepresentation: raw)

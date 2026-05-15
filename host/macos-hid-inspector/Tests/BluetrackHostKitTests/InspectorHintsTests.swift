@@ -2,7 +2,6 @@ import XCTest
 @testable import BluetrackHostKit
 
 final class InspectorHintsTests: XCTestCase {
-
     func testReturnsNilForEmptyCandidates() {
         XCTAssertNil(
             InspectorHints.bestPhoneRename(currentNameFilter: "Bluetrack", candidates: [])
@@ -22,7 +21,7 @@ final class InspectorHintsTests: XCTestCase {
     func testPrefersBareNameOverParenthesizedAccessory() {
         let candidates = [
             CandidateProductPair(product: "Magic Mouse (aiwaki)", transport: "Bluetooth", looksLikeGamepad: false),
-            CandidateProductPair(product: "aiwaki", transport: "Bluetooth", looksLikeGamepad: false),
+            CandidateProductPair(product: "aiwaki", transport: "Bluetooth", looksLikeGamepad: false)
         ]
         XCTAssertEqual(
             InspectorHints.bestPhoneRename(currentNameFilter: "Bluetrack", candidates: candidates),
@@ -33,7 +32,7 @@ final class InspectorHintsTests: XCTestCase {
     func testSkipsCandidatesAlreadyMatchingFilter() {
         let candidates = [
             CandidateProductPair(product: "Bluetrack Pro", transport: "Bluetooth", looksLikeGamepad: false),
-            CandidateProductPair(product: "aiwaki", transport: "Bluetooth", looksLikeGamepad: false),
+            CandidateProductPair(product: "aiwaki", transport: "Bluetooth", looksLikeGamepad: false)
         ]
         XCTAssertEqual(
             InspectorHints.bestPhoneRename(currentNameFilter: "Bluetrack", candidates: candidates),
@@ -44,7 +43,7 @@ final class InspectorHintsTests: XCTestCase {
     func testSkipsNonBluetoothCandidates() {
         let candidates = [
             CandidateProductPair(product: "USB Gamepad", transport: "USB", looksLikeGamepad: true),
-            CandidateProductPair(product: "aiwaki", transport: "Bluetooth", looksLikeGamepad: false),
+            CandidateProductPair(product: "aiwaki", transport: "Bluetooth", looksLikeGamepad: false)
         ]
         XCTAssertEqual(
             InspectorHints.bestPhoneRename(currentNameFilter: "Bluetrack", candidates: candidates),
@@ -55,7 +54,7 @@ final class InspectorHintsTests: XCTestCase {
     func testSkipsEmptyProductNames() {
         let candidates = [
             CandidateProductPair(product: "", transport: "Bluetooth", looksLikeGamepad: false),
-            CandidateProductPair(product: "pixel-8", transport: "Bluetooth", looksLikeGamepad: false),
+            CandidateProductPair(product: "pixel-8", transport: "Bluetooth", looksLikeGamepad: false)
         ]
         XCTAssertEqual(
             InspectorHints.bestPhoneRename(currentNameFilter: "Bluetrack", candidates: candidates),
@@ -66,7 +65,7 @@ final class InspectorHintsTests: XCTestCase {
     func testPrefersGamepadLikeCandidates() {
         let candidates = [
             CandidateProductPair(product: "phone-name", transport: "Bluetooth", looksLikeGamepad: false),
-            CandidateProductPair(product: "controller", transport: "Bluetooth", looksLikeGamepad: true),
+            CandidateProductPair(product: "controller", transport: "Bluetooth", looksLikeGamepad: true)
         ]
         XCTAssertEqual(
             InspectorHints.bestPhoneRename(currentNameFilter: "Bluetrack", candidates: candidates),

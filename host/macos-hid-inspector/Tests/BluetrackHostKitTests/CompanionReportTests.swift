@@ -2,7 +2,6 @@ import XCTest
 @testable import BluetrackHostKit
 
 final class CompanionReportTests: XCTestCase {
-
     func testVerdictMappingForAllExitCodeCombinations() {
         XCTAssertEqual(CompanionReportWriter.verdict(hidExit: 0, bleExit: 0), "pass")
         XCTAssertEqual(CompanionReportWriter.verdict(hidExit: 0, bleExit: 4), "partial")
@@ -181,7 +180,7 @@ final class CompanionReportTests: XCTestCase {
                         usage: 2,
                         vendorID: 0x004C,
                         productID: 0x1234,
-                        locationID: 0x1F010000,
+                        locationID: 0x1F01_0000,
                         looksLikeGamepad: false
                     )
                 ]

@@ -2,11 +2,10 @@ package dev.xd.bluetrack.ui
 
 import dev.xd.bluetrack.ble.GatewayStatus
 
-internal fun GatewayStatus.shouldAutoRequestDiscoverability(): Boolean =
-    compatibility.bluetoothAvailable &&
-        compatibility.bluetoothEnabled &&
-        host == null &&
-        compatibility.bondedDevices.isEmpty()
+internal fun GatewayStatus.shouldAutoRequestDiscoverability(): Boolean = compatibility.bluetoothAvailable &&
+    compatibility.bluetoothEnabled &&
+    host == null &&
+    compatibility.bondedDevices.isEmpty()
 
 internal fun GatewayStatus.automationLabel(): String = when {
     !compatibility.bluetoothAvailable -> "Bluetooth unavailable"

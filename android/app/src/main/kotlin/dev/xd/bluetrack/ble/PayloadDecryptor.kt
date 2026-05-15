@@ -21,7 +21,6 @@ package dev.xd.bluetrack.ble
 class PayloadDecryptor(
     private val trustedHosts: TrustedHostPolicy,
 ) {
-
     /**
      * Outcome of [installHandshake] — surfaced so the GATT server can
      * decide which status message to push and whether to send a
@@ -71,8 +70,9 @@ class PayloadDecryptor(
      * ephemeral X25519 public key. Returns one of [HandshakeOutcome].
      */
     fun installHandshake(handshakeBytes: ByteArray): HandshakeOutcome {
-        val parsed = FeedbackHandshakePayload.parse(handshakeBytes)
-            ?: return HandshakeOutcome.MALFORMED
+        val parsed =
+            FeedbackHandshakePayload.parse(handshakeBytes)
+                ?: return HandshakeOutcome.MALFORMED
         if (!parsed.verifySignature()) {
             return HandshakeOutcome.BAD_SIGNATURE
         }
@@ -92,9 +92,10 @@ class PayloadDecryptor(
      * on success. Returns false for malformed frames, unauthenticated
      * frames, replays, or before the session is ready.
      */
-    fun decryptPayloadTo(bleData: ByteArray, onDecrypted: (Float, Float) -> Unit): Boolean {
-        return session.decryptPayloadTo(bleData, onDecrypted)
-    }
+    fun decryptPayloadTo(
+        bleData: ByteArray,
+        onDecrypted: (Float, Float) -> Unit,
+    ): Boolean = session.decryptPayloadTo(bleData, onDecrypted)
 
     /**
      * Convenience API when allocations are acceptable.

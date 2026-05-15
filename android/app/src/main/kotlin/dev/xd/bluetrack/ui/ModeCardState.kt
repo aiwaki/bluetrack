@@ -31,10 +31,11 @@ private fun cardState(
         title = title,
         tagline = tagline,
         isSelected = selected,
-        statusLabel = when {
-            !selected -> "Tap to switch"
-            hostConnected -> "Active"
-            else -> "Selected"
-        },
+        statusLabel =
+            when {
+                !selected -> "Tap to switch"
+                hostConnected -> "Active"
+                else -> "Selected"
+            },
     )
 }

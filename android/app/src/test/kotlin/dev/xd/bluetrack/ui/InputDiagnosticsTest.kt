@@ -8,15 +8,16 @@ class InputDiagnosticsTest {
     @Test
     fun recordsTouchPacerQueueAndHidSendPeaks() {
         val logs = mutableListOf<String>()
-        val diagnostics = InputDiagnostics(
-            logger = { logs += it },
-            touchGapWarningMs = 10L,
-            pacerGapWarningMs = 10L,
-            queueLatencyWarningMs = 10L,
-            outputQueueLatencyWarningMs = 10L,
-            hidSendWarningMs = 1L,
-            warningCooldownMs = 0L,
-        )
+        val diagnostics =
+            InputDiagnostics(
+                logger = { logs += it },
+                touchGapWarningMs = 10L,
+                pacerGapWarningMs = 10L,
+                queueLatencyWarningMs = 10L,
+                outputQueueLatencyWarningMs = 10L,
+                hidSendWarningMs = 1L,
+                warningCooldownMs = 0L,
+            )
 
         diagnostics.recordTouch(100L)
         diagnostics.recordTouch(120L)
@@ -44,11 +45,12 @@ class InputDiagnosticsTest {
     @Test
     fun throttlesWarningLogs() {
         val logs = mutableListOf<String>()
-        val diagnostics = InputDiagnostics(
-            logger = { logs += it },
-            touchGapWarningMs = 10L,
-            warningCooldownMs = 100L,
-        )
+        val diagnostics =
+            InputDiagnostics(
+                logger = { logs += it },
+                touchGapWarningMs = 10L,
+                warningCooldownMs = 100L,
+            )
 
         diagnostics.recordTouch(0L)
         diagnostics.recordTouch(20L)
@@ -61,11 +63,12 @@ class InputDiagnosticsTest {
     @Test
     fun resetTouchClockIgnoresIdleGapBetweenGestures() {
         val logs = mutableListOf<String>()
-        val diagnostics = InputDiagnostics(
-            logger = { logs += it },
-            touchGapWarningMs = 10L,
-            warningCooldownMs = 0L,
-        )
+        val diagnostics =
+            InputDiagnostics(
+                logger = { logs += it },
+                touchGapWarningMs = 10L,
+                warningCooldownMs = 0L,
+            )
 
         diagnostics.recordTouch(0L)
         diagnostics.resetTouchClock()

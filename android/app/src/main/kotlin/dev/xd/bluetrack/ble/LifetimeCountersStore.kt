@@ -33,11 +33,13 @@ interface LifetimeCountersPolicy {
  * Storage is plain SharedPreferences. The values are not secrets; the
  * OS already protects per-app SharedPreferences from other apps.
  */
-class LifetimeCountersStore(context: Context) : LifetimeCountersPolicy {
-
-    private val prefs = context
-        .applicationContext
-        .getSharedPreferences("bluetrack_lifetime", Context.MODE_PRIVATE)
+class LifetimeCountersStore(
+    context: Context,
+) : LifetimeCountersPolicy {
+    private val prefs =
+        context
+            .applicationContext
+            .getSharedPreferences("bluetrack_lifetime", Context.MODE_PRIVATE)
 
     override fun read(): LifetimeCountersSnapshot = LifetimeCountersSnapshot(
         reports = prefs.getLong(KEY_REPORTS, 0L),
@@ -46,7 +48,8 @@ class LifetimeCountersStore(context: Context) : LifetimeCountersPolicy {
     )
 
     override fun write(snapshot: LifetimeCountersSnapshot) {
-        prefs.edit()
+        prefs
+            .edit()
             .putLong(KEY_REPORTS, snapshot.reports)
             .putLong(KEY_FEEDBACK, snapshot.feedback)
             .putLong(KEY_REJECTIONS, snapshot.rejections)

@@ -30,21 +30,21 @@ struct Options {
     var feedbackIntervalMs: Int = 5
     var feedbackScanTimeout: Double = 10.0
     var feedbackSeconds: Double = 15.0
-    var reportPath: String? = nil
+    var reportPath: String?
     /// Pairing pin displayed by the peripheral on the Bluetrack status row.
     /// Required for `feedback` and `companion`; mixed into the AES-GCM key
     /// derivation so a host without the pin produces non-decryptable frames.
-    var feedbackPin: String? = nil
+    var feedbackPin: String?
     /// Override location for the long-term Ed25519 identity file. Default is
     /// `~/.config/bluetrack-hid-inspector/host_identity_v1.json`.
-    var hostIdentityPath: String? = nil
+    var hostIdentityPath: String?
     /// When true, delete the identity file before continuing. Used to roll
     /// the host identity after the peripheral pinned the wrong key.
     var resetHostIdentity: Bool = false
     /// Destination path for the `export-identity` subcommand.
-    var identityExportToPath: String? = nil
+    var identityExportToPath: String?
     /// Source path for the `import-identity` subcommand.
-    var identityImportFromPath: String? = nil
+    var identityImportFromPath: String?
 }
 
 struct DeviceSummary {
@@ -90,7 +90,9 @@ final class HidInspector {
 
     /// Filter applied during `select()` and printing. Falls back to the CLI
     /// `--name` value when no override is set.
-    var effectiveNameFilter: String { nameFilterOverride ?? options.nameFilter }
+    var effectiveNameFilter: String {
+        nameFilterOverride ?? options.nameFilter
+    }
 
     /// Override the IOHID name filter at runtime. Used by `companion` to
     /// cross-feed a BLE peripheral name and remove the manual `--name` rerun.
@@ -124,7 +126,9 @@ final class HidInspector {
         print("")
         print("IOHID devices: \(devices.count); selected: \(selected.count)")
         if selected.isEmpty {
-            print("No matching IOHID devices. Try `--all`, verify the Mac is paired, and forget/re-pair after descriptor changes.")
+            print(
+                "No matching IOHID devices. Try `--all`, verify the Mac is paired, and forget/re-pair after descriptor changes."
+            )
             printDeviceCandidates(devices)
             return nil
         }
@@ -143,8 +147,10 @@ final class HidInspector {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerSetDeviceMatching(manager, nil)
         let openResult = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
-        if openResult != kIOReturnSuccess && openResult != kIOReturnExclusiveAccess {
-            print("IOHIDManagerOpen warning: \(openResult). Scanning may still work; live watch may need Input Monitoring permission.")
+        if openResult != kIOReturnSuccess, openResult != kIOReturnExclusiveAccess {
+            print(
+                "IOHIDManagerOpen warning: \(openResult). Scanning may still work; live watch may need Input Monitoring permission."
+            )
         }
 
         let rawSet = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> ?? []
@@ -208,7 +214,7 @@ final class HidInspector {
         print("    product:      \(hex(summary.productID, width: 4))")
         print("    location:     \(hex(summary.locationID, width: 8))")
         print("    gamepad-like: \(summary.looksLikeGamepad || hasGamepadElements(summary.device) ? "yes" : "no")")
-        if isLikelyBluetrackComposite(summary) && !summary.matchesBluetrack {
+        if isLikelyBluetrackComposite(summary), !summary.matchesBluetrack {
             print("    note:         matches Bluetrack composite HID shape even though product name differs")
         }
         if let descriptorLength = reportDescriptorLength(summary.device) {
@@ -251,18 +257,26 @@ final class HidInspector {
     /// Pair with `endWatch()` after running the run loop yourself.
     func beginWatch(_ summaries: [DeviceSummary]) {
         print("")
-        print("Watching \(summaries.count) device(s) for \(Int(options.seconds))s. Switch Bluetrack to Gamepad and move/press input now.")
-        print("If no events appear but elements are listed, grant Terminal Input Monitoring/Accessibility and try again.")
+        print(
+            "Watching \(summaries.count) device(s) for \(Int(options.seconds))s. Switch Bluetrack to Gamepad and move/press input now."
+        )
+        print(
+            "If no events appear but elements are listed, grant Terminal Input Monitoring/Accessibility and try again."
+        )
 
         watchedDevices = summaries.map(\.device)
         for device in watchedDevices {
             let result = IOHIDDeviceOpen(device, IOOptionBits(kIOHIDOptionsTypeNone))
-            if result != kIOReturnSuccess && result != kIOReturnExclusiveAccess {
+            if result != kIOReturnSuccess, result != kIOReturnExclusiveAccess {
                 print("IOHIDDeviceOpen failed for \(stringProperty(device, kIOHIDProductKey)): \(result)")
                 continue
             }
             IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
-            IOHIDDeviceRegisterInputValueCallback(device, inputCallback, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()))
+            IOHIDDeviceRegisterInputValueCallback(
+                device,
+                inputCallback,
+                UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+            )
         }
     }
 
@@ -310,10 +324,14 @@ final class HidInspector {
             print("Report events: \(reportSummary)")
         }
         if (reportEventCounts[2] ?? 0) > 0 {
-            print("Gamepad report 2 arrived on macOS. If browser testers still wait, focus on Gamepad API activation or host game-controller mapping.")
+            print(
+                "Gamepad report 2 arrived on macOS. If browser testers still wait, focus on Gamepad API activation or host game-controller mapping."
+            )
         }
         if eventCount == 0 {
-            print("No HID input values arrived. That means the problem is below browser Gamepad API: pairing, macOS HID enumeration, or Android HID reports.")
+            print(
+                "No HID input values arrived. That means the problem is below browser Gamepad API: pairing, macOS HID enumeration, or Android HID reports."
+            )
             return 3
         }
         return 0
@@ -594,39 +612,39 @@ private func usageName(page: Int, usage: Int) -> String {
     switch page {
     case 0x01:
         switch usage {
-        case 0x02: return "Mouse"
-        case 0x04: return "Joystick"
-        case 0x05: return "Game Pad"
-        case 0x06: return "Keyboard"
-        case 0x30: return "X"
-        case 0x31: return "Y"
-        case 0x32: return "Z"
-        case 0x33: return "Rx"
-        case 0x34: return "Ry"
-        case 0x35: return "Rz"
-        case 0x38: return "Wheel"
-        case 0x39: return "Hat Switch"
-        default: return "GenericDesktop(\(usage))"
+        case 0x02: "Mouse"
+        case 0x04: "Joystick"
+        case 0x05: "Game Pad"
+        case 0x06: "Keyboard"
+        case 0x30: "X"
+        case 0x31: "Y"
+        case 0x32: "Z"
+        case 0x33: "Rx"
+        case 0x34: "Ry"
+        case 0x35: "Rz"
+        case 0x38: "Wheel"
+        case 0x39: "Hat Switch"
+        default: "GenericDesktop(\(usage))"
         }
     case 0x09:
-        return "Button \(usage)"
+        "Button \(usage)"
     case 0x0C:
-        return "Consumer(\(usage))"
+        "Consumer(\(usage))"
     default:
-        return "Usage(\(page):\(usage))"
+        "Usage(\(page):\(usage))"
     }
 }
 
 private func elementTypeName(_ type: IOHIDElementType) -> String {
     switch type {
-    case kIOHIDElementTypeInput_Misc: return "input"
-    case kIOHIDElementTypeInput_Button: return "button"
-    case kIOHIDElementTypeInput_Axis: return "axis"
-    case kIOHIDElementTypeInput_ScanCodes: return "scan"
-    case kIOHIDElementTypeOutput: return "output"
-    case kIOHIDElementTypeFeature: return "feature"
-    case kIOHIDElementTypeCollection: return "collection"
-    default: return "type\(type.rawValue)"
+    case kIOHIDElementTypeInput_Misc: "input"
+    case kIOHIDElementTypeInput_Button: "button"
+    case kIOHIDElementTypeInput_Axis: "axis"
+    case kIOHIDElementTypeInput_ScanCodes: "scan"
+    case kIOHIDElementTypeOutput: "output"
+    case kIOHIDElementTypeFeature: "feature"
+    case kIOHIDElementTypeCollection: "collection"
+    default: "type\(type.rawValue)"
     }
 }
 
@@ -643,11 +661,10 @@ private func emptyDash(_ value: String) -> String {
 /// fingerprint of the loaded/generated identity to stdout so the user
 /// can compare it against the Bluetrack `Trust` status row on the phone.
 private func loadHostIdentityOrExit(options: Options) -> HostIdentity {
-    let url: URL
-    if let path = options.hostIdentityPath {
-        url = URL(fileURLWithPath: path)
+    let url: URL = if let path = options.hostIdentityPath {
+        URL(fileURLWithPath: path)
     } else {
-        url = HostIdentity.defaultURL
+        HostIdentity.defaultURL
     }
     if options.resetHostIdentity {
         do {
@@ -772,7 +789,9 @@ case .importIdentity:
         let backupNote = FileManager.default.fileExists(atPath: backup.path)
             ? " (previous identity preserved at \(backup.path))"
             : ""
-        print("Imported host identity \(installed.fingerprint()) from \(sourceURL.path) to \(destURL.path)\(backupNote).")
+        print(
+            "Imported host identity \(installed.fingerprint()) from \(sourceURL.path) to \(destURL.path)\(backupNote)."
+        )
         exit(0)
     } catch {
         print("Could not import identity from \(sourceURL.path) to \(destURL.path): \(error)")

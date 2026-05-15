@@ -1,6 +1,5 @@
 package dev.xd.bluetrack.ble
 
-import java.security.SecureRandom
 import org.bouncycastle.math.ec.rfc8032.Ed25519
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,9 +8,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.SecureRandom
 
 class PayloadDecryptorTest {
-
     private val testPin = "246810"
     private val otherPin = "135790"
 
@@ -53,12 +52,13 @@ class PayloadDecryptorTest {
         // Counters must be monotonic in unsigned semantics for the
         // receiver-side sliding replay window to accept all four.
         // -1 == 0xFFFFFFFF, the largest unsigned 32-bit value.
-        val cases = listOf(
-            Triple(0, 1.25f, -0.75f),
-            Triple(7, -12.5f, 99.125f),
-            Triple(42, 127.0f, -127.0f),
-            Triple(-1, 0f, 0f),
-        )
+        val cases =
+            listOf(
+                Triple(0, 1.25f, -0.75f),
+                Triple(7, -12.5f, 99.125f),
+                Triple(42, 127.0f, -127.0f),
+                Triple(-1, 0f, 0f),
+            )
         for ((counter, dx, dy) in cases) {
             val packet = host.buildPacket(counter, dx, dy)
             assertNotNull("buildPacket counter=$counter", packet)
@@ -69,11 +69,12 @@ class PayloadDecryptorTest {
             assertEquals(((counter ushr 24) and 0xFF).toByte(), packet[3])
 
             var decoded = false
-            val ok = phone.decryptPayloadTo(packet) { x, y ->
-                assertEquals(dx, x, 1e-6f)
-                assertEquals(dy, y, 1e-6f)
-                decoded = true
-            }
+            val ok =
+                phone.decryptPayloadTo(packet) { x, y ->
+                    assertEquals(dx, x, 1e-6f)
+                    assertEquals(dy, y, 1e-6f)
+                    decoded = true
+                }
             assertTrue("decryptPayloadTo counter=$counter", ok)
             assertTrue("callback fired counter=$counter", decoded)
         }
@@ -84,9 +85,10 @@ class PayloadDecryptorTest {
         val (hostA, _) = pairedSessions(testPin)
         val (_, phoneB) = pairedSessions(testPin)
         val packet = hostA.buildPacket(0, 1.0f, 1.0f)!!
-        val ok = phoneB.decryptPayloadTo(packet) { _, _ ->
-            assertTrue("callback must not fire", false)
-        }
+        val ok =
+            phoneB.decryptPayloadTo(packet) { _, _ ->
+                assertTrue("callback must not fire", false)
+            }
         assertFalse(ok)
     }
 
@@ -151,14 +153,22 @@ class PayloadDecryptorTest {
 
     @Test
     fun normalizedPinBytesValidation() {
-        assertEquals("246810".toByteArray(Charsets.US_ASCII).toList(),
-            FeedbackSession.normalizedPinBytes("246810")?.toList())
-        assertEquals("123456".toByteArray(Charsets.US_ASCII).toList(),
-            FeedbackSession.normalizedPinBytes("  123456  ")?.toList())
-        assertEquals("1234".toByteArray(Charsets.US_ASCII).toList(),
-            FeedbackSession.normalizedPinBytes("1234")?.toList())
-        assertEquals("123456789012".toByteArray(Charsets.US_ASCII).toList(),
-            FeedbackSession.normalizedPinBytes("123456789012")?.toList())
+        assertEquals(
+            "246810".toByteArray(Charsets.US_ASCII).toList(),
+            FeedbackSession.normalizedPinBytes("246810")?.toList(),
+        )
+        assertEquals(
+            "123456".toByteArray(Charsets.US_ASCII).toList(),
+            FeedbackSession.normalizedPinBytes("  123456  ")?.toList(),
+        )
+        assertEquals(
+            "1234".toByteArray(Charsets.US_ASCII).toList(),
+            FeedbackSession.normalizedPinBytes("1234")?.toList(),
+        )
+        assertEquals(
+            "123456789012".toByteArray(Charsets.US_ASCII).toList(),
+            FeedbackSession.normalizedPinBytes("123456789012")?.toList(),
+        )
         assertNull(FeedbackSession.normalizedPinBytes("123"))
         assertNull(FeedbackSession.normalizedPinBytes("1234567890123"))
         assertNull(FeedbackSession.normalizedPinBytes("12 34"))
@@ -198,9 +208,10 @@ class PayloadDecryptorTest {
         phone.deriveSession(host.publicKey, testPin)
 
         val packet = host.buildPacket(0, 1.0f, 1.0f)!!
-        val ok = phone.decryptPayloadTo(packet) { _, _ ->
-            assertTrue("callback must not fire", false)
-        }
+        val ok =
+            phone.decryptPayloadTo(packet) { _, _ ->
+                assertTrue("callback must not fire", false)
+            }
         assertFalse(ok)
     }
 
@@ -372,7 +383,7 @@ class PayloadDecryptorTest {
 
         // Rotation simulates the next reconnect with a fresh phone keypair.
         phone.rotateSession(testPin)
-        val hostB = FeedbackSession()  // fresh ephemeral on the host side too
+        val hostB = FeedbackSession() // fresh ephemeral on the host side too
         assertEquals(
             PayloadDecryptor.HandshakeOutcome.OK,
             phone.installHandshake(buildHandshake(hostB.publicKey, idPriv, idPub)),
@@ -390,9 +401,11 @@ class PayloadDecryptorTest {
         assertTrue(firstFired)
         // Replay of the exact same bytes must be dropped even though the
         // AES-GCM tag is still valid.
-        assertFalse(phone.decryptPayloadTo(packet) { _, _ ->
-            assertTrue("replay must not fire callback", false)
-        })
+        assertFalse(
+            phone.decryptPayloadTo(packet) { _, _ ->
+                assertTrue("replay must not fire callback", false)
+            },
+        )
     }
 
     @Test
@@ -405,7 +418,7 @@ class PayloadDecryptorTest {
             val packet = host.buildPacket(counter, counter.toFloat(), -counter.toFloat())!!
             assertTrue(
                 "counter=$counter must authenticate",
-                phone.decryptPayloadTo(packet) { _, _ -> }
+                phone.decryptPayloadTo(packet) { _, _ -> },
             )
         }
         // Replaying any one of them now must be rejected.
@@ -413,7 +426,7 @@ class PayloadDecryptorTest {
             val packet = host.buildPacket(counter, counter.toFloat(), -counter.toFloat())!!
             assertFalse(
                 "replay of counter=$counter must be rejected",
-                phone.decryptPayloadTo(packet) { _, _ -> }
+                phone.decryptPayloadTo(packet) { _, _ -> },
             )
         }
     }
@@ -466,7 +479,7 @@ class PayloadDecryptorTest {
     fun counterWrapAroundIsRejected() {
         val (host, phone) = pairedSessions(testPin)
         // Push the receiver to the maximum unsigned 32-bit counter.
-        val max = host.buildPacket(-1, 0f, 0f)!!  // -1 == 0xFFFFFFFF
+        val max = host.buildPacket(-1, 0f, 0f)!! // -1 == 0xFFFFFFFF
         assertTrue(phone.decryptPayloadTo(max) { _, _ -> })
         // Counter wrap from 0xFFFFFFFF to 0 must NOT authenticate; the
         // host is required to rotate sessions before wrap.
@@ -483,15 +496,15 @@ class PayloadDecryptorTest {
         phone.deriveSession(FeedbackSession().publicKey, testPin)
         assertTrue(phone.acceptCounter(0))
         assertTrue(phone.acceptCounter(1))
-        assertFalse(phone.acceptCounter(0))           // replay
-        assertFalse(phone.acceptCounter(1))           // replay
+        assertFalse(phone.acceptCounter(0)) // replay
+        assertFalse(phone.acceptCounter(1)) // replay
         assertTrue(phone.acceptCounter(5))
-        assertTrue(phone.acceptCounter(3))            // out-of-order, in window
-        assertFalse(phone.acceptCounter(3))           // replay of in-window
-        assertTrue(phone.acceptCounter(70))           // jumps past window edge
-        assertFalse(phone.acceptCounter(5))           // now too-old
-        assertTrue(phone.acceptCounter(70 - 63))      // window edge accepts
-        assertFalse(phone.acceptCounter(70 - 64))     // one beyond edge rejects
+        assertTrue(phone.acceptCounter(3)) // out-of-order, in window
+        assertFalse(phone.acceptCounter(3)) // replay of in-window
+        assertTrue(phone.acceptCounter(70)) // jumps past window edge
+        assertFalse(phone.acceptCounter(5)) // now too-old
+        assertTrue(phone.acceptCounter(70 - 63)) // window edge accepts
+        assertFalse(phone.acceptCounter(70 - 64)) // one beyond edge rejects
     }
 
     private fun pairedSessions(pin: String): Pair<FeedbackSession, FeedbackSession> {
