@@ -17,6 +17,7 @@ struct Options {
         case selftest
         case exportIdentity = "export-identity"
         case importIdentity = "import-identity"
+        case dumpDescriptor = "dump-descriptor"
     }
 
     var command: Command = .scan
@@ -45,6 +46,10 @@ struct Options {
     var identityExportToPath: String?
     /// Source path for the `import-identity` subcommand.
     var identityImportFromPath: String?
+    /// Hex bytes input for the `dump-descriptor` subcommand. When set,
+    /// decoding skips IOHID enumeration and parses the supplied bytes
+    /// directly. Whitespace and `0x` prefixes are stripped.
+    var descriptorRawHex: String?
 }
 
 struct DeviceSummary {
@@ -540,6 +545,11 @@ private func parseOptions(_ arguments: [String]) -> Options {
             if index < arguments.count {
                 options.identityImportFromPath = arguments[index]
             }
+        case "--raw":
+            index += 1
+            if index < arguments.count {
+                options.descriptorRawHex = arguments[index]
+            }
         case "--help", "-h":
             printUsageAndExit()
         default:
@@ -553,7 +563,7 @@ private func parseOptions(_ arguments: [String]) -> Options {
 
 private func printUsageAndExit(code: Int32 = 0) -> Never {
     print("""
-    bluetrack-hid-inspector scan|watch|feedback|companion|selftest|export-identity|import-identity [options]
+    bluetrack-hid-inspector scan|watch|feedback|companion|selftest|export-identity|import-identity|dump-descriptor [options]
 
     Commands:
       scan               List matching IOHID devices and elements.
@@ -571,6 +581,11 @@ private func printUsageAndExit(code: Int32 = 0) -> Never {
                          `--from <path>`. Validates the source first; the
                          previous identity is preserved as `<path>.bak` so
                          a mistaken import can be undone.
+      dump-descriptor    Decode a HID report descriptor: either from the
+                         first IOHID device matching `--name` (default
+                         Bluetrack), or from raw hex bytes supplied via
+                         `--raw "05 01 09 02 …"`. Output is a hidviz-style
+                         row-per-item listing plus the raw hex dump.
 
     Options (scan/watch):
       --name Bluetrack   Product/manufacturer/transport substring. Default: Bluetrack.
@@ -690,6 +705,66 @@ private func loadHostIdentityOrExit(options: Options) -> HostIdentity {
     }
 }
 
+/// Strip whitespace and `0x` prefixes from `raw`, parse the remaining
+/// hex digits in pairs. Returns nil if the string contains a non-hex
+/// character or an odd number of nibbles. Used by the
+/// `dump-descriptor --raw` path.
+private func parseRawHex(_ raw: String) -> [UInt8]? {
+    var cleaned = ""
+    var i = raw.startIndex
+    while i < raw.endIndex {
+        let c = raw[i]
+        if c.isWhitespace || c == "," || c == ":" {
+            i = raw.index(after: i)
+            continue
+        }
+        if c == "0", raw.index(after: i) < raw.endIndex,
+           raw[raw.index(after: i)].lowercased() == "x"
+        {
+            i = raw.index(i, offsetBy: 2)
+            continue
+        }
+        cleaned.append(c)
+        i = raw.index(after: i)
+    }
+    guard cleaned.count % 2 == 0 else { return nil }
+    var out: [UInt8] = []
+    out.reserveCapacity(cleaned.count / 2)
+    var idx = cleaned.startIndex
+    while idx < cleaned.endIndex {
+        let next = cleaned.index(idx, offsetBy: 2)
+        guard let byte = UInt8(cleaned[idx..<next], radix: 16) else { return nil }
+        out.append(byte)
+        idx = next
+    }
+    return out
+}
+
+/// Enumerate IOHID, pick the first device whose product / manufacturer
+/// / transport substring matches `filter` and that exposes a
+/// `kIOHIDReportDescriptorKey`. Returns nil if no such device is
+/// connected.
+private func findFirstReportDescriptor(filter: String) -> [UInt8]? {
+    let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+    IOHIDManagerSetDeviceMatching(manager, nil)
+    _ = IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+    guard let raw = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else {
+        return nil
+    }
+    let needle = filter.lowercased()
+    for device in raw {
+        let product = (IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String) ?? ""
+        let manufacturer = (IOHIDDeviceGetProperty(device, kIOHIDManufacturerKey as CFString) as? String) ?? ""
+        let transport = (IOHIDDeviceGetProperty(device, kIOHIDTransportKey as CFString) as? String) ?? ""
+        let haystack = "\(product) \(manufacturer) \(transport)".lowercased()
+        guard haystack.contains(needle) else { continue }
+        if let data = IOHIDDeviceGetProperty(device, kIOHIDReportDescriptorKey as CFString) as? Data {
+            return Array(data)
+        }
+    }
+    return nil
+}
+
 let options = parseOptions(Array(CommandLine.arguments.dropFirst()))
 
 switch options.command {
@@ -797,4 +872,26 @@ case .importIdentity:
         print("Could not import identity from \(sourceURL.path) to \(destURL.path): \(error)")
         exit(75)
     }
+case .dumpDescriptor:
+    let bytes: [UInt8]
+    if let rawHex = options.descriptorRawHex {
+        guard let parsed = parseRawHex(rawHex) else {
+            print(
+                "`dump-descriptor --raw` value must be hex bytes (e.g. \"05 01 09 02\"). Whitespace and `0x` prefixes are stripped."
+            )
+            exit(64)
+        }
+        bytes = parsed
+    } else {
+        guard let inspectorBytes = findFirstReportDescriptor(filter: options.nameFilter) else {
+            print(
+                "No IOHID device matched --name \"\(options.nameFilter)\" (or it did not expose " +
+                    "a report descriptor). Tip: pass --raw \"05 01 …\" to decode bytes directly."
+            )
+            exit(77)
+        }
+        bytes = inspectorBytes
+    }
+    print(HidDescriptorDecoder.renderText(bytes), terminator: "")
+    exit(0)
 }
