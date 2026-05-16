@@ -33,6 +33,32 @@ android {
         versionName = "2.0.0"
     }
 
+    signingConfigs {
+        // Release signing pulls its inputs from env vars so the keystore
+        // never lives in the repo. The release CI workflow base64-decodes
+        // `ANDROID_KEYSTORE_BASE64` into a file and points
+        // `ANDROID_KEYSTORE_PATH` at it.
+        //
+        // If the env vars are unset (local PR builds, every CI lane that
+        // is not the release workflow), this config stays unconfigured
+        // and `assembleRelease` produces `app-release-unsigned.apk`
+        // exactly as before — which keeps the R8 smoke test in Android
+        // CI working without secret leakage.
+        create("release") {
+            val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+            if (!keystorePath.isNullOrBlank()) {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -40,6 +66,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // Only attach the signing config when the keystore env vars
+            // were resolved above. Otherwise leave it null so AGP falls
+            // back to the unsigned APK output.
+            if (!System.getenv("ANDROID_KEYSTORE_PATH").isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             isMinifyEnabled = false
