@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v3.0.0). Must already exist.'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build signed APK + AAB
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Decode keystore (when secret present)
+        id: keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            ks="$RUNNER_TEMP/bluetrack-release.jks"
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ks"
+            echo "ANDROID_KEYSTORE_PATH=$ks" >> "$GITHUB_ENV"
+            echo "Signed release: keystore materialised at $ks"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ANDROID_KEYSTORE_BASE64 secret is not set; release artifacts will be unsigned."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ensure Gradle wrapper is executable
+        working-directory: android
+        run: chmod +x ./gradlew
+
+      - name: Build release APK + AAB
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ env.ANDROID_KEYSTORE_PATH }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease :app:bundleRelease
+
+      - name: Collect artifacts
+        id: artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts
+          shopt -s nullglob
+          # APK output paths differ depending on whether signing landed.
+          for apk in android/app/build/outputs/apk/release/*.apk; do
+            cp -v "$apk" release-artifacts/
+          done
+          for aab in android/app/build/outputs/bundle/release/*.aab; do
+            cp -v "$aab" release-artifacts/
+          done
+          ls -la release-artifacts
+          # Surface output filenames so the Release step's `files` glob
+          # is just `release-artifacts/*`.
+          {
+            echo "artifact_dir=release-artifacts"
+            echo "signed=${{ steps.keystore.outputs.signed }}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          # Try to pull the section for this exact tag (e.g. "## v3.0.0").
+          # Fallback to the "## Unreleased" block. Fallback again to a
+          # generic blurb so the workflow never fails on notes alone.
+          if awk -v tag="$tag" '
+            BEGIN { found = 0 }
+            /^## / { if (found) exit; if (index($0, tag) > 0) found = 1; next }
+            found { print }
+          ' CHANGELOG.md > "$notes_file" && [ -s "$notes_file" ]; then
+            echo "Used CHANGELOG.md section for $tag."
+          elif awk '
+            BEGIN { found = 0 }
+            /^## Unreleased/ { found = 1; next }
+            /^## / { if (found) exit }
+            found { print }
+          ' CHANGELOG.md > "$notes_file" && [ -s "$notes_file" ]; then
+            echo "Used CHANGELOG.md Unreleased section for $tag."
+          else
+            printf 'Bluetrack %s release. See CHANGELOG.md for details.\n' "$tag" > "$notes_file"
+          fi
+          echo "notes_file=$notes_file" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.notes.outputs.tag }}
+          name: ${{ steps.notes.outputs.tag }}
+          body_path: ${{ steps.notes.outputs.notes_file }}
+          files: release-artifacts/*
+          prerelease: ${{ contains(steps.notes.outputs.tag, '-') }}
+          generate_release_notes: false
+          fail_on_unmatched_files: true
