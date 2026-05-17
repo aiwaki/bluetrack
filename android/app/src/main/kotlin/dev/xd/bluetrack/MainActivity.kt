@@ -29,7 +29,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +42,9 @@ import dev.xd.bluetrack.ui.ModeCardState
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.StickDeflection
 import dev.xd.bluetrack.ui.automationLabel
+import dev.xd.bluetrack.ui.hub.HubHeader
+import dev.xd.bluetrack.ui.hub.NeonRibbon
+import dev.xd.bluetrack.ui.hub.ServiceChip
 import dev.xd.bluetrack.ui.modeCardStates
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.rememberRouter
@@ -239,94 +241,96 @@ private fun AppScreen(vm: MainViewModel) {
         }
     }
 
+    val running = isConnected(status)
     Column(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(Color(0xFF031018), Color(0xFF102333), Color(0xFF07140F))))
-                .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        HeaderPanel(status = status, now = now)
-        ConnectionPanel(status = status, now = now)
-        ModeCardsRow(
-            currentMode = mode,
-            hostConnected = status.host != null,
-            onSelect = { selected -> vm.toggle(selected == HidMode.GAMEPAD) },
+        // Step 3a: canvas Hub header (`[Blue·track]` wordmark + 26 sp
+        // title + FG-service chip). The neon ribbon above flashes once
+        // each time a fresh feedback PIN is issued — equivalent to the
+        // canvas `NeonRibbon` keyed on a new GATT session.
+        NeonRibbon(trigger = status.feedbackPin)
+        HubHeader(
+            title = "Hub",
+            rightSlot = { ServiceChip(running = running) },
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MetricTile(
-                label = "Reports",
-                value = compactCount(status.reportsSent),
-                modifier = Modifier.weight(1f),
-                subtitle = relativeAgeLabel(now, status.lastReportAtMs),
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            ConnectionPanel(status = status, now = now)
+            ModeCardsRow(
+                currentMode = mode,
+                hostConnected = status.host != null,
+                onSelect = { selected -> vm.toggle(selected == HidMode.GAMEPAD) },
             )
-            MetricTile(
-                label = "Feedback",
-                value = status.feedbackPackets.toString(),
-                modifier = Modifier.weight(1f),
-                subtitle = relativeAgeLabel(now, status.lastFeedbackAtMs),
-            )
-        }
-        BoxWithConstraints(Modifier.weight(1f)) {
-            if (maxWidth < 620.dp) {
-                Column(
-                    Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    TouchpadPanel(
-                        modifier = Modifier.fillMaxWidth().weight(1f),
-                        mode = mode,
-                        telemetryX = telemetry.stickX,
-                        telemetryY = telemetry.stickY,
-                        onTouchStart = { vm.beginTouchGesture() },
-                        onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
-                    )
-                    Row(Modifier.fillMaxWidth().height(190.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SystemPanel(
-                            status = status,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                            onForgetHost = { vm.forgetTrustedHost() },
-                        )
-                        TimelinePanel(status.events, now, Modifier.weight(1f).fillMaxHeight())
-                    }
-                }
-            } else {
-                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TouchpadPanel(
-                        modifier = Modifier.weight(1.15f).fillMaxHeight(),
-                        mode = mode,
-                        telemetryX = telemetry.stickX,
-                        telemetryY = telemetry.stickY,
-                        onTouchStart = { vm.beginTouchGesture() },
-                        onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
-                    )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetricTile(
+                    label = "Reports",
+                    value = compactCount(status.reportsSent),
+                    modifier = Modifier.weight(1f),
+                    subtitle = relativeAgeLabel(now, status.lastReportAtMs),
+                )
+                MetricTile(
+                    label = "Feedback",
+                    value = status.feedbackPackets.toString(),
+                    modifier = Modifier.weight(1f),
+                    subtitle = relativeAgeLabel(now, status.lastFeedbackAtMs),
+                )
+            }
+            BoxWithConstraints(Modifier.weight(1f)) {
+                if (maxWidth < 620.dp) {
                     Column(
-                        modifier = Modifier.weight(0.85f).fillMaxHeight(),
+                        Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        SystemPanel(
-                            status = status,
-                            modifier = Modifier.weight(0.75f),
-                            onForgetHost = { vm.forgetTrustedHost() },
+                        TouchpadPanel(
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            mode = mode,
+                            telemetryX = telemetry.stickX,
+                            telemetryY = telemetry.stickY,
+                            onTouchStart = { vm.beginTouchGesture() },
+                            onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
                         )
-                        TimelinePanel(status.events, now, Modifier.weight(1f))
+                        Row(
+                            Modifier.fillMaxWidth().height(190.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            SystemPanel(
+                                status = status,
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                onForgetHost = { vm.forgetTrustedHost() },
+                            )
+                            TimelinePanel(status.events, now, Modifier.weight(1f).fillMaxHeight())
+                        }
+                    }
+                } else {
+                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TouchpadPanel(
+                            modifier = Modifier.weight(1.15f).fillMaxHeight(),
+                            mode = mode,
+                            telemetryX = telemetry.stickX,
+                            telemetryY = telemetry.stickY,
+                            onTouchStart = { vm.beginTouchGesture() },
+                            onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
+                        )
+                        Column(
+                            modifier = Modifier.weight(0.85f).fillMaxHeight(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            SystemPanel(
+                                status = status,
+                                modifier = Modifier.weight(0.75f),
+                                onForgetHost = { vm.forgetTrustedHost() },
+                            )
+                            TimelinePanel(status.events, now, Modifier.weight(1f))
+                        }
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun HeaderPanel(
-    status: GatewayStatus,
-    now: Long,
-) {
-    Panel(Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("Bluetrack", color = Color(0xFF00F5A0), fontWeight = FontWeight.Bold)
-            Text(primaryStatus(status, now), color = primaryStatusColor(status, now))
         }
     }
 }
@@ -652,16 +656,6 @@ private fun primaryStatus(
     status.pairing.contains("discoverable", ignoreCase = true) ||
         status.pairing.contains("pairing", ignoreCase = true) -> "Pairing"
     else -> "Preparing"
-}
-
-private fun primaryStatusColor(
-    status: GatewayStatus,
-    now: Long,
-): Color = when {
-    status.error != null -> Color(0xFFFFB4AB)
-    isConnected(status) && isInputLive(status, now) -> Color(0xFF00F5A0)
-    isConnected(status) -> Color(0xFF00E5FF)
-    else -> Color.White.copy(alpha = 0.72f)
 }
 
 private fun hostFallback(status: GatewayStatus): String = when {
