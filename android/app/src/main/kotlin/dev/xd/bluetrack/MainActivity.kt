@@ -47,6 +47,7 @@ import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
 import dev.xd.bluetrack.ui.stickDeflectionLabel
 import dev.xd.bluetrack.ui.stickOverlayState
+import dev.xd.bluetrack.ui.theme.BluetrackTheme
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
@@ -93,7 +94,9 @@ class MainActivity : ComponentActivity() {
         val container = (application as BluetrackApplication).container
         vm = MainViewModel(container.bleGateway, container.translationEngine)
         setContent {
-            AppScreen(vm = vm)
+            BluetrackTheme {
+                AppScreen(vm = vm)
+            }
         }
         requestBtPermissions()
     }
