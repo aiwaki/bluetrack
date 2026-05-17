@@ -69,7 +69,9 @@ import dev.xd.bluetrack.ui.stickOverlayState
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -115,11 +117,31 @@ class MainActivity : ComponentActivity() {
     private lateinit var tweaksRepo: TweaksRepository
     private val ioScope = CoroutineScope(Dispatchers.IO)
 
+    /**
+     * Conflated channel for pending [TweaksState] writes. Codex
+     * review on PR #53 flagged that the earlier "launch + edit"
+     * sequence could let stale snapshots interleave during a fast
+     * slider drag and revert newer values. A single collector on
+     * [ioScope] drains the latest pending state; intermediate
+     * values are dropped (DROP_OLDEST) so DataStore is never
+     * doing more work than the latest user input demands.
+     */
+    private val pendingTweaks = MutableSharedFlow<TweaksState>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val container = (application as BluetrackApplication).container
         vm = MainViewModel(container.bleGateway, container.translationEngine)
         tweaksRepo = TweaksRepository(applicationContext)
+        // Drain pending tweaks on a single coroutine so writes
+        // happen in arrival order and never race.
+        ioScope.launch {
+            pendingTweaks.collect { state -> tweaksRepo.setAll(state) }
+        }
         setContent {
             BluetrackTheme {
                 val router = rememberRouter()
@@ -314,19 +336,15 @@ class MainActivity : ComponentActivity() {
     private fun isBluetoothEnabled(): Boolean = bluetoothAdapter()?.isEnabled == true
 
     /**
-     * Persist the next [TweaksState] to DataStore. We write all
-     * four fields unconditionally — DataStore short-circuits
-     * writes for unchanged keys internally, so the diff would be
-     * pure ceremony. The combined flow only re-emits when at
-     * least one key actually changes.
+     * Enqueue the next [TweaksState] for atomic persistence.
+     * Uses a conflated `MutableSharedFlow` (see [pendingTweaks])
+     * so concurrent slider drags collapse into the latest value
+     * and a single collector calls `tweaksRepo.setAll(...)` in
+     * arrival order. No per-call coroutine, no per-key edit,
+     * no race.
      */
     private fun persistTweaks(next: TweaksState) {
-        ioScope.launch {
-            tweaksRepo.setMotionReduced(next.motionReduced)
-            tweaksRepo.setGlassEnabled(next.glassEnabled)
-            tweaksRepo.setAuroraOnLowBattery(next.auroraOnLowBattery)
-            tweaksRepo.setNeonStrength(next.neonStrength)
-        }
+        pendingTweaks.tryEmit(next)
     }
 
     /**

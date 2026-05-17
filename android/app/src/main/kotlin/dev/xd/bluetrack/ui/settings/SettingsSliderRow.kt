@@ -90,7 +90,7 @@ fun SettingsSliderRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(thumbDp)
-                    .pointerInput(Unit) {
+                    .pointerInput(widthPx) {
                         detectHorizontalDragGestures(
                             onDragStart = { offset ->
                                 onValueChange((offset.x / widthPx).coerceIn(0f, 1f))

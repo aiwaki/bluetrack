@@ -66,6 +66,23 @@ class TweaksRepository(
         ds.edit { it[KEY_NEON_STRENGTH] = value.coerceIn(0f, 1f) }
     }
 
+    /**
+     * Persist all four tweak keys in a single atomic DataStore
+     * transaction. Used by the Settings route so a fast slider
+     * drag (or any rapid sequence of changes) cannot interleave
+     * stale snapshots across coroutines and revert newer values.
+     * Codex review on PR #53 flagged the per-key sequence as a
+     * race; this is the fix.
+     */
+    suspend fun setAll(state: TweaksState) {
+        ds.edit {
+            it[KEY_MOTION_REDUCED] = state.motionReduced
+            it[KEY_GLASS_ENABLED] = state.glassEnabled
+            it[KEY_AURORA_LOW_BAT] = state.auroraOnLowBattery
+            it[KEY_NEON_STRENGTH] = state.neonStrength.coerceIn(0f, 1f)
+        }
+    }
+
     private companion object {
         val KEY_MOTION_REDUCED = booleanPreferencesKey("motion_reduced")
         val KEY_GLASS_ENABLED = booleanPreferencesKey("glass_enabled")
