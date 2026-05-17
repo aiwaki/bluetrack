@@ -39,6 +39,7 @@ import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.ui.MainViewModel
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.StickDeflection
+import dev.xd.bluetrack.ui.activity.ActivityScreen
 import dev.xd.bluetrack.ui.automationLabel
 import dev.xd.bluetrack.ui.diag.DiagnosticsScreen
 import dev.xd.bluetrack.ui.gamepad.GamepadSurface
@@ -58,7 +59,7 @@ import dev.xd.bluetrack.ui.hub.TrustState
 import dev.xd.bluetrack.ui.hub.toActivityItem
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.rememberRouter
-import dev.xd.bluetrack.ui.shell.ComingSoonScreen
+import dev.xd.bluetrack.ui.settings.SettingsScreen
 import dev.xd.bluetrack.ui.shell.ScreenShell
 import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
 import dev.xd.bluetrack.ui.stickDeflectionLabel
@@ -169,11 +170,20 @@ class MainActivity : ComponentActivity() {
                                 onConnectHost = { /* TODO: connect by id once gateway exposes it */ },
                                 onDisconnectHost = { /* TODO: disconnect by id */ },
                             )
-                            Route.Activity -> ComingSoonScreen("Activity")
+                            Route.Activity -> ActivityScreen(
+                                status = vm.status.collectAsState().value,
+                                now = SystemClock.elapsedRealtime(),
+                            )
                             Route.Diagnostics -> DiagnosticsScreen(
                                 status = vm.status.collectAsState().value,
                             )
-                            Route.Settings -> ComingSoonScreen("Settings")
+                            Route.Settings -> SettingsScreen(
+                                status = vm.status.collectAsState().value,
+                                onNavigate = router::navigate,
+                                onForgetHost = { vm.forgetTrustedHost() },
+                                versionName = BuildConfig.VERSION_NAME,
+                                versionCode = BuildConfig.VERSION_CODE,
+                            )
                         }
                     }
                 }
