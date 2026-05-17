@@ -260,10 +260,21 @@ private val CAVEATS = mapOf(
 
 private fun buildEntries(status: GatewayStatus): List<HostEntry> {
     val active = status.host?.lowercase()
-    return status.compatibility.bondedDevices.mapIndexed { i, name ->
+    val compat = status.compatibility
+    // Gateway-wide caveats from the compat snapshot. Order matters
+    // — the row only renders the first (highest-priority) match.
+    val gatewayCaveat: String? = when {
+        compat.hidProfile != "Available" && compat.hidProfile != "Unknown" -> "hid-unavail"
+        compat.bleAdvertiserAvailable == false -> "adv-unavail"
+        compat.multipleAdvertisementSupported == false -> "multi-adv"
+        else -> null
+    }
+    return compat.bondedDevices.mapIndexed { i, name ->
         val klass = classifyHost(name)
+        val isIos = name.lowercase().let { it.contains("iphone") || it.contains("ipad") }
         val state = when {
             active != null && name.lowercase() == active -> HostState.Active
+            isIos -> HostState.Incompatible
             klass == HostClass.Computer -> HostState.Available
             klass == HostClass.Unknown -> HostState.Incompatible
             else -> HostState.Ignored
@@ -274,6 +285,15 @@ private fun buildEntries(status: GatewayStatus): List<HostEntry> {
             HostClass.Keyboard -> "Keyboard device · cannot be a HID host"
             else -> null
         }
+        // Per-host caveat: iOS HID restriction overrides any
+        // gateway-wide caveat; otherwise computer hosts inherit the
+        // gateway-wide caveat (if any) so the user sees the warn
+        // icon next to a device that is genuinely affected.
+        val caveat: String? = when {
+            isIos -> "ios-hid"
+            klass == HostClass.Computer -> gatewayCaveat
+            else -> null
+        }
         HostEntry(
             id = "$i:$name",
             name = name,
@@ -281,7 +301,7 @@ private fun buildEntries(status: GatewayStatus): List<HostEntry> {
             klass = klass,
             state = state,
             fingerprint = null,
-            caveat = null,
+            caveat = caveat,
             reason = reason,
         )
     }

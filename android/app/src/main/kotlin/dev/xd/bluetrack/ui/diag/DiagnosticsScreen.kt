@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,11 +75,18 @@ fun DiagnosticsScreen(
     val fbWave = remember { mutableStateListOf<Float>() }
     var lastReports by remember { mutableLongStateOf(status.reportsSent.toLong()) }
     var lastFb by remember { mutableLongStateOf(status.feedbackPackets.toLong()) }
+    // Read the *current* `GatewayStatus` snapshot inside the tick
+    // loop instead of capturing the value seen at composition time.
+    // Without `rememberUpdatedState`, the `LaunchedEffect(Unit)`
+    // closes over the initial `status` and every later delta
+    // collapses to zero, freezing the live counters and the
+    // sparklines. Caught by Codex review on PR #51.
+    val statusState = rememberUpdatedState(status)
     LaunchedEffect(Unit) {
         while (true) {
             delay(1_000L)
-            val nowReports = status.reportsSent.toLong()
-            val nowFb = status.feedbackPackets.toLong()
+            val nowReports = statusState.value.reportsSent.toLong()
+            val nowFb = statusState.value.feedbackPackets.toLong()
             val dR = (nowReports - lastReports).coerceAtLeast(0L)
             val dF = (nowFb - lastFb).coerceAtLeast(0L)
             lastReports = nowReports
