@@ -102,6 +102,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // Preferences DataStore for the tweaks panel (step 8). Replaces
+    // SharedPreferences for the small set of UI knobs the user
+    // adjusts at runtime (motion / glass / neon strength). Keeps
+    // the existing `host_identity_v1` SharedPreferences store
+    // alone because that prefs file is locked to a specific
+    // schema by the Ed25519 identity migration path.
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")

@@ -60,12 +60,18 @@ import dev.xd.bluetrack.ui.hub.toActivityItem
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.rememberRouter
 import dev.xd.bluetrack.ui.settings.SettingsScreen
+import dev.xd.bluetrack.ui.settings.TweaksRepository
+import dev.xd.bluetrack.ui.settings.TweaksState
 import dev.xd.bluetrack.ui.shell.ScreenShell
 import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
 import dev.xd.bluetrack.ui.stickDeflectionLabel
 import dev.xd.bluetrack.ui.stickOverlayState
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
@@ -106,14 +112,29 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    private lateinit var tweaksRepo: TweaksRepository
+    private val ioScope = CoroutineScope(Dispatchers.IO)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val container = (application as BluetrackApplication).container
         vm = MainViewModel(container.bleGateway, container.translationEngine)
+        tweaksRepo = TweaksRepository(applicationContext)
         setContent {
             BluetrackTheme {
                 val router = rememberRouter()
                 var gamepadActive by remember { mutableStateOf(false) }
+                // Combine the four DataStore-backed tweak flows
+                // into a single `TweaksState` so the shell only
+                // recomposes once per change.
+                val tweaks by remember {
+                    combine(
+                        tweaksRepo.motionReduced,
+                        tweaksRepo.glassEnabled,
+                        tweaksRepo.auroraOnLowBattery,
+                        tweaksRepo.neonStrength,
+                    ) { m, g, a, n -> TweaksState(m, g, a, n) }
+                }.collectAsState(initial = TweaksState.Default)
                 // Lock orientation to landscape while the gamepad
                 // surface is up; restore to sensor when we leave so
                 // the rest of the app stays portrait-first. Using
@@ -155,7 +176,12 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 } else {
-                    ScreenShell(router = router) { route ->
+                    ScreenShell(
+                        router = router,
+                        motionReduced = tweaks.motionReduced,
+                        glassEnabled = tweaks.glassEnabled,
+                        neonStrength = tweaks.neonStrength,
+                    ) { route ->
                         when (route) {
                             Route.Hub -> AppScreen(
                                 vm = vm,
@@ -179,6 +205,8 @@ class MainActivity : ComponentActivity() {
                             )
                             Route.Settings -> SettingsScreen(
                                 status = vm.status.collectAsState().value,
+                                tweaks = tweaks,
+                                onTweakChange = { next -> persistTweaks(next) },
                                 onNavigate = router::navigate,
                                 onForgetHost = { vm.forgetTrustedHost() },
                                 versionName = BuildConfig.VERSION_NAME,
@@ -284,6 +312,22 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("MissingPermission")
     private fun isBluetoothEnabled(): Boolean = bluetoothAdapter()?.isEnabled == true
+
+    /**
+     * Persist the next [TweaksState] to DataStore. We write all
+     * four fields unconditionally — DataStore short-circuits
+     * writes for unchanged keys internally, so the diff would be
+     * pure ceremony. The combined flow only re-emits when at
+     * least one key actually changes.
+     */
+    private fun persistTweaks(next: TweaksState) {
+        ioScope.launch {
+            tweaksRepo.setMotionReduced(next.motionReduced)
+            tweaksRepo.setGlassEnabled(next.glassEnabled)
+            tweaksRepo.setAuroraOnLowBattery(next.auroraOnLowBattery)
+            tweaksRepo.setNeonStrength(next.neonStrength)
+        }
+    }
 
     /**
      * Returns the current `POST_NOTIFICATIONS` grant state on
