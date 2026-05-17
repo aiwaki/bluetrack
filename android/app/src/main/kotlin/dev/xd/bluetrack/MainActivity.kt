@@ -18,7 +18,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +27,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -36,7 +36,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.ui.MainViewModel
-import dev.xd.bluetrack.ui.ModeCardState
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.StickDeflection
 import dev.xd.bluetrack.ui.automationLabel
@@ -44,13 +43,14 @@ import dev.xd.bluetrack.ui.hub.ActivityStrip
 import dev.xd.bluetrack.ui.hub.GamepadShortcut
 import dev.xd.bluetrack.ui.hub.Heartbeat
 import dev.xd.bluetrack.ui.hub.HubHeader
+import dev.xd.bluetrack.ui.hub.ModeToggle
 import dev.xd.bluetrack.ui.hub.NeonRibbon
 import dev.xd.bluetrack.ui.hub.PinBlock
 import dev.xd.bluetrack.ui.hub.ServiceChip
+import dev.xd.bluetrack.ui.hub.StatusHero
 import dev.xd.bluetrack.ui.hub.TrustCard
 import dev.xd.bluetrack.ui.hub.TrustState
 import dev.xd.bluetrack.ui.hub.toActivityItem
-import dev.xd.bluetrack.ui.modeCardStates
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.rememberRouter
 import dev.xd.bluetrack.ui.shell.ComingSoonScreen
@@ -288,6 +288,18 @@ private fun AppScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            StatusHero(
+                connected = isConnected(status),
+                hostName = status.host,
+                metric = if (isConnected(status)) {
+                    "HID · ${compactCount(status.reportsSent)} reports · ${status.rejectedFeedbackPackets} dropped"
+                } else {
+                    null
+                },
+            )
+            // Compatibility / fallback rows kept as ConnectionPanel
+            // below the hero so the host fallback, input live label,
+            // and any error message stay one tap away.
             ConnectionPanel(status = status, now = now)
             PinBlock(
                 pin = status.feedbackPin,
@@ -300,10 +312,9 @@ private fun AppScreen(
                 onForget = { vm.forgetTrustedHost() },
                 onShowQR = { /* TODO: identity QR sheet — follow-up after --export-identity CLI lands */ },
             )
-            ModeCardsRow(
-                currentMode = mode,
-                hostConnected = status.host != null,
-                onSelect = { selected -> vm.toggle(selected == HidMode.GAMEPAD) },
+            ModeToggle(
+                mode = mode,
+                onToggle = { next -> vm.toggle(next == HidMode.GAMEPAD) },
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MetricTile(
@@ -342,46 +353,6 @@ private fun AppScreen(
 }
 
 @Composable
-private fun ModeCardsRow(
-    currentMode: HidMode,
-    hostConnected: Boolean,
-    onSelect: (HidMode) -> Unit,
-) {
-    val cards = modeCardStates(currentMode = currentMode, hostConnected = hostConnected)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        cards.forEach { card ->
-            ModeCard(
-                state = card,
-                modifier = Modifier.weight(1f),
-                onTap = { onSelect(card.mode) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun ModeCard(
-    state: ModeCardState,
-    modifier: Modifier,
-    onTap: () -> Unit,
-) {
-    val accent = if (state.isSelected) Color(0xFF00F5A0) else Color.White.copy(alpha = 0.62f)
-    val backgroundAlpha = if (state.isSelected) 0.16f else 0.06f
-    Column(
-        modifier =
-            modifier
-                .background(Color.White.copy(alpha = backgroundAlpha), RoundedCornerShape(8.dp))
-                .clickable(enabled = !state.isSelected, onClick = onTap)
-                .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Text(state.title, color = accent, fontWeight = FontWeight.Bold)
-        Text(state.tagline, color = Color.White.copy(alpha = 0.72f))
-        Text(state.statusLabel, color = accent)
-    }
-}
-
-@Composable
 private fun ConnectionPanel(
     status: GatewayStatus,
     now: Long,
@@ -408,6 +379,7 @@ private fun TouchpadPanel(
 ) {
     val isGamepad = mode == HidMode.GAMEPAD
     val stick = stickOverlayState(stickX = telemetryX, stickY = telemetryY)
+    val palette = BluetrackTheme.palette
     val dotColor =
         when {
             !isGamepad -> Color(0xFF00F5A0)
@@ -415,6 +387,13 @@ private fun TouchpadPanel(
             stick.deflection == StickDeflection.LIGHT -> Color(0xFF00E5FF)
             else -> Color(0xFF00F5A0)
         }
+    // Step 4 liquid-drop visual state. The AndroidView below still
+    // owns the actual HID emission pipeline; this Compose-side
+    // state only feeds the on-screen radial gradient + trail so
+    // touch reads as a glowing drop following the finger. The
+    // trail is capped at 20 points so allocation is bounded.
+    val pointer = remember { mutableStateOf<Offset?>(null) }
+    val trail = remember { mutableStateListOf<Offset>() }
     Panel(modifier) {
         Box(Modifier.fillMaxSize()) {
             Canvas(Modifier.fillMaxSize().padding(24.dp)) {
@@ -437,6 +416,44 @@ private fun TouchpadPanel(
                         Offset(cx + telemetryX * 1.5f, cy + telemetryY * 1.5f)
                     }
                 drawCircle(dotColor, if (isGamepad) 14f else 13f, dotOffset)
+            }
+            // Liquid-drop overlay (mouse mode only). Drawn above
+            // the base grid but below the gamepad label + the
+            // touch-capture AndroidView (which sits transparent on
+            // top). Trail polyline first, then the radial drop at
+            // the current pointer.
+            if (!isGamepad && (trail.isNotEmpty() || pointer.value != null)) {
+                Canvas(Modifier.fillMaxSize()) {
+                    if (trail.size > 1) {
+                        for (i in 1 until trail.size) {
+                            val a = trail[i - 1]
+                            val b = trail[i]
+                            val alpha = i.toFloat() / trail.size
+                            drawLine(
+                                color = palette.mintBright.copy(alpha = alpha * 0.85f),
+                                start = a,
+                                end = b,
+                                strokeWidth = 3f,
+                            )
+                        }
+                    }
+                    pointer.value?.let { p ->
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colorStops = arrayOf(
+                                    0f to palette.mintBright,
+                                    0.5f to palette.mint,
+                                    0.75f to palette.mintGlow,
+                                    1f to Color.Transparent,
+                                ),
+                                center = p,
+                                radius = 36f,
+                            ),
+                            radius = 36f,
+                            center = p,
+                        )
+                    }
+                }
             }
             if (isGamepad) {
                 Column(
@@ -513,6 +530,9 @@ private fun TouchpadPanel(
                                 lastY = ev.y
                                 filteredX = 0f
                                 filteredY = 0f
+                                pointer.value = Offset(ev.x, ev.y)
+                                trail.clear()
+                                trail.add(Offset(ev.x, ev.y))
                                 true
                             }
                             MotionEvent.ACTION_MOVE -> {
@@ -521,11 +541,16 @@ private fun TouchpadPanel(
                                 }
                                 processPoint(ev.x, ev.y)
                                 emitBatch()
+                                pointer.value = Offset(ev.x, ev.y)
+                                if (trail.size >= 20) trail.removeAt(0)
+                                trail.add(Offset(ev.x, ev.y))
                                 true
                             }
                             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                                 parent.requestDisallowInterceptTouchEvent(false)
                                 performClick()
+                                pointer.value = null
+                                trail.clear()
                                 true
                             }
                             else -> false
