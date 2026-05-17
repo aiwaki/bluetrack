@@ -183,6 +183,8 @@ class MainActivity : ComponentActivity() {
                                 onForgetHost = { vm.forgetTrustedHost() },
                                 versionName = BuildConfig.VERSION_NAME,
                                 versionCode = BuildConfig.VERSION_CODE,
+                                nearbyPermissionGranted = hasBluetoothPermissions(),
+                                notificationsPermissionGranted = hasNotificationsPermission(),
                             )
                         }
                     }
@@ -282,6 +284,20 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("MissingPermission")
     private fun isBluetoothEnabled(): Boolean = bluetoothAdapter()?.isEnabled == true
+
+    /**
+     * Returns the current `POST_NOTIFICATIONS` grant state on
+     * API 33+ where the runtime permission actually exists. Below
+     * Tiramisu Android grants notifications automatically, so we
+     * report `true`. The Settings route reads this via the
+     * `notificationsPermissionGranted` argument; `null` would
+     * mean "not yet plumbed" which no longer applies here.
+     */
+    private fun hasNotificationsPermission(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
 
     private fun hasBluetoothPermissions(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
         arrayOf(

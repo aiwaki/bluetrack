@@ -50,6 +50,19 @@ fun SettingsScreen(
     onForgetHost: () -> Unit,
     versionName: String,
     versionCode: Int,
+    /**
+     * Runtime BT nearby permission grant. `null` = activity has
+     * not plumbed `ContextCompat.checkSelfPermission(...)` through
+     * yet; the row renders as "Unknown" instead of guessing from
+     * adapter state (which would mislead a user who has granted
+     * the permission but disabled the BT radio).
+     */
+    nearbyPermissionGranted: Boolean? = null,
+    /**
+     * Runtime `POST_NOTIFICATIONS` grant (API 33+). `null` when
+     * not plumbed; rendered as "Unknown".
+     */
+    notificationsPermissionGranted: Boolean? = null,
     commitShort: String? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -112,12 +125,21 @@ fun SettingsScreen(
             SettingsRow(label = "Scan mode", value = compat.scanMode, mono = true)
         }
         SettingsGroup(title = "PERMISSIONS") {
+            // Drive directly from runtime grant state, not from
+            // adapter power. The two are separate (a user can
+            // grant the permission and still toggle Bluetooth off
+            // — that should not show as `Required` here).
             SettingsRow(
                 label = "Bluetooth nearby",
-                value = if (compat.bluetoothEnabled) "Granted" else "Required",
-                accent = compat.bluetoothEnabled,
+                value = nearbyPermissionGranted.grantLabel(),
+                accent = nearbyPermissionGranted == true,
             )
-            SettingsRow(label = "Notifications", value = "Unknown", kind = SettingsRowKind.Chev)
+            SettingsRow(
+                label = "Notifications",
+                value = notificationsPermissionGranted.grantLabel(),
+                accent = notificationsPermissionGranted == true,
+                kind = SettingsRowKind.Chev,
+            )
             SettingsRow(label = "Manage all permissions", kind = SettingsRowKind.Chev)
         }
         SettingsGroup(title = "DIAGNOSTICS & ACTIVITY") {
@@ -195,5 +217,11 @@ private fun SettingsGroup(
 private fun Boolean?.availabilityLabel(): String = when (this) {
     true -> "Available"
     false -> "Not supported"
+    null -> "Unknown"
+}
+
+private fun Boolean?.grantLabel(): String = when (this) {
+    true -> "Granted"
+    false -> "Required"
     null -> "Unknown"
 }
