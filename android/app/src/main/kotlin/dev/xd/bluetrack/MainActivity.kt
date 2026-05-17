@@ -60,12 +60,20 @@ import dev.xd.bluetrack.ui.hub.toActivityItem
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.rememberRouter
 import dev.xd.bluetrack.ui.settings.SettingsScreen
+import dev.xd.bluetrack.ui.settings.TweaksRepository
+import dev.xd.bluetrack.ui.settings.TweaksState
 import dev.xd.bluetrack.ui.shell.ScreenShell
 import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
 import dev.xd.bluetrack.ui.stickDeflectionLabel
 import dev.xd.bluetrack.ui.stickOverlayState
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
@@ -106,14 +114,49 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    private lateinit var tweaksRepo: TweaksRepository
+    private val ioScope = CoroutineScope(Dispatchers.IO)
+
+    /**
+     * Conflated channel for pending [TweaksState] writes. Codex
+     * review on PR #53 flagged that the earlier "launch + edit"
+     * sequence could let stale snapshots interleave during a fast
+     * slider drag and revert newer values. A single collector on
+     * [ioScope] drains the latest pending state; intermediate
+     * values are dropped (DROP_OLDEST) so DataStore is never
+     * doing more work than the latest user input demands.
+     */
+    private val pendingTweaks = MutableSharedFlow<TweaksState>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val container = (application as BluetrackApplication).container
         vm = MainViewModel(container.bleGateway, container.translationEngine)
+        tweaksRepo = TweaksRepository(applicationContext)
+        // Drain pending tweaks on a single coroutine so writes
+        // happen in arrival order and never race.
+        ioScope.launch {
+            pendingTweaks.collect { state -> tweaksRepo.setAll(state) }
+        }
         setContent {
             BluetrackTheme {
                 val router = rememberRouter()
                 var gamepadActive by remember { mutableStateOf(false) }
+                // Combine the four DataStore-backed tweak flows
+                // into a single `TweaksState` so the shell only
+                // recomposes once per change.
+                val tweaks by remember {
+                    combine(
+                        tweaksRepo.motionReduced,
+                        tweaksRepo.glassEnabled,
+                        tweaksRepo.auroraOnLowBattery,
+                        tweaksRepo.neonStrength,
+                    ) { m, g, a, n -> TweaksState(m, g, a, n) }
+                }.collectAsState(initial = TweaksState.Default)
                 // Lock orientation to landscape while the gamepad
                 // surface is up; restore to sensor when we leave so
                 // the rest of the app stays portrait-first. Using
@@ -155,7 +198,12 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 } else {
-                    ScreenShell(router = router) { route ->
+                    ScreenShell(
+                        router = router,
+                        motionReduced = tweaks.motionReduced,
+                        glassEnabled = tweaks.glassEnabled,
+                        neonStrength = tweaks.neonStrength,
+                    ) { route ->
                         when (route) {
                             Route.Hub -> AppScreen(
                                 vm = vm,
@@ -179,6 +227,8 @@ class MainActivity : ComponentActivity() {
                             )
                             Route.Settings -> SettingsScreen(
                                 status = vm.status.collectAsState().value,
+                                tweaks = tweaks,
+                                onTweakChange = { next -> persistTweaks(next) },
                                 onNavigate = router::navigate,
                                 onForgetHost = { vm.forgetTrustedHost() },
                                 versionName = BuildConfig.VERSION_NAME,
@@ -284,6 +334,18 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("MissingPermission")
     private fun isBluetoothEnabled(): Boolean = bluetoothAdapter()?.isEnabled == true
+
+    /**
+     * Enqueue the next [TweaksState] for atomic persistence.
+     * Uses a conflated `MutableSharedFlow` (see [pendingTweaks])
+     * so concurrent slider drags collapse into the latest value
+     * and a single collector calls `tweaksRepo.setAll(...)` in
+     * arrival order. No per-call coroutine, no per-key edit,
+     * no race.
+     */
+    private fun persistTweaks(next: TweaksState) {
+        pendingTweaks.tryEmit(next)
+    }
 
     /**
      * Returns the current `POST_NOTIFICATIONS` grant state on

@@ -46,6 +46,8 @@ import dev.xd.bluetrack.ui.theme.BluetrackTokens
 @Composable
 fun SettingsScreen(
     status: GatewayStatus,
+    tweaks: TweaksState,
+    onTweakChange: (TweaksState) -> Unit,
     onNavigate: (Route) -> Unit,
     onForgetHost: () -> Unit,
     versionName: String,
@@ -156,13 +158,30 @@ fun SettingsScreen(
             SettingsRow(label = "Export session log", kind = SettingsRowKind.Chev)
         }
         SettingsGroup(title = "APPEARANCE") {
-            SettingsRow(
-                label = "Tweaks panel",
-                hint = "Design-time only · canvas authoring tool",
-                value = "—",
+            SettingsToggleRow(
+                label = "Glass surfaces",
+                hint = "Aurora layer + tinted cards. Off renders flat.",
+                checked = tweaks.glassEnabled,
+                onCheckedChange = { onTweakChange(tweaks.copy(glassEnabled = it)) },
             )
-            SettingsRow(label = "Reduce motion", value = "Auto")
-            SettingsRow(label = "Aurora on low battery", value = "Off")
+            SettingsToggleRow(
+                label = "Reduce motion",
+                hint = "Freezes aurora drift + breath rings. Static halos stay visible.",
+                checked = tweaks.motionReduced,
+                onCheckedChange = { onTweakChange(tweaks.copy(motionReduced = it)) },
+            )
+            SettingsToggleRow(
+                label = "Aurora on low battery",
+                hint = "Keep the aurora animating below 20% charge.",
+                checked = tweaks.auroraOnLowBattery,
+                onCheckedChange = { onTweakChange(tweaks.copy(auroraOnLowBattery = it)) },
+            )
+            SettingsSliderRow(
+                label = "Neon strength",
+                hint = "Halo intensity on the dock indicator + status hero.",
+                value = tweaks.neonStrength,
+                onValueChange = { onTweakChange(tweaks.copy(neonStrength = it)) },
+            )
         }
         SettingsGroup(title = "ABOUT") {
             SettingsRow(
