@@ -40,10 +40,14 @@ import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.ui.MainViewModel
 import dev.xd.bluetrack.ui.ModeCardState
+import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.StickDeflection
 import dev.xd.bluetrack.ui.automationLabel
 import dev.xd.bluetrack.ui.modeCardStates
 import dev.xd.bluetrack.ui.relativeAgeLabel
+import dev.xd.bluetrack.ui.rememberRouter
+import dev.xd.bluetrack.ui.shell.ComingSoonScreen
+import dev.xd.bluetrack.ui.shell.ScreenShell
 import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
 import dev.xd.bluetrack.ui.stickDeflectionLabel
 import dev.xd.bluetrack.ui.stickOverlayState
@@ -95,7 +99,16 @@ class MainActivity : ComponentActivity() {
         vm = MainViewModel(container.bleGateway, container.translationEngine)
         setContent {
             BluetrackTheme {
-                AppScreen(vm = vm)
+                val router = rememberRouter()
+                ScreenShell(router = router) { route ->
+                    when (route) {
+                        Route.Hub -> AppScreen(vm = vm)
+                        Route.Hosts -> ComingSoonScreen("Hosts")
+                        Route.Activity -> ComingSoonScreen("Activity")
+                        Route.Diagnostics -> ComingSoonScreen("Diagnostics")
+                        Route.Settings -> ComingSoonScreen("Settings")
+                    }
+                }
             }
         }
         requestBtPermissions()
