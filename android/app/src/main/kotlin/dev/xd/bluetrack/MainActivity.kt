@@ -33,7 +33,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import dev.xd.bluetrack.ble.GatewayEvent
 import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.ui.MainViewModel
@@ -41,12 +40,16 @@ import dev.xd.bluetrack.ui.ModeCardState
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.StickDeflection
 import dev.xd.bluetrack.ui.automationLabel
+import dev.xd.bluetrack.ui.hub.ActivityStrip
+import dev.xd.bluetrack.ui.hub.GamepadShortcut
+import dev.xd.bluetrack.ui.hub.Heartbeat
 import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.NeonRibbon
 import dev.xd.bluetrack.ui.hub.PinBlock
 import dev.xd.bluetrack.ui.hub.ServiceChip
 import dev.xd.bluetrack.ui.hub.TrustCard
 import dev.xd.bluetrack.ui.hub.TrustState
+import dev.xd.bluetrack.ui.hub.toActivityItem
 import dev.xd.bluetrack.ui.modeCardStates
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.rememberRouter
@@ -106,7 +109,10 @@ class MainActivity : ComponentActivity() {
                 val router = rememberRouter()
                 ScreenShell(router = router) { route ->
                     when (route) {
-                        Route.Hub -> AppScreen(vm = vm)
+                        Route.Hub -> AppScreen(
+                            vm = vm,
+                            onNavigate = router::navigate,
+                        )
                         Route.Hosts -> ComingSoonScreen("Hosts")
                         Route.Activity -> ComingSoonScreen("Activity")
                         Route.Diagnostics -> ComingSoonScreen("Diagnostics")
@@ -231,7 +237,10 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AppScreen(vm: MainViewModel) {
+private fun AppScreen(
+    vm: MainViewModel,
+    onNavigate: (Route) -> Unit = {},
+) {
     val mode by vm.mode.collectAsState()
     val status by vm.status.collectAsState()
     val telemetry by vm.telemetry.collectAsState()
@@ -275,7 +284,8 @@ private fun AppScreen(vm: MainViewModel) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 4.dp),
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             ConnectionPanel(status = status, now = now)
@@ -309,54 +319,24 @@ private fun AppScreen(vm: MainViewModel) {
                     subtitle = relativeAgeLabel(now, status.lastFeedbackAtMs),
                 )
             }
-            BoxWithConstraints(Modifier.weight(1f)) {
-                if (maxWidth < 620.dp) {
-                    Column(
-                        Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        TouchpadPanel(
-                            modifier = Modifier.fillMaxWidth().weight(1f),
-                            mode = mode,
-                            telemetryX = telemetry.stickX,
-                            telemetryY = telemetry.stickY,
-                            onTouchStart = { vm.beginTouchGesture() },
-                            onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
-                        )
-                        Row(
-                            Modifier.fillMaxWidth().height(190.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            SystemPanel(
-                                status = status,
-                                modifier = Modifier.weight(1f).fillMaxHeight(),
-                            )
-                            TimelinePanel(status.events, now, Modifier.weight(1f).fillMaxHeight())
-                        }
-                    }
-                } else {
-                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        TouchpadPanel(
-                            modifier = Modifier.weight(1.15f).fillMaxHeight(),
-                            mode = mode,
-                            telemetryX = telemetry.stickX,
-                            telemetryY = telemetry.stickY,
-                            onTouchStart = { vm.beginTouchGesture() },
-                            onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
-                        )
-                        Column(
-                            modifier = Modifier.weight(0.85f).fillMaxHeight(),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            SystemPanel(
-                                status = status,
-                                modifier = Modifier.weight(0.75f),
-                            )
-                            TimelinePanel(status.events, now, Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
+            TouchpadPanel(
+                modifier = Modifier.fillMaxWidth().height(260.dp),
+                mode = mode,
+                telemetryX = telemetry.stickX,
+                telemetryY = telemetry.stickY,
+                onTouchStart = { vm.beginTouchGesture() },
+                onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
+            )
+            SystemPanel(
+                status = status,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            GamepadShortcut(onEnter = { vm.toggle(true) })
+            ActivityStrip(
+                items = status.events.take(4).map { it.toActivityItem(relativeAgeLabel(now, it.timestampMs)) },
+                onOpen = { onNavigate(Route.Activity) },
+            )
+            Heartbeat(active = isConnected(status))
         }
     }
 }
@@ -577,38 +557,6 @@ private fun SystemPanel(
 }
 
 @Composable
-private fun TimelinePanel(
-    events: List<GatewayEvent>,
-    now: Long,
-    modifier: Modifier,
-) {
-    Panel(modifier) {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("Activity", color = Color.White, fontWeight = FontWeight.Bold)
-            if (events.isEmpty()) {
-                Text("Quiet", color = Color.White.copy(alpha = 0.7f))
-            } else {
-                events.take(5).forEach { event ->
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(ageLabel(now, event.timestampMs), color = Color(0xFF00E5FF))
-                            Text(event.source, color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                        Text(event.message, color = Color.White.copy(alpha = 0.78f))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun StatusLine(
     label: String,
     value: String,
@@ -695,11 +643,3 @@ private fun isInputLive(
 
 private fun compactCount(value: Int): String =
     if (value < 1000) value.toString() else "${value / 1000}.${(value % 1000) / 100}k"
-
-private fun ageLabel(
-    now: Long,
-    timestampMs: Long,
-): String {
-    val seconds = ((now - timestampMs) / 1000).coerceAtLeast(0)
-    return if (seconds < 60) "${seconds}s" else "${seconds / 60}m"
-}
