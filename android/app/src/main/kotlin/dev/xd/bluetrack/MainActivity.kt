@@ -6,6 +6,7 @@ import android.app.Activity.RESULT_OK
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -39,6 +40,8 @@ import dev.xd.bluetrack.ui.MainViewModel
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.StickDeflection
 import dev.xd.bluetrack.ui.automationLabel
+import dev.xd.bluetrack.ui.gamepad.GamepadSurface
+import dev.xd.bluetrack.ui.gamepad.rememberFrameCounterState
 import dev.xd.bluetrack.ui.hub.ActivityStrip
 import dev.xd.bluetrack.ui.hub.GamepadShortcut
 import dev.xd.bluetrack.ui.hub.Heartbeat
@@ -107,16 +110,63 @@ class MainActivity : ComponentActivity() {
         setContent {
             BluetrackTheme {
                 val router = rememberRouter()
-                ScreenShell(router = router) { route ->
-                    when (route) {
-                        Route.Hub -> AppScreen(
-                            vm = vm,
-                            onNavigate = router::navigate,
-                        )
-                        Route.Hosts -> ComingSoonScreen("Hosts")
-                        Route.Activity -> ComingSoonScreen("Activity")
-                        Route.Diagnostics -> ComingSoonScreen("Diagnostics")
-                        Route.Settings -> ComingSoonScreen("Settings")
+                var gamepadActive by remember { mutableStateOf(false) }
+                // Lock orientation to landscape while the gamepad
+                // surface is up; restore to sensor when we leave so
+                // the rest of the app stays portrait-first. Using
+                // `LaunchedEffect(gamepadActive)` keeps this idempotent
+                // when state survives recomposition.
+                LaunchedEffect(gamepadActive) {
+                    requestedOrientation = if (gamepadActive) {
+                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    } else {
+                        ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    }
+                }
+                if (gamepadActive) {
+                    val frame = rememberFrameCounterState()
+                    GamepadSurface(
+                        hostName = vm.status
+                            .collectAsState()
+                            .value.host ?: "Bluetrack",
+                        seq = frame.seq,
+                        pulse = frame.pulse,
+                        onExit = {
+                            gamepadActive = false
+                            vm.toggle(false)
+                        },
+                        onStickMotion = { _, x, y ->
+                            // Forward stick deflection through the
+                            // existing mouse-delta entry point until
+                            // a native gamepad axis API lands. Small
+                            // scale keeps the report axis sane.
+                            if (x != 0f || y != 0f) {
+                                vm.processMotion(x * 12f, y * 12f, "Gamepad stick")
+                            }
+                        },
+                        onButton = { _, _ ->
+                            // Visual-only until `MainViewModel` /
+                            // `TranslationEngine` expose a button
+                            // bitfield setter. Logged as a follow-up
+                            // in the PR.
+                        },
+                    )
+                } else {
+                    ScreenShell(router = router) { route ->
+                        when (route) {
+                            Route.Hub -> AppScreen(
+                                vm = vm,
+                                onNavigate = router::navigate,
+                                onEnterGamepad = {
+                                    vm.toggle(true)
+                                    gamepadActive = true
+                                },
+                            )
+                            Route.Hosts -> ComingSoonScreen("Hosts")
+                            Route.Activity -> ComingSoonScreen("Activity")
+                            Route.Diagnostics -> ComingSoonScreen("Diagnostics")
+                            Route.Settings -> ComingSoonScreen("Settings")
+                        }
                     }
                 }
             }
@@ -240,6 +290,7 @@ class MainActivity : ComponentActivity() {
 private fun AppScreen(
     vm: MainViewModel,
     onNavigate: (Route) -> Unit = {},
+    onEnterGamepad: () -> Unit = {},
 ) {
     val mode by vm.mode.collectAsState()
     val status by vm.status.collectAsState()
@@ -342,7 +393,7 @@ private fun AppScreen(
                 status = status,
                 modifier = Modifier.fillMaxWidth(),
             )
-            GamepadShortcut(onEnter = { vm.toggle(true) })
+            GamepadShortcut(onEnter = onEnterGamepad)
             ActivityStrip(
                 items = status.events.take(4).map { it.toActivityItem(relativeAgeLabel(now, it.timestampMs)) },
                 onOpen = { onNavigate(Route.Activity) },
