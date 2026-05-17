@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bluetrack — App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap"/>
+<link rel="stylesheet" href="tokens.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0a0a; font-family: var(--sans); }
+  body { min-height: 100vh; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="shared.jsx"></script>
+<script type="text/babel" src="hub.jsx"></script>
+<script type="text/babel" src="onboarding.jsx"></script>
+<script type="text/babel" src="hosts.jsx"></script>
+<script type="text/babel" src="activity.jsx"></script>
+<script type="text/babel" src="diagnostics.jsx"></script>
+<script type="text/babel" src="settings.jsx"></script>
+<script type="text/babel" src="gamepad.jsx"></script>
+
+<script type="text/babel">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "theme": "dark",
+  "glass": "on",
+  "motion": "full",
+  "density": "comfortable",
+  "accent": "#ff2a3a",
+  "neonStrength": 1.0,
+  "showFGChip": true,
+  "deadzone": 0.12,
+  "curve": "linear",
+  "faceLayout": "abxy",
+  "triggerThreshold": 0.5
+}/*EDITMODE-END*/;
+
+function applyTweaks(t) {
+  const r = document.documentElement;
+  r.style.setProperty("--mint", t.accent);
+  const hex = t.accent.replace("#","");
+  const num = parseInt(hex, 16);
+  const R = (num >> 16) & 255, G = (num >> 8) & 255, B = num & 255;
+  r.style.setProperty("--mint-glow", `rgba(${R},${G},${B},${0.55 * t.neonStrength})`);
+  r.style.setProperty("--mint-glow-soft", `rgba(${R},${G},${B},${0.20 * t.neonStrength})`);
+  const lift = (v) => Math.min(255, Math.round(v + (255 - v) * 0.3));
+  r.style.setProperty("--mint-bright", `rgb(${lift(R)},${lift(G)},${lift(B)})`);
+}
+
+const ACCENT_OPTS = ["#ff2a3a", "#ff7a00", "#c084fc", "#5be39c", "#6dd6ff"];
+
+// Mini Hub preview — NEVER shows the real session PIN.
+function PreviewMini({ t }) {
+  return (
+    <div style={{
+      width: "100%", height: 90, borderRadius: 14, overflow: "hidden", position: "relative",
+      background: t.theme === "dark" ? "#101214" : "#fafbf8",
+      border: "1px solid var(--hairline)", marginBottom: 10,
+      boxShadow: "0 6px 22px rgba(0,0,0,0.45)",
+    }}>
+      <div style={{
+        position: "absolute", inset: 0,
+        background: t.glass === "on" ?
+          `radial-gradient(60% 60% at 20% 20%, ${t.accent}66, transparent 70%), radial-gradient(40% 40% at 80% 80%, #6dd6ff44, transparent 70%)` : "none",
+        filter: "blur(14px)",
+      }}/>
+      <div style={{ position: "relative", padding: "10px 12px" }}>
+        <div className="bt-cap" style={{ fontSize: 8 }}>Preview · sample pin</div>
+        <div className="bt-mono" style={{
+          fontSize: 20, fontWeight: 700,
+          color: t.accent,
+          textShadow: `0 0 ${6 * t.neonStrength}px ${t.accent}`,
+          letterSpacing: 2,
+        }}>888 888</div>
+        <div style={{
+          marginTop: 6, height: 3, width: "70%", borderRadius: 2,
+          background: t.accent, boxShadow: `0 0 ${8 * t.neonStrength}px ${t.accent}`,
+        }}/>
+      </div>
+    </div>
+  );
+}
+
+function TweaksUI({ t, setTweak }) {
+  return (
+    <TweaksPanel>
+      <PreviewMini t={t}/>
+
+      <TweakSection label="Theme">
+        <TweakRadio label="Mode" value={t.theme} onChange={v => setTweak("theme", v)}
+          options={[["dark","Dark"],["light","Light (WIP)"]]}/>
+        <TweakColor label="Accent" value={t.accent} options={ACCENT_OPTS} onChange={v => setTweak("accent", v)}/>
+        <TweakSlider label="Neon strength" min={0.2} max={1.6} step={0.1} value={t.neonStrength} onChange={v => setTweak("neonStrength", v)}/>
+      </TweakSection>
+
+      <TweakSection label="Motion & layout">
+        <TweakRadio label="Motion" value={t.motion} onChange={v => setTweak("motion", v)}
+          options={[["full","Full"],["reduced","Reduced"]]}/>
+        <TweakRadio label="Density" value={t.density} onChange={v => setTweak("density", v)}
+          options={[["compact","Compact"],["comfortable","Comfort"],["spacious","Spacious"]]}/>
+        <TweakRadio label="Glass surfaces" value={t.glass} onChange={v => setTweak("glass", v)}
+          options={[["on","On"],["off","Off"]]}/>
+        <TweakToggle label="Show running indicator" value={t.showFGChip} onChange={v => setTweak("showFGChip", v)}/>
+      </TweakSection>
+
+      <TweakSection label="Gamepad">
+        <TweakSlider label="Stick deadzone" min={0} max={0.3} step={0.02} value={t.deadzone} onChange={v => setTweak("deadzone", v)}/>
+        <TweakRadio label="Sensitivity curve" value={t.curve} onChange={v => setTweak("curve", v)}
+          options={[["linear","Linear"],["quad","Quad"],["cubic","Cubic"]]}/>
+        <TweakRadio label="Face button layout" value={t.faceLayout} onChange={v => setTweak("faceLayout", v)}
+          options={[["abxy","ABXY"],["bayx","BAYX"]]}/>
+        <TweakSlider label="Trigger threshold" min={0.3} max={0.7} step={0.1} value={t.triggerThreshold} onChange={v => setTweak("triggerThreshold", v)}/>
+      </TweakSection>
+    </TweaksPanel>
+  );
+}
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  React.useEffect(() => applyTweaks(t), [t]);
+  const wrap = (children) => <div data-theme={t.theme} data-glass={t.glass} data-motion={t.motion}>{children}</div>;
+
+  return (
+    <>
+      <DesignCanvas>
+        <DCSection id="onboarding" title="Onboarding · first-run only" subtitle="Welcome → granular Permissions wizard with system pre-prompts">
+          <DCArtboard id="welcome" label="01 · Welcome" width={360} height={760}>
+            {wrap(<WelcomeScreen/>)}
+          </DCArtboard>
+          <DCArtboard id="permissions" label="02 · Permissions" width={360} height={760}>
+            {wrap(<PermissionsScreen/>)}
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="hub" title="Hub" subtitle="Wordmark · pin block · trust · visible-as · activity strip · heartbeat trace · ribbon flash">
+          <DCArtboard id="hub-unpaired" label="Hub · empty (no host)" width={360} height={760}>
+            {wrap(<HubScreen id="hub-unpaired-r" state="unpaired" showFGChip={t.showFGChip} label="Hub Empty"/>)}
+          </DCArtboard>
+          <DCArtboard id="hub-connected" label="Hub · connected" width={360} height={760}>
+            {wrap(<HubScreen id="hub-connected-r" state="connected" showFGChip={t.showFGChip} label="Hub Connected"/>)}
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="hosts" title="Hosts" subtitle="Bonded list with device class, ignore reasons, compatibility caveats via ⓘ">
+          <DCArtboard id="hosts-empty" label="Hosts · empty" width={360} height={760}>
+            {wrap(<HostsScreen id="hosts-empty-r" state="empty" label="Hosts Empty"/>)}
+          </DCArtboard>
+          <DCArtboard id="hosts-filled" label="Hosts · 6 bonded" width={360} height={760}>
+            {wrap(<HostsScreen id="hosts-filled-r" state="filled" label="Hosts Filled"/>)}
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="activity" title="Activity" subtitle="Per-session timeline · All / Pairing / Feedback / Trust / Errors filters">
+          <DCArtboard id="activity-empty" label="Activity · empty" width={360} height={760}>
+            {wrap(<ActivityScreen id="activity-empty-r" state="empty" label="Activity Empty"/>)}
+          </DCArtboard>
+          <DCArtboard id="activity-filled" label="Activity · live" width={360} height={760}>
+            {wrap(<ActivityScreen id="activity-filled-r" state="filled" label="Activity Filled"/>)}
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="diag" title="Diagnostics" subtitle="Live rates · replay window 64 · PIN counters only · 7 rejection categories">
+          <DCArtboard id="diag-empty" label="Diagnostics · pre-session" width={360} height={760}>
+            {wrap(<DiagnosticsScreen id="diag-empty-r" state="empty" label="Diag Empty"/>)}
+          </DCArtboard>
+          <DCArtboard id="diag-live" label="Diagnostics · live" width={360} height={760}>
+            {wrap(<DiagnosticsScreen id="diag-live-r" state="filled" label="Diag Live"/>)}
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="settings" title="Settings" subtitle="Identity · Connectivity · Permissions link · About with build hash">
+          <DCArtboard id="settings-r" label="Settings" width={360} height={760}>
+            {wrap(<SettingsScreen id="settings-rr" label="Settings"/>)}
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="gamepad" title="Gamepad" subtitle="Native landscape · sticks · 8-way D-pad · ABXY · LB/RB/LT/RT · BACK/GUIDE/START · wake-train · fold-out diag">
+          <DCArtboard id="gamepad-r" label="Gamepad · live" width={760} height={360}>
+            <div data-theme={t.theme} data-glass={t.glass} data-motion={t.motion}>
+              <LandscapePhone label="Gamepad">
+                <GamepadScreen/>
+              </LandscapePhone>
+            </div>
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+      <TweaksUI t={t} setTweak={setTweak}/>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

@@ -1,0 +1,228 @@
+/* Bluetrack design tokens — sans-only, neon red, glass */
+
+:root {
+  --bg-0: #08090a;
+  --bg-1: #101214;
+  --bg-2: #181b1e;
+  --bg-3: #20242a;
+  --hairline: rgba(255,255,255,0.07);
+  --hairline-2: rgba(255,255,255,0.14);
+
+  --fg-0: #f4f5f4;
+  --fg-1: rgba(244,245,244,0.74);
+  --fg-2: rgba(244,245,244,0.50);
+  --fg-3: rgba(244,245,244,0.30);
+
+  --mint: #ff2a3a;
+  --mint-bright: #ff5566;
+  --mint-deep: #c4001a;
+  --mint-glow: rgba(255,42,58,0.55);
+  --mint-glow-soft: rgba(255,42,58,0.18);
+
+  --cool: #6dd6ff;
+  --warn: #ffb86b;
+  --crit: #ff4060;
+  --calm: rgba(244,245,244,0.42); /* "not supported" — calm gray, never red */
+
+  /* Radius scale — use these. 3 working sizes + pill. */
+  --r-xs: 8px;    /* tiny: code chips, value pills */
+  --r-sm: 12px;   /* small: inner avatars, rows */
+  --r-md: 16px;   /* default: cards */
+  --r-lg: 22px;   /* hero/dialog cards */
+  --r-pill: 999px;
+
+  /* Spacing scale */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 14px;   /* small card padding */
+  --sp-5: 16px;   /* default card padding */
+  --sp-6: 18px;   /* screen gutter */
+  --sp-7: 22px;
+  --sp-8: 28px;
+
+  /* Control heights */
+  --h-chip: 24px;
+  --h-icon: 36px;
+  --h-btn: 44px;
+  --h-cta: 50px;
+
+  --glass-bg: rgba(20,22,25,0.55);
+  --glass-bg-strong: rgba(24,27,30,0.72);
+  --glass-border: rgba(255,255,255,0.10);
+  --glass-blur: 22px;
+  --glass-saturate: 180%;
+
+  /* Bluetrack motion curve — single spec used everywhere a settle happens */
+  --bt-curve: cubic-bezier(0.16, 1.18, 0.32, 1);
+  --bt-curve-fast: cubic-bezier(0.22, 1, 0.36, 1);
+  --bt-dur: 380ms;
+
+  --sans: "Geist", "Inter", "Helvetica Neue", system-ui, sans-serif;
+  --display: "Geist", "Inter", "Helvetica Neue", system-ui, sans-serif;
+  --mono: "Geist Mono", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+[data-theme="light"] {
+  --bg-0: #f3f4f1; --bg-1: #ffffff; --bg-2: #fafbf8; --bg-3: #ecede8;
+  --hairline: rgba(15,18,16,0.08); --hairline-2: rgba(15,18,16,0.16);
+  --fg-0: #0d0e0f;
+  --fg-1: rgba(13,14,15,0.72);
+  --fg-2: rgba(13,14,15,0.50);
+  --fg-3: rgba(13,14,15,0.30);
+  --mint: #e6122a; --mint-bright: #ff3850; --mint-deep: #a8001a;
+  --mint-glow: rgba(230,18,42,0.40); --mint-glow-soft: rgba(230,18,42,0.16);
+  --calm: rgba(13,14,15,0.42);
+  --glass-bg: rgba(255,255,255,0.55);
+  --glass-bg-strong: rgba(255,255,255,0.78);
+  --glass-border: rgba(15,18,16,0.10);
+}
+
+.bt { background: var(--bg-0); color: var(--fg-0); font-family: var(--sans); font-size: 14px; line-height: 1.4; -webkit-font-smoothing: antialiased; }
+.bt * { box-sizing: border-box; }
+.bt-mono { font-family: var(--mono); font-feature-settings: "tnum","ss01"; letter-spacing: 0.01em; }
+.bt-display { font-family: var(--display); font-weight: 800; letter-spacing: -0.035em; line-height: 0.92; }
+.bt-cap { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--fg-2); }
+.bt-card { background: var(--bg-1); border: 1px solid var(--hairline); border-radius: var(--r-md); }
+
+/* Wordmark — Bluetrack signature */
+.bt-wordmark {
+  font-family: var(--display); font-weight: 800; letter-spacing: -0.04em;
+  display: inline-flex; align-items: center; gap: 2px; line-height: 1;
+}
+.bt-wordmark .wm-bracket {
+  color: var(--mint); font-weight: 600;
+  text-shadow: 0 0 8px var(--mint-glow);
+  margin: 0 1px;
+}
+.bt-wordmark .wm-name { color: var(--fg-0); }
+.bt-wordmark .wm-name .wm-cut { color: var(--mint); text-shadow: 0 0 10px var(--mint-glow); }
+
+/* Neon-pure title — pure red with 1px white inset for legibility on dark */
+.bt-neon-title {
+  color: var(--mint-bright);
+  -webkit-text-stroke: 0.6px rgba(255,255,255,0.18);
+  text-shadow: 0 0 12px var(--mint-glow), 0 0 28px var(--mint-glow-soft);
+}
+
+/* Diagonal lattice — Bluetooth packets in flight */
+.bt-lattice {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background-image: repeating-linear-gradient(
+    -28deg,
+    transparent 0px, transparent 22px,
+    rgba(255,255,255,0.025) 22px, rgba(255,255,255,0.025) 23px
+  );
+  -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.6), rgba(0,0,0,0.15));
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.6), rgba(0,0,0,0.15));
+  animation: btLattice 32s linear infinite;
+}
+@keyframes btLattice { to { background-position: 0 220px; } }
+
+/* Heartbeat trace — bottom of Hub, pulses with HID reports */
+.bt-heartbeat {
+  position: relative; height: 18px; overflow: hidden;
+}
+.bt-heartbeat svg { width: 100%; height: 100%; display: block; }
+
+/* Ribbon — single-frame neon flash on fresh handshake */
+@keyframes btRibbon {
+  0%   { transform: scaleX(0); opacity: 0; }
+  6%   { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+.bt-ribbon {
+  position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: linear-gradient(90deg, transparent, var(--mint-bright) 20%, var(--mint-bright) 80%, transparent);
+  box-shadow: 0 0 14px var(--mint), 0 0 36px var(--mint-glow);
+  transform-origin: left;
+  animation: btRibbon 2200ms var(--bt-curve) forwards;
+  pointer-events: none; z-index: 5;
+}
+
+/* Mono pulse — counters tick without bouncing */
+@keyframes btMonoPulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.55; }
+  100% { opacity: 1; }
+}
+.bt-tick { animation: btMonoPulse 280ms var(--bt-curve-fast); }
+
+/* Reduce motion — kills aurora + lattice + heartbeat tween, keeps essential affordances */
+.bt[data-motion="reduced"] .bt-aurora,
+.bt[data-motion="reduced"] .bt-lattice { animation: none !important; opacity: 0.35; }
+.bt[data-motion="reduced"] .bt-heartbeat .hb-pulse { animation: none !important; }
+.bt[data-motion="reduced"] .bt-ribbon { animation-duration: 600ms; }
+.bt-tap { min-height: 44px; }
+
+.bt-neon { color: var(--mint-bright); text-shadow: 0 0 1px var(--mint-bright), 0 0 8px var(--mint-glow), 0 0 18px var(--mint-glow-soft); }
+
+.bt[data-glass="on"] .bt-glass {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+}
+.bt[data-glass="on"] .bt-glass-strong {
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  backdrop-filter: blur(28px) saturate(200%);
+  border: 1px solid var(--glass-border);
+}
+.bt[data-glass="on"] .bt-aurora {
+  position: absolute; inset: -10%; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(40% 30% at 18% 14%, var(--mint-glow) 0%, transparent 60%),
+    radial-gradient(36% 28% at 88% 30%, rgba(120,80,255,0.32) 0%, transparent 60%),
+    radial-gradient(50% 30% at 50% 92%, rgba(0,180,255,0.22) 0%, transparent 60%),
+    radial-gradient(30% 20% at 80% 80%, var(--mint-glow-soft) 0%, transparent 60%);
+  filter: blur(40px); opacity: 0.9;
+  animation: btAurora 18s ease-in-out infinite alternate;
+}
+.bt[data-glass="off"] .bt-aurora,
+.bt[data-motion="reduced"] .bt-aurora { animation: none; opacity: 0.5; }
+.bt[data-motion="reduced"] *, .bt[data-motion="reduced"] *::before, .bt[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important;
+}
+
+@keyframes btAurora {
+  0% { transform: translate(0%, 0%) scale(1); }
+  50% { transform: translate(-4%, 3%) scale(1.08); }
+  100% { transform: translate(3%, -2%) scale(1.04); }
+}
+@keyframes btPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.85; }
+}
+@keyframes btSpin { to { transform: rotate(360deg); } }
+@keyframes btFadeUp {
+  from { opacity: 0; transform: translateY(14px); filter: blur(6px); }
+  to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+@keyframes btFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes btScaleIn { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+@keyframes btBreath {
+  0%, 100% { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+  50%      { transform: translate(-50%,-50%) scale(1.06); opacity: 0.9; }
+}
+@keyframes btShimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+@keyframes btDash { to { stroke-dashoffset: -20; } }
+
+.bt-stagger > * { opacity: 0; animation: btFadeUp 600ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.bt-stagger > *:nth-child(1) { animation-delay: 40ms; }
+.bt-stagger > *:nth-child(2) { animation-delay: 110ms; }
+.bt-stagger > *:nth-child(3) { animation-delay: 180ms; }
+.bt-stagger > *:nth-child(4) { animation-delay: 250ms; }
+.bt-stagger > *:nth-child(5) { animation-delay: 320ms; }
+.bt-stagger > *:nth-child(6) { animation-delay: 390ms; }
+.bt-stagger > *:nth-child(7) { animation-delay: 460ms; }
+.bt-stagger > *:nth-child(8) { animation-delay: 530ms; }
+.bt-stagger > *:nth-child(9) { animation-delay: 600ms; }
+.bt-stagger > *:nth-child(10) { animation-delay: 670ms; }
+
+.bt-screen-enter { animation: btFadeUp 480ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.bt-noscrollbar::-webkit-scrollbar { display: none; }
+.bt-noscrollbar { scrollbar-width: none; }
