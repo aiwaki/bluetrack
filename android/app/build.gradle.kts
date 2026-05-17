@@ -83,7 +83,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        // Enable AGP's generated `BuildConfig` so the Settings
+        // route can show `versionName (build versionCode)`. AGP 8
+        // disables it by default and the Compose toolchain does
+        // not need it, hence the explicit opt-in.
+        buildConfig = true
+    }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
 }
 
