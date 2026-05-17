@@ -40,8 +40,10 @@ import dev.xd.bluetrack.ui.MainViewModel
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.StickDeflection
 import dev.xd.bluetrack.ui.automationLabel
+import dev.xd.bluetrack.ui.diag.DiagnosticsScreen
 import dev.xd.bluetrack.ui.gamepad.GamepadSurface
 import dev.xd.bluetrack.ui.gamepad.rememberFrameCounterState
+import dev.xd.bluetrack.ui.hosts.HostsScreen
 import dev.xd.bluetrack.ui.hub.ActivityStrip
 import dev.xd.bluetrack.ui.hub.GamepadShortcut
 import dev.xd.bluetrack.ui.hub.Heartbeat
@@ -162,9 +164,15 @@ class MainActivity : ComponentActivity() {
                                     gamepadActive = true
                                 },
                             )
-                            Route.Hosts -> ComingSoonScreen("Hosts")
+                            Route.Hosts -> HostsScreen(
+                                status = vm.status.collectAsState().value,
+                                onConnectHost = { /* TODO: connect by id once gateway exposes it */ },
+                                onDisconnectHost = { /* TODO: disconnect by id */ },
+                            )
                             Route.Activity -> ComingSoonScreen("Activity")
-                            Route.Diagnostics -> ComingSoonScreen("Diagnostics")
+                            Route.Diagnostics -> DiagnosticsScreen(
+                                status = vm.status.collectAsState().value,
+                            )
                             Route.Settings -> ComingSoonScreen("Settings")
                         }
                     }
