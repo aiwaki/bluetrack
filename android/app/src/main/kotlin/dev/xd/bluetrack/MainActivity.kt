@@ -24,7 +24,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,7 +43,10 @@ import dev.xd.bluetrack.ui.StickDeflection
 import dev.xd.bluetrack.ui.automationLabel
 import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.NeonRibbon
+import dev.xd.bluetrack.ui.hub.PinBlock
 import dev.xd.bluetrack.ui.hub.ServiceChip
+import dev.xd.bluetrack.ui.hub.TrustCard
+import dev.xd.bluetrack.ui.hub.TrustState
 import dev.xd.bluetrack.ui.modeCardStates
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.rememberRouter
@@ -242,6 +244,21 @@ private fun AppScreen(vm: MainViewModel) {
     }
 
     val running = isConnected(status)
+    // Tick a session counter every time a fresh BLE feedback PIN
+    // appears (each `startGatt()` rotates the PIN). Matches the
+    // canvas `PinBlock session=#N` indicator without plumbing a new
+    // field through `GatewayStatus`.
+    var sessionCount by remember { mutableIntStateOf(0) }
+    var lastPin by remember { mutableStateOf<String?>(null) }
+    if (status.feedbackPin != lastPin) {
+        if (status.feedbackPin != null) sessionCount += 1
+        lastPin = status.feedbackPin
+    }
+    val trustState = if (status.trustedHostFingerprint != null) {
+        TrustState.Pinned
+    } else {
+        TrustState.Empty
+    }
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
@@ -262,6 +279,17 @@ private fun AppScreen(vm: MainViewModel) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             ConnectionPanel(status = status, now = now)
+            PinBlock(
+                pin = status.feedbackPin,
+                session = sessionCount,
+                gattOpen = status.feedbackPin != null,
+            )
+            TrustCard(
+                state = trustState,
+                fingerprint = status.trustedHostFingerprint,
+                onForget = { vm.forgetTrustedHost() },
+                onShowQR = { /* TODO: identity QR sheet — follow-up after --export-identity CLI lands */ },
+            )
             ModeCardsRow(
                 currentMode = mode,
                 hostConnected = status.host != null,
@@ -302,7 +330,6 @@ private fun AppScreen(vm: MainViewModel) {
                             SystemPanel(
                                 status = status,
                                 modifier = Modifier.weight(1f).fillMaxHeight(),
-                                onForgetHost = { vm.forgetTrustedHost() },
                             )
                             TimelinePanel(status.events, now, Modifier.weight(1f).fillMaxHeight())
                         }
@@ -324,7 +351,6 @@ private fun AppScreen(vm: MainViewModel) {
                             SystemPanel(
                                 status = status,
                                 modifier = Modifier.weight(0.75f),
-                                onForgetHost = { vm.forgetTrustedHost() },
                             )
                             TimelinePanel(status.events, now, Modifier.weight(1f))
                         }
@@ -535,8 +561,10 @@ private fun TouchpadPanel(
 private fun SystemPanel(
     status: GatewayStatus,
     modifier: Modifier,
-    onForgetHost: () -> Unit,
 ) {
+    // PIN and Trust rows moved to dedicated `PinBlock` + `TrustCard`
+    // cards above (UI port step 3b). System panel keeps the four
+    // transport-state rows it always had.
     Panel(modifier) {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("System", color = Color.White, fontWeight = FontWeight.Bold)
@@ -544,23 +572,6 @@ private fun SystemPanel(
             StatusLine("HID", status.hid)
             StatusLine("Pair", status.pairing)
             StatusLine("BLE", status.feedback)
-            status.feedbackPin?.let { pin ->
-                StatusLine("Pin", pin)
-            }
-            val trust = status.trustedHostFingerprint
-            if (trust != null) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    StatusLine("Trust", trust, modifier = Modifier.weight(1f))
-                    TextButton(onClick = onForgetHost) {
-                        Text("Forget", color = Color(0xFFFF8888))
-                    }
-                }
-            } else if (status.feedbackPin != null) {
-                StatusLine("Trust", "first run")
-            }
         }
     }
 }
