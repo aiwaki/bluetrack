@@ -1251,9 +1251,8 @@ class BleHidGateway(
         } else {
             rejectedFeedbackPackets += 1
             val cause = when (outcome) {
-                FeedbackSession.FrameOutcome.Size,
-                FeedbackSession.FrameOutcome.SessionNotReady,
-                -> RejectionCause.Size
+                FeedbackSession.FrameOutcome.Size -> RejectionCause.Size
+                FeedbackSession.FrameOutcome.SessionNotReady -> RejectionCause.SessionNotReady
                 FeedbackSession.FrameOutcome.Gcm -> RejectionCause.Gcm
                 FeedbackSession.FrameOutcome.Replay -> RejectionCause.Replay
                 FeedbackSession.FrameOutcome.Ok ->

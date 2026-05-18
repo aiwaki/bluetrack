@@ -290,13 +290,18 @@ private fun buildEntries(status: GatewayStatus): List<HostEntry> {
             HostClass.Keyboard -> "Keyboard device · cannot be a HID host"
             else -> null
         }
-        // Real per-host caveats from the gateway, with the
-        // gateway-wide caveat (hid-unavail / adv-unavail) layered
-        // on top for computer-class hosts.
+        // Caveat priority: gateway-wide blockers (`hid-unavail`,
+        // `adv-unavail`) win over per-host warnings because they
+        // mean nothing will work on this phone regardless of
+        // which host you try. Only fall back to the per-host
+        // caveat (`ios-hid`, `multi-adv`) when the gateway is
+        // healthy. Codex review on PR #56 caught the reverse
+        // ordering that hid the severe blocker behind a milder
+        // multi-adv warning on computers.
         val perHost = compat.hostCaveats[name].orEmpty()
         val caveat: String? = when {
+            klass == HostClass.Computer && gatewayCaveat != null -> gatewayCaveat
             perHost.isNotEmpty() -> perHost.first()
-            klass == HostClass.Computer -> gatewayCaveat
             else -> null
         }
         HostEntry(

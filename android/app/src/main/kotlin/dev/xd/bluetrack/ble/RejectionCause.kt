@@ -41,4 +41,15 @@ enum class RejectionCause {
     Untrusted,
     X25519,
     RateLimit,
+
+    /**
+     * Frame arrived before the AES-256-GCM session was derived
+     * (host wrote feedback bytes before completing the
+     * handshake). Distinct from [Size] / [Gcm] because the
+     * frame was the right shape — there just was no key yet.
+     * Added in step 9b fixup after Codex review flagged that
+     * lumping these into [Size] inflated the "Wrong frame size"
+     * bucket during normal pre-handshake activity.
+     */
+    SessionNotReady,
 }

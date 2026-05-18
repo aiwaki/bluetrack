@@ -407,6 +407,12 @@ private fun RejectionsCard(byCause: Map<RejectionCause, Long>) {
         Rejection("Untrusted host", "TOFU pin mismatch", palette.warn, count(RejectionCause.Untrusted)),
         Rejection("X25519 derivation", "malformed peer pubkey", palette.crit, count(RejectionCause.X25519)),
         Rejection("Rate-limited", "handshake flood throttled", palette.fg2, count(RejectionCause.RateLimit)),
+        Rejection(
+            "Session not ready",
+            "frame before handshake completed",
+            palette.fg2,
+            count(RejectionCause.SessionNotReady),
+        ),
     )
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
     Column(
