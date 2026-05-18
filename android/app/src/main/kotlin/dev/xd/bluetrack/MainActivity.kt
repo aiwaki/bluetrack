@@ -194,23 +194,21 @@ class MainActivity : ComponentActivity() {
                             // Dispatch:
                             //  - "HAT_n" labels → hat byte (0..7
                             //    direction, 8 = neutral release).
-                            //  - "FACE_NONE" is the canvas's
-                            //    "no face button pressed" signal;
-                            //    ignored here because each face
-                            //    button emits its own press +
-                            //    release pair.
                             //  - Anything else → named button.
-                            when {
-                                label.startsWith("HAT_") -> {
-                                    val hat = if (pressed) {
-                                        label.removePrefix("HAT_").toIntOrNull() ?: 8
-                                    } else {
-                                        8
-                                    }
-                                    vm.processGamepadHat(hat)
+                            // Face buttons now report their real
+                            // label on both press and release
+                            // (Codex review on PR #55 caught the
+                            // earlier `FACE_NONE` release path
+                            // that left bits latched).
+                            if (label.startsWith("HAT_")) {
+                                val hat = if (pressed) {
+                                    label.removePrefix("HAT_").toIntOrNull() ?: 8
+                                } else {
+                                    8
                                 }
-                                label == "FACE_NONE" -> Unit
-                                else -> vm.processGamepadButton(label, pressed)
+                                vm.processGamepadHat(hat)
+                            } else {
+                                vm.processGamepadButton(label, pressed)
                             }
                         },
                     )
