@@ -190,11 +190,28 @@ class MainActivity : ComponentActivity() {
                                 vm.processMotion(x * 12f, y * 12f, "Gamepad stick")
                             }
                         },
-                        onButton = { _, _ ->
-                            // Visual-only until `MainViewModel` /
-                            // `TranslationEngine` expose a button
-                            // bitfield setter. Logged as a follow-up
-                            // in the PR.
+                        onButton = { label, pressed ->
+                            // Dispatch:
+                            //  - "HAT_n" labels → hat byte (0..7
+                            //    direction, 8 = neutral release).
+                            //  - "FACE_NONE" is the canvas's
+                            //    "no face button pressed" signal;
+                            //    ignored here because each face
+                            //    button emits its own press +
+                            //    release pair.
+                            //  - Anything else → named button.
+                            when {
+                                label.startsWith("HAT_") -> {
+                                    val hat = if (pressed) {
+                                        label.removePrefix("HAT_").toIntOrNull() ?: 8
+                                    } else {
+                                        8
+                                    }
+                                    vm.processGamepadHat(hat)
+                                }
+                                label == "FACE_NONE" -> Unit
+                                else -> vm.processGamepadButton(label, pressed)
+                            }
                         },
                     )
                 } else {
