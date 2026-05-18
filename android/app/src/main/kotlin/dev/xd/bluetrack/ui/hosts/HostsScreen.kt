@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.xd.bluetrack.ble.BluetoothHostKind
 import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.SectionLabel
@@ -34,8 +35,9 @@ import dev.xd.bluetrack.ui.theme.BluetrackTokens
 
 /**
  * Hosts route. Lists bonded BLE devices from
- * [GatewayStatus.compatibility.bondedDevices], classifies them
- * via [classifyHost], and renders them in two sections
+ * [GatewayStatus.compatibility.bondedDevices], reads the real
+ * Bluetooth Class of Device classification the gateway emits in
+ * `compatibility.hostKinds`, and renders them in two sections
  * (Computers / Accessories). Matches canvas `HostsScreen`
  * (`docs/design/v1/hosts.jsx`).
  *
@@ -261,20 +263,23 @@ private val CAVEATS = mapOf(
 private fun buildEntries(status: GatewayStatus): List<HostEntry> {
     val active = status.host?.lowercase()
     val compat = status.compatibility
-    // Gateway-wide caveats from the compat snapshot. Order matters
-    // — the row only renders the first (highest-priority) match.
+    // Gateway-wide caveats (fallback when a host has no
+    // per-device caveat from the BluetoothClass classifier).
     val gatewayCaveat: String? = when {
         compat.hidProfile != "Available" && compat.hidProfile != "Unknown" -> "hid-unavail"
         compat.bleAdvertiserAvailable == false -> "adv-unavail"
-        compat.multipleAdvertisementSupported == false -> "multi-adv"
         else -> null
     }
     return compat.bondedDevices.mapIndexed { i, name ->
-        val klass = classifyHost(name)
-        val isIos = name.lowercase().let { it.contains("iphone") || it.contains("ipad") }
+        // Prefer the real `BluetoothClass`-derived kind from the
+        // gateway snapshot; fall back to `Unknown` if the gateway
+        // could not classify (rare — uncategorised device, no
+        // BluetoothClass field on the bonded record).
+        val realKind = compat.hostKinds[name] ?: BluetoothHostKind.Unknown
+        val klass = realKind.toUiClass()
         val state = when {
             active != null && name.lowercase() == active -> HostState.Active
-            isIos -> HostState.Incompatible
+            realKind == BluetoothHostKind.Phone -> HostState.Incompatible
             klass == HostClass.Computer -> HostState.Available
             klass == HostClass.Unknown -> HostState.Incompatible
             else -> HostState.Ignored
@@ -285,12 +290,12 @@ private fun buildEntries(status: GatewayStatus): List<HostEntry> {
             HostClass.Keyboard -> "Keyboard device · cannot be a HID host"
             else -> null
         }
-        // Per-host caveat: iOS HID restriction overrides any
-        // gateway-wide caveat; otherwise computer hosts inherit the
-        // gateway-wide caveat (if any) so the user sees the warn
-        // icon next to a device that is genuinely affected.
+        // Real per-host caveats from the gateway, with the
+        // gateway-wide caveat (hid-unavail / adv-unavail) layered
+        // on top for computer-class hosts.
+        val perHost = compat.hostCaveats[name].orEmpty()
         val caveat: String? = when {
-            isIos -> "ios-hid"
+            perHost.isNotEmpty() -> perHost.first()
             klass == HostClass.Computer -> gatewayCaveat
             else -> null
         }
@@ -308,38 +313,17 @@ private fun buildEntries(status: GatewayStatus): List<HostEntry> {
 }
 
 /**
- * Classify a bonded device by name. The Android `BluetoothDevice`
- * class metadata is not exposed via the gateway snapshot today,
- * so we keyword-match until that field lands. The classification
- * is conservative — anything we cannot place falls into
- * `Unknown`, which the route renders as `Not supported`.
+ * Bridge from the gateway's real `BluetoothHostKind` enum to the
+ * UI's local `HostClass`. We keep the UI enum because it carries
+ * a slightly different vocabulary (no `Phone`; `Unknown` doubles
+ * as "uncategorised + incompatible"). The mapping below is the
+ * single place those vocabularies converge.
  */
-fun classifyHost(name: String): HostClass {
-    val n = name.lowercase()
-    val audio = listOf("airpod", "headphone", "headset", "buds", "speaker", "soundbar", "earbud", "audio")
-    val pointing = listOf("magic mouse", "mouse", "trackpad", "magic trackpad")
-    val keyboard = listOf("keyboard", "k380", "k480", "magic keyboard")
-    val computer =
-        listOf(
-            "mbp",
-            "macbook",
-            "imac",
-            "mac mini",
-            "studio",
-            "windows",
-            "thinkpad",
-            "surface",
-            "pc",
-            "tower",
-            "desktop",
-            "tablet",
-            "ipad",
-        )
-    return when {
-        audio.any { n.contains(it) } -> HostClass.Audio
-        pointing.any { n.contains(it) } -> HostClass.Pointing
-        keyboard.any { n.contains(it) } -> HostClass.Keyboard
-        computer.any { n.contains(it) } -> HostClass.Computer
-        else -> HostClass.Unknown
-    }
+private fun BluetoothHostKind.toUiClass(): HostClass = when (this) {
+    BluetoothHostKind.Computer -> HostClass.Computer
+    BluetoothHostKind.Audio -> HostClass.Audio
+    BluetoothHostKind.Pointing -> HostClass.Pointing
+    BluetoothHostKind.Keyboard -> HostClass.Keyboard
+    BluetoothHostKind.Phone -> HostClass.Unknown
+    BluetoothHostKind.Unknown -> HostClass.Unknown
 }

@@ -98,6 +98,17 @@ class PayloadDecryptor(
     ): Boolean = session.decryptPayloadTo(bleData, onDecrypted)
 
     /**
+     * Rich-outcome variant of [decryptPayloadTo]. Mirrors the
+     * categories the gateway tracks for [RejectionCause]: size /
+     * GCM tag / replay window / session-not-ready. The caller
+     * maps each outcome to the right counter bucket.
+     */
+    fun decryptPayloadCause(
+        bleData: ByteArray,
+        onDecrypted: (Float, Float) -> Unit,
+    ): FeedbackSession.FrameOutcome = session.decryptPayloadCause(bleData, onDecrypted)
+
+    /**
      * Convenience API when allocations are acceptable.
      */
     fun decryptPayload(bleData: ByteArray): Pair<Float, Float>? {

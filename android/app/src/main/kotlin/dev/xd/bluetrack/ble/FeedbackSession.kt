@@ -171,17 +171,27 @@ class FeedbackSession {
     }
 
     /**
-     * Drop-in replacement for the legacy decryptor entry point. Returns
-     * true when the 28-byte frame decrypts and verifies; the callback is
-     * invoked exactly once on success.
+     * Frame-level decrypt outcome. Surfaced via
+     * [decryptPayloadCause] so [BleHidGateway] can attribute a
+     * rejection to the right per-category counter bucket added
+     * in step 9b. `Ok` means the callback fired exactly once.
      */
-    fun decryptPayloadTo(
+    enum class FrameOutcome { Ok, Size, Gcm, Replay, SessionNotReady }
+
+    /**
+     * Rich-outcome variant of [decryptPayloadTo]. Returns the
+     * specific failure cause so the gateway can credit the right
+     * [RejectionCause] bucket. `decryptPayloadTo` continues to
+     * delegate here for back-compat with any caller that only
+     * needs a boolean.
+     */
+    fun decryptPayloadCause(
         bleData: ByteArray,
         onDecrypted: (Float, Float) -> Unit,
-    ): Boolean {
-        if (bleData.size != FRAME_SIZE) return false
-        val key = symmetricKey ?: return false
-        val salt = nonceSalt ?: return false
+    ): FrameOutcome {
+        if (bleData.size != FRAME_SIZE) return FrameOutcome.Size
+        val key = symmetricKey ?: return FrameOutcome.SessionNotReady
+        val salt = nonceSalt ?: return FrameOutcome.SessionNotReady
 
         val counterBytes = bleData.copyOfRange(0, COUNTER_PREFIX_SIZE)
         val cipherEnd = COUNTER_PREFIX_SIZE + PLAINTEXT_SIZE + TAG_SIZE
@@ -195,19 +205,29 @@ class FeedbackSession {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_BITS, nonce))
             val plain = cipher.doFinal(ciphertextWithTag)
-            if (plain.size != PLAINTEXT_SIZE) return false
+            if (plain.size != PLAINTEXT_SIZE) return FrameOutcome.Gcm
             val counter = readIntLe(bleData, 0)
             // Authenticated, but reject replays (incl. counter wrap-around)
             // before delivering to the engine.
-            if (!acceptCounter(counter)) return false
+            if (!acceptCounter(counter)) return FrameOutcome.Replay
             val xBits = readIntLe(plain, 0)
             val yBits = readIntLe(plain, 4)
             onDecrypted(Float.fromBits(xBits), Float.fromBits(yBits))
-            true
+            FrameOutcome.Ok
         } catch (_: GeneralSecurityException) {
-            false
+            FrameOutcome.Gcm
         }
     }
+
+    /**
+     * Drop-in replacement for the legacy decryptor entry point. Returns
+     * true when the 28-byte frame decrypts and verifies; the callback is
+     * invoked exactly once on success. Delegates to [decryptPayloadCause].
+     */
+    fun decryptPayloadTo(
+        bleData: ByteArray,
+        onDecrypted: (Float, Float) -> Unit,
+    ): Boolean = decryptPayloadCause(bleData, onDecrypted) == FrameOutcome.Ok
 
     /**
      * Sliding-window replay check. Returns true if [counter] is fresh

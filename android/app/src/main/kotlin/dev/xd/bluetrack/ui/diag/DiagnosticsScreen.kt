@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.xd.bluetrack.ble.GatewayStatus
+import dev.xd.bluetrack.ble.RejectionCause
 import dev.xd.bluetrack.ui.hub.Chip
 import dev.xd.bluetrack.ui.hub.ChipKind
 import dev.xd.bluetrack.ui.hub.HubHeader
@@ -152,7 +153,7 @@ fun DiagnosticsScreen(
                     )
                 },
             )
-            RejectionsCard(total = status.rejectedFeedbackPackets)
+            RejectionsCard(byCause = status.lifetimeCounters.rejectionsByCause)
         }
     }
 }
@@ -386,19 +387,26 @@ private fun StatCell(
 }
 
 @Composable
-private fun RejectionsCard(total: Int) {
+private fun RejectionsCard(byCause: Map<RejectionCause, Long>) {
     val palette = BluetrackTheme.palette
-    // Without a per-category breakdown in `GatewayStatus`, attribute
-    // all rejections to the "replay" + "untrust" buckets when total
-    // > 0; canvas mock uses the same approximation.
+
+    // Real per-category counters from `GatewayStatus.lifetimeCounters`
+    // (step 9b). Missing bucket = 0; rendered greyed-out.
+    fun count(cause: RejectionCause): Int = (byCause[cause] ?: 0L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     val rows = listOf(
-        Rejection("Wrong frame size", "not 28 bytes", palette.fg2, 0),
-        Rejection("GCM tag failure", "wrong PIN, key or tampered", palette.crit, 0),
-        Rejection("Replay window drop", "counter outside window", palette.cool, total.coerceAtMost(1)),
-        Rejection("Wrong-length handshake", "malformed handshake frame", palette.fg2, 0),
-        Rejection("Bad Ed25519 signature", "host identity mismatch", palette.crit, 0),
-        Rejection("Untrusted host", "TOFU pin mismatch", palette.warn, (total - 1).coerceAtLeast(0)),
-        Rejection("X25519 derivation", "malformed peer pubkey", palette.crit, 0),
+        Rejection("Wrong frame size", "not 28 bytes", palette.fg2, count(RejectionCause.Size)),
+        Rejection("GCM tag failure", "wrong PIN, key or tampered", palette.crit, count(RejectionCause.Gcm)),
+        Rejection("Replay window drop", "counter outside window", palette.cool, count(RejectionCause.Replay)),
+        Rejection(
+            "Wrong-length handshake",
+            "malformed handshake frame",
+            palette.fg2,
+            count(RejectionCause.HandshakeLength),
+        ),
+        Rejection("Bad Ed25519 signature", "host identity mismatch", palette.crit, count(RejectionCause.Signature)),
+        Rejection("Untrusted host", "TOFU pin mismatch", palette.warn, count(RejectionCause.Untrusted)),
+        Rejection("X25519 derivation", "malformed peer pubkey", palette.crit, count(RejectionCause.X25519)),
+        Rejection("Rate-limited", "handshake flood throttled", palette.fg2, count(RejectionCause.RateLimit)),
     )
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
     Column(

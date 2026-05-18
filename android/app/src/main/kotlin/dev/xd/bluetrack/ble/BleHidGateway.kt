@@ -64,6 +64,23 @@ data class CompatibilitySnapshot(
     val hidProfile: String = "Unknown",
     val scanMode: String = "Unknown",
     val bondedDevices: List<String> = emptyList(),
+    /**
+     * Real Bluetooth Class of Device → kind mapping for each
+     * bonded device, keyed by name. Added in step 9a so the
+     * Hosts route stops guessing from name keywords. Missing
+     * entries fall back to [BluetoothHostKind.Unknown].
+     */
+    val hostKinds: Map<String, BluetoothHostKind> = emptyMap(),
+    /**
+     * Per-host compatibility caveats. Strings are stable keys
+     * the UI looks up against its caveat-info dictionary
+     * (`ios-hid` / `multi-adv` / `hid-unavail` / `adv-unavail`).
+     * One entry can carry multiple caveats — a phone might be
+     * both `ios-hid` and (on a host adapter without multi-adv
+     * support) `multi-adv`, though in practice phones are
+     * outright rejected before the multi-adv hint matters.
+     */
+    val hostCaveats: Map<String, Set<String>> = emptyMap(),
 )
 
 data class GatewayEvent(
@@ -1080,7 +1097,7 @@ class BleHidGateway(
         // never throttled in practice.
         if (!handshakeRateLimiter.tryAcquire(device.address, SystemClock.elapsedRealtime())) {
             rejectedFeedbackPackets += 1
-            lifetimeCounters.addRejections(1L)
+            lifetimeCounters.addRejection(RejectionCause.RateLimit)
             updateStatus(
                 rejectedFeedbackPackets = rejectedFeedbackPackets,
                 lifetimeCounters = lifetimeCounters.current(),
@@ -1112,7 +1129,7 @@ class BleHidGateway(
             }
             PayloadDecryptor.HandshakeOutcome.UNTRUSTED_HOST -> {
                 rejectedFeedbackPackets += 1
-                lifetimeCounters.addRejections(1L)
+                lifetimeCounters.addRejection(RejectionCause.Untrusted)
                 updateStatus(
                     rejectedFeedbackPackets = rejectedFeedbackPackets,
                     lifetimeCounters = lifetimeCounters.current(),
@@ -1123,7 +1140,7 @@ class BleHidGateway(
             }
             PayloadDecryptor.HandshakeOutcome.BAD_SIGNATURE -> {
                 rejectedFeedbackPackets += 1
-                lifetimeCounters.addRejections(1L)
+                lifetimeCounters.addRejection(RejectionCause.Signature)
                 updateStatus(
                     rejectedFeedbackPackets = rejectedFeedbackPackets,
                     lifetimeCounters = lifetimeCounters.current(),
@@ -1132,17 +1149,26 @@ class BleHidGateway(
                     eventMessage = "Handshake signature verification failed.",
                 )
             }
-            PayloadDecryptor.HandshakeOutcome.MALFORMED,
-            PayloadDecryptor.HandshakeOutcome.DERIVATION_FAILED,
-            -> {
+            PayloadDecryptor.HandshakeOutcome.MALFORMED -> {
                 rejectedFeedbackPackets += 1
-                lifetimeCounters.addRejections(1L)
+                lifetimeCounters.addRejection(RejectionCause.HandshakeLength)
                 updateStatus(
                     rejectedFeedbackPackets = rejectedFeedbackPackets,
                     lifetimeCounters = lifetimeCounters.current(),
                     error = "Rejected invalid BLE handshake packet.",
                     eventSource = "Feedback",
                     eventMessage = "Rejected handshake write of ${value.size} bytes (outcome=$outcome).",
+                )
+            }
+            PayloadDecryptor.HandshakeOutcome.DERIVATION_FAILED -> {
+                rejectedFeedbackPackets += 1
+                lifetimeCounters.addRejection(RejectionCause.X25519)
+                updateStatus(
+                    rejectedFeedbackPackets = rejectedFeedbackPackets,
+                    lifetimeCounters = lifetimeCounters.current(),
+                    error = "Rejected invalid BLE handshake packet.",
+                    eventSource = "Feedback",
+                    eventMessage = "Rejected handshake X25519 derivation (outcome=$outcome).",
                 )
             }
         }
@@ -1197,12 +1223,15 @@ class BleHidGateway(
         offset: Int,
         value: ByteArray,
     ) {
-        val accepted =
-            !preparedWrite &&
-                offset == 0 &&
-                decryptor.decryptPayloadTo(value) { correctionX, correctionY ->
+        val outcome =
+            if (!preparedWrite && offset == 0) {
+                decryptor.decryptPayloadCause(value) { correctionX, correctionY ->
                     engine.updateCorrection(correctionX, correctionY)
                 }
+            } else {
+                FeedbackSession.FrameOutcome.Size
+            }
+        val accepted = outcome == FeedbackSession.FrameOutcome.Ok
         if (accepted) {
             feedbackPackets += 1
             lifetimeCounters.addFeedback(1L)
@@ -1221,13 +1250,22 @@ class BleHidGateway(
             )
         } else {
             rejectedFeedbackPackets += 1
-            lifetimeCounters.addRejections(1L)
+            val cause = when (outcome) {
+                FeedbackSession.FrameOutcome.Size,
+                FeedbackSession.FrameOutcome.SessionNotReady,
+                -> RejectionCause.Size
+                FeedbackSession.FrameOutcome.Gcm -> RejectionCause.Gcm
+                FeedbackSession.FrameOutcome.Replay -> RejectionCause.Replay
+                FeedbackSession.FrameOutcome.Ok ->
+                    error("unreachable: accepted branch already covers Ok")
+            }
+            lifetimeCounters.addRejection(cause)
             updateStatus(
                 rejectedFeedbackPackets = rejectedFeedbackPackets,
                 lifetimeCounters = lifetimeCounters.current(),
                 error = "Rejected invalid BLE feedback packet.",
                 eventSource = "Feedback",
-                eventMessage = "Rejected feedback packet #$rejectedFeedbackPackets.",
+                eventMessage = "Rejected feedback packet #$rejectedFeedbackPackets ($cause).",
             )
         }
         if (responseNeeded) {
@@ -1348,13 +1386,37 @@ class BleHidGateway(
 
         return try {
             val enabled = bluetoothAdapter.isEnabled
+            val advertiserAvailable =
+                if (enabled) bluetoothAdapter.bluetoothLeAdvertiser != null else null
+            val multiAdvSupported =
+                if (enabled) bluetoothAdapter.isMultipleAdvertisementSupported else null
+            // Walk the bonded set once, capturing both the
+            // sorted name list and the per-host kind / caveat
+            // maps so the gateway only touches `bondedDevices`
+            // once per snapshot.
+            val bondedNames = mutableListOf<String>()
+            val kinds = mutableMapOf<String, BluetoothHostKind>()
+            val caveats = mutableMapOf<String, MutableSet<String>>()
+            if (enabled) {
+                bluetoothAdapter.bondedDevices.forEach { device ->
+                    val name = device.safeName()
+                    bondedNames += name
+                    val kind = classifyBluetoothHost(device.bluetoothClass)
+                    kinds[name] = kind
+                    val perHost = mutableSetOf<String>()
+                    if (kind == BluetoothHostKind.Phone) perHost += "ios-hid"
+                    if (kind == BluetoothHostKind.Computer && multiAdvSupported == false) {
+                        perHost += "multi-adv"
+                    }
+                    if (perHost.isNotEmpty()) caveats[name] = perHost
+                }
+                bondedNames.sort()
+            }
             CompatibilitySnapshot(
                 bluetoothAvailable = true,
                 bluetoothEnabled = enabled,
-                bleAdvertiserAvailable =
-                    if (enabled) bluetoothAdapter.bluetoothLeAdvertiser != null else null,
-                multipleAdvertisementSupported =
-                    if (enabled) bluetoothAdapter.isMultipleAdvertisementSupported else null,
+                bleAdvertiserAvailable = advertiserAvailable,
+                multipleAdvertisementSupported = multiAdvSupported,
                 hidProfile =
                     when {
                         hid != null && registeredMode != null -> "Composite active ${registeredMode?.name}"
@@ -1364,14 +1426,9 @@ class BleHidGateway(
                         else -> "Bluetooth off"
                     },
                 scanMode = if (enabled) bluetoothAdapter.scanMode.scanModeLabel() else "Bluetooth off",
-                bondedDevices =
-                    if (enabled) {
-                        bluetoothAdapter.bondedDevices
-                            .map { it.safeName() }
-                            .sorted()
-                    } else {
-                        emptyList()
-                    },
+                bondedDevices = bondedNames,
+                hostKinds = kinds,
+                hostCaveats = caveats,
             )
         } catch (_: SecurityException) {
             CompatibilitySnapshot(
