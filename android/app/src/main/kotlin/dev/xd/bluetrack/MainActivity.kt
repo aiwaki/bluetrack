@@ -190,11 +190,26 @@ class MainActivity : ComponentActivity() {
                                 vm.processMotion(x * 12f, y * 12f, "Gamepad stick")
                             }
                         },
-                        onButton = { _, _ ->
-                            // Visual-only until `MainViewModel` /
-                            // `TranslationEngine` expose a button
-                            // bitfield setter. Logged as a follow-up
-                            // in the PR.
+                        onButton = { label, pressed ->
+                            // Dispatch:
+                            //  - "HAT_n" labels → hat byte (0..7
+                            //    direction, 8 = neutral release).
+                            //  - Anything else → named button.
+                            // Face buttons now report their real
+                            // label on both press and release
+                            // (Codex review on PR #55 caught the
+                            // earlier `FACE_NONE` release path
+                            // that left bits latched).
+                            if (label.startsWith("HAT_")) {
+                                val hat = if (pressed) {
+                                    label.removePrefix("HAT_").toIntOrNull() ?: 8
+                                } else {
+                                    8
+                                }
+                                vm.processGamepadHat(hat)
+                            } else {
+                                vm.processGamepadButton(label, pressed)
+                            }
                         },
                     )
                 } else {

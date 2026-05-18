@@ -70,6 +70,40 @@ class MainViewModel(
         }
     }
 
+    /**
+     * Press or release a named gamepad button (A / B / X / Y /
+     * LB / LT / RB / RT / BACK / START / GUIDE / L3 / R3). The
+     * engine flips the corresponding bit on the in-memory
+     * composite report and enqueues a fresh report on the HID
+     * transport buffer — buttons latch, so a held press keeps
+     * the bit set across subsequent stick-driven reports.
+     *
+     * Step 5 wired the `GamepadSurface.onButton` callback to a
+     * no-op pending this API; step 9c lights it up for real.
+     */
+    fun processGamepadButton(
+        label: String,
+        pressed: Boolean,
+    ) {
+        if (_mode.value != HidMode.GAMEPAD) return
+        engine.setGamepadButton(label, pressed) { report ->
+            enqueueHidReport(HidMode.GAMEPAD, report)
+        }
+    }
+
+    /**
+     * Set the hat-switch byte (0..7 = direction, 8 = neutral)
+     * and push a fresh report. `GamepadSurface.onButton`
+     * dispatches D-pad events here with the canvas's hat
+     * encoding already in the right shape.
+     */
+    fun processGamepadHat(hat: Int) {
+        if (_mode.value != HidMode.GAMEPAD) return
+        engine.setGamepadHat(hat) { report ->
+            enqueueHidReport(HidMode.GAMEPAD, report)
+        }
+    }
+
     fun processMotion(
         dx: Float,
         dy: Float,

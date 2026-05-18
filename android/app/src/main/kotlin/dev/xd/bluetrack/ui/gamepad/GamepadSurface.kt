@@ -125,7 +125,7 @@ fun GamepadSurface(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    FaceButtons(onChange = { l -> onButton(l ?: "FACE_NONE", l != null) })
+                    FaceButtons(onChange = onButton)
                     FrameCounter(seq = seq, pulse = pulse)
                 }
                 Column(

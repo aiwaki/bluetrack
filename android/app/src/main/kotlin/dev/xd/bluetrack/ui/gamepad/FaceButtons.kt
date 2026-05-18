@@ -43,7 +43,16 @@ import dev.xd.bluetrack.ui.theme.BluetrackTheme
  */
 @Composable
 fun FaceButtons(
-    onChange: (label: String?) -> Unit,
+    /**
+     * Press / release callback. Reports the *actual* button
+     * label on both press (`pressed = true`) and release
+     * (`pressed = false`), so the caller never has to guess
+     * which face button just went up — required to clear the
+     * latched bit in `TranslationEngine`. Codex review on PR
+     * #55 caught the earlier `null`-on-release variant that
+     * left face buttons stuck.
+     */
+    onChange: (label: String, pressed: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val palette = BluetrackTheme.palette
@@ -88,10 +97,10 @@ fun FaceButtons(
                         detectTapGestures(
                             onPress = {
                                 active = btn.label
-                                onChange(btn.label)
+                                onChange(btn.label, true)
                                 val released = tryAwaitRelease()
                                 active = null
-                                onChange(null)
+                                onChange(btn.label, false)
                                 @Suppress("UNUSED_EXPRESSION")
                                 released
                             },

@@ -75,6 +75,50 @@ class TranslationEngine(
         publishTelemetry(Telemetry(rx, ry, sx, sy))
     }
 
+    /**
+     * Flip a single named gamepad button on / off, persist the
+     * bit on the in-memory report, and emit the report via the
+     * supplied [send] callback. Returns `true` when the label
+     * matched a known button; `false` for unknown labels (the
+     * caller can fall back to D-pad parsing).
+     *
+     * Buttons latch — `pressed = false` only clears the named
+     * bit; other buttons stay set. The stick-update path resets
+     * axes + hat after 20 ms but never touches the button bytes,
+     * so a held button keeps emitting in subsequent reports.
+     *
+     * Thread-safety: writes target the same `gamepadReport`
+     * array as `processMouseToStick`. Both run on the existing
+     * input pacer (single dispatcher), so no extra
+     * synchronisation is needed.
+     */
+    fun setGamepadButton(
+        label: String,
+        pressed: Boolean,
+        send: (ByteArray) -> Unit,
+    ): Boolean {
+        val (index, mask) = GamepadReportFormat.BUTTON_MASKS[label] ?: return false
+        val current = gamepadReport[index].toInt() and 0xFF
+        val next = if (pressed) current or mask else current and mask.inv()
+        gamepadReport[index] = next.toByte()
+        send(gamepadReport)
+        return true
+    }
+
+    /**
+     * Set the hat-switch byte (0..7 = direction, 8 = neutral)
+     * and emit. The composite report's hat occupies a single
+     * byte; the canvas D-pad already produces values in the
+     * right encoding.
+     */
+    fun setGamepadHat(
+        hat: Int,
+        send: (ByteArray) -> Unit,
+    ) {
+        gamepadReport[GamepadReportFormat.HAT_INDEX] = hat.toByte()
+        send(gamepadReport)
+    }
+
     private fun quantizeMouseDelta(
         delta: Float,
         isX: Boolean,
