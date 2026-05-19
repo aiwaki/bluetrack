@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -187,34 +186,15 @@ fun HostRow(
                 )
             }
         }
-        // Trailing action.
-        when (host.state) {
-            HostState.Available -> ConnectPill(onConnect)
-            HostState.Active -> DisconnectButton(onDisconnect)
-            else -> {}
+        // Trailing action: ✕ on rows where unpair is meaningful
+        // (Active = currently connected; Available = bonded
+        // computer waiting for auto-connect). Skipped on
+        // Ignored / Incompatible — those rows are visible for
+        // transparency only; nothing the user does there
+        // affects the HID path.
+        if (host.state == HostState.Active || host.state == HostState.Available) {
+            DisconnectButton(onDisconnect)
         }
-    }
-}
-
-@Composable
-private fun ConnectPill(onConnect: () -> Unit) {
-    val palette = BluetrackTheme.palette
-    Box(
-        modifier = Modifier
-            .height(32.dp)
-            .clip(RoundedCornerShape(999.dp))
-            .background(palette.mint)
-            .clickable(onClick = onConnect)
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "CONNECT",
-            color = Color.White,
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 0.8.sp,
-        )
     }
 }
 

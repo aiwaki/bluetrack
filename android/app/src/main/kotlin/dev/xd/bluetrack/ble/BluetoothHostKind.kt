@@ -54,3 +54,41 @@ fun classifyBluetoothHost(klass: BluetoothClass?): BluetoothHostKind {
 
 private const val PERIPHERAL_KEYBOARD_BIT: Int = 0x0040
 private const val PERIPHERAL_POINTING_BIT: Int = 0x0080
+
+/**
+ * Name-keyword fallback for devices whose `BluetoothClass` is
+ * absent or uninformative (some older bonded records on Android,
+ * uncategorised Bluetooth chips, emulator stubs). Conservative —
+ * only returns a kind when the name carries a strong hint;
+ * everything else stays [BluetoothHostKind.Unknown].
+ */
+fun classifyByName(name: String): BluetoothHostKind {
+    val n = name.lowercase()
+    val audio = listOf("airpod", "headphone", "headset", "buds", "speaker", "soundbar", "earbud", "audio")
+    val pointing = listOf("magic mouse", "trackpad", "mouse")
+    val keyboard = listOf("magic keyboard", "keyboard", "k380", "k480")
+    val phone = listOf("iphone", "ipad", "android phone", "pixel")
+    val computer = listOf(
+        "mbp",
+        "macbook",
+        "imac",
+        "mac mini",
+        "mac studio",
+        "windows",
+        "thinkpad",
+        "surface",
+        "tower",
+        "desktop",
+        "pc",
+        "linux",
+        "tablet",
+    )
+    return when {
+        audio.any { n.contains(it) } -> BluetoothHostKind.Audio
+        pointing.any { n.contains(it) } -> BluetoothHostKind.Pointing
+        keyboard.any { n.contains(it) } -> BluetoothHostKind.Keyboard
+        phone.any { n.contains(it) } -> BluetoothHostKind.Phone
+        computer.any { n.contains(it) } -> BluetoothHostKind.Computer
+        else -> BluetoothHostKind.Unknown
+    }
+}

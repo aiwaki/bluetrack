@@ -74,20 +74,21 @@ fun DiagnosticsScreen(
     val palette = BluetrackTheme.palette
     val hidWave = remember { mutableStateListOf<Float>() }
     val fbWave = remember { mutableStateListOf<Float>() }
-    var lastReports by remember { mutableLongStateOf(status.reportsSent.toLong()) }
-    var lastFb by remember { mutableLongStateOf(status.feedbackPackets.toLong()) }
-    // Read the *current* `GatewayStatus` snapshot inside the tick
-    // loop instead of capturing the value seen at composition time.
-    // Without `rememberUpdatedState`, the `LaunchedEffect(Unit)`
-    // closes over the initial `status` and every later delta
-    // collapses to zero, freezing the live counters and the
-    // sparklines. Caught by Codex review on PR #51.
+    // Sample directly from the persisted `lifetimeCounters` so
+    // the sparkline source matches the lifetime-total source
+    // shown above. The per-session `status.reportsSent` /
+    // `feedbackPackets` fields drift out of sync with the
+    // persisted counters during the publish-throttle window
+    // (250 ms) — visible as a frozen sparkline despite a
+    // ticking total.
+    var lastReports by remember { mutableLongStateOf(status.lifetimeCounters.reports) }
+    var lastFb by remember { mutableLongStateOf(status.lifetimeCounters.feedback) }
     val statusState = rememberUpdatedState(status)
     LaunchedEffect(Unit) {
         while (true) {
             delay(1_000L)
-            val nowReports = statusState.value.reportsSent.toLong()
-            val nowFb = statusState.value.feedbackPackets.toLong()
+            val nowReports = statusState.value.lifetimeCounters.reports
+            val nowFb = statusState.value.lifetimeCounters.feedback
             val dR = (nowReports - lastReports).coerceAtLeast(0L)
             val dF = (nowFb - lastFb).coerceAtLeast(0L)
             lastReports = nowReports
@@ -123,18 +124,50 @@ fun DiagnosticsScreen(
             modifier = Modifier.padding(horizontal = BluetrackTokens.Sp6),
             verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
         ) {
+            val empty =
+                status.lifetimeCounters.reports == 0L &&
+                    status.lifetimeCounters.feedback == 0L &&
+                    status.lifetimeCounters.rejections == 0L
+            if (empty) {
+                Text(
+                    text = "Counters appear once a host connects.",
+                    color = palette.fg0,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Bluetrack only meters traffic during an active HID session. " +
+                        "Moving the touchpad in the app while no host is paired emits " +
+                        "no HID reports, so the counters stay at zero.",
+                    color = palette.fg2,
+                    fontSize = 12.sp,
+                )
+                return@Column
+            }
             LiveRateHero(
                 hidRate = hidRate.toLong(),
                 fbRate = fbRate.toLong(),
-                hidTotal = status.reportsSent.toLong(),
-                fbTotal = status.feedbackPackets.toLong(),
+                // Show lifetime totals from the persisted counters
+                // rather than the per-session `reportsSent` /
+                // `feedbackPackets` fields. Lifetime values survive
+                // a process kill and reflect the cumulative work the
+                // engine has done — what a user opening Diagnostics
+                // actually wants to see.
+                hidTotal = status.lifetimeCounters.reports,
+                fbTotal = status.lifetimeCounters.feedback,
                 hidWave = hidWave,
                 fbWave = fbWave,
             )
             SectionLabel(label = "Replay window")
             ReplayWindowCard(
+                // Replay window's "last counter" is the per-frame
+                // counter the gateway acked, not the count of
+                // accepted packets. Display the accepted-feedback
+                // count anyway until the gateway exposes the real
+                // counter value; clearer label below makes that
+                // explicit.
                 lastCounter = status.feedbackPackets.toLong(),
-                drops = status.rejectedFeedbackPackets,
+                drops = (status.lifetimeCounters.rejectionsByCause[RejectionCause.Replay] ?: 0L).toInt(),
             )
             SectionLabel(label = "PIN lifecycle")
             PinLifecycleCard(

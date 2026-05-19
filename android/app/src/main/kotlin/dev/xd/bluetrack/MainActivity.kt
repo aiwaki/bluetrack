@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import dev.xd.bluetrack.ble.BluetoothHostKind
 import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.ui.MainViewModel
@@ -169,6 +170,37 @@ class MainActivity : ComponentActivity() {
                         ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                     }
                 }
+                // Auto-connect retry ticker — runs ONLY while no
+                // host is connected. This is the path that wakes a
+                // freshly bonded Mac/PC up automatically without
+                // requiring the user to tap CONNECT every time.
+                //
+                // Critically, we DO NOT poll while `status.host`
+                // is non-null: an earlier revision unconditionally
+                // ticked `refreshCompatibility` every 3 s, but that
+                // function takes the gateway's `@Synchronized` lock
+                // and makes a binder-bound `getConnectionState`
+                // call inside it. Touchpad mouse reports go through
+                // `BleHidGateway.send()`, which shares the same
+                // lock — so during active cursor use the binder
+                // probe stalled HID writes by 30–100 ms each tick
+                // and the cursor visibly lagged "as if 2x packets
+                // were being sent". Skipping the ticker when
+                // connected lets `send()` keep the lock to itself.
+                //
+                // Silent disconnects while connected are caught by
+                // `BluetoothDevice.ACTION_ACL_DISCONNECTED` (see
+                // `BleHidGateway.ensureAclReceiverRegistered`) plus
+                // the TrustCard manual `DISCONNECT` pill — neither
+                // touches the lock or the main thread.
+                val hostState by vm.status.collectAsState()
+                LaunchedEffect(hostState.host == null) {
+                    if (hostState.host != null) return@LaunchedEffect
+                    while (true) {
+                        delay(5000)
+                        vm.refreshCompatibility()
+                    }
+                }
                 if (gamepadActive) {
                     val frame = rememberFrameCounterState()
                     GamepadSurface(
@@ -230,8 +262,15 @@ class MainActivity : ComponentActivity() {
                             )
                             Route.Hosts -> HostsScreen(
                                 status = vm.status.collectAsState().value,
-                                onConnectHost = { /* TODO: connect by id once gateway exposes it */ },
-                                onDisconnectHost = { /* TODO: disconnect by id */ },
+                                // Gateway has no per-id connect API yet — the
+                                // CONNECT pill is a visual cue only; auto-
+                                // connect picks the bonded computer.
+                                onConnectHost = { /* TODO: connect by name */ },
+                                // Unpair the bonded device by name via
+                                // BluetoothDevice.removeBond() (reflection).
+                                // Drops the TOFU host pin too if the removed
+                                // device was the active host.
+                                onDisconnectHost = { name -> vm.removeBondedDevice(name) },
                             )
                             Route.Activity -> ActivityScreen(
                                 status = vm.status.collectAsState().value,
@@ -473,6 +512,17 @@ private fun AppScreen(
                 fingerprint = status.trustedHostFingerprint,
                 onForget = { vm.forgetTrustedHost() },
                 onShowQR = { /* TODO: identity QR sheet — follow-up after --export-identity CLI lands */ },
+                // Show bonded computer-class hosts as tappable
+                // "recommended" rows so the user can wake the
+                // Mac/PC from sleep without waiting for the
+                // auto-connect tick.
+                recommendedHosts = status.compatibility.hostKinds
+                    .filterValues { it == BluetoothHostKind.Computer }
+                    .keys
+                    .sorted(),
+                activeHost = status.host,
+                onConnect = { name -> vm.connectHost(name) },
+                onDisconnect = { vm.disconnectActiveHost() },
             )
             ModeToggle(
                 mode = mode,
@@ -819,9 +869,18 @@ private fun inputLabel(
     else -> "Idle"
 }
 
-private fun isConnected(status: GatewayStatus): Boolean = status.host != null ||
-    status.hid.contains("connected", ignoreCase = true) ||
-    status.pairing.contains("HID connected", ignoreCase = true)
+/**
+ * Authoritative connection check. Earlier this OR'd against
+ * `status.hid.contains("connected")` and
+ * `status.pairing.contains("HID connected")`, but those strings
+ * are sticky after `refreshCompatibility` clears `host` to null
+ * (the stale-host probe resets `hid` to "HID ready" but the
+ * pairing label can lag a tick), so the Hub kept reading
+ * "ACTIVE LINK · MacBook Pro" minutes after Mac sleep / radio
+ * off / quick suspend. The gateway is the single source of
+ * truth for the host field — trust it.
+ */
+private fun isConnected(status: GatewayStatus): Boolean = status.host != null
 
 private fun isInputLive(
     status: GatewayStatus,

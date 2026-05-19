@@ -77,8 +77,8 @@ fun HostsScreen(
                     computers.forEach { host ->
                         HostRow(
                             host = host,
-                            onConnect = { onConnectHost(host.id) },
-                            onDisconnect = { onDisconnectHost(host.id) },
+                            onConnect = { onConnectHost(host.name) },
+                            onDisconnect = { onDisconnectHost(host.name) },
                             onShowCaveat = { caveat = it },
                             modifier = Modifier.padding(bottom = BluetrackTokens.Sp1),
                         )

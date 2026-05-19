@@ -139,6 +139,25 @@ class MainViewModel(
         ble.connectBondedHost()
     }
 
+    /**
+     * Tap-to-connect a specific bonded host. Used by the Hub
+     * TrustCard recommended-host list so the user can wake a
+     * bonded computer from sleep without waiting for the
+     * auto-connect tick.
+     */
+    fun connectHost(name: String) {
+        ble.connectBondedHost(name)
+    }
+
+    /**
+     * Manual disconnect from the active HID host. Surfaced as the
+     * TrustCard recommended-host "DISCONNECT" pill so the user can
+     * tear down a sticky link without toggling Bluetooth radio.
+     */
+    fun disconnectActiveHost() {
+        ble.disconnectActiveHost()
+    }
+
     fun bluetoothPermissionMissing() {
         ble.reportPermissionMissing()
     }
@@ -173,6 +192,22 @@ class MainViewModel(
     /** Drop the TOFU-pinned host identity (re-pair on next handshake). */
     fun forgetTrustedHost() {
         ble.forgetTrustedHost()
+    }
+
+    /**
+     * Unpair a bonded device by name. Surfaced for the Hosts
+     * route ✕ button. Forgets the TOFU host identity too if the
+     * unpaired device is the currently-pinned trust target so
+     * the user doesn't have to do it in two steps.
+     */
+    fun removeBondedDevice(name: String) {
+        ble.removeBondedDevice(name)
+        // If the removed device was the active host, also drop
+        // the trusted host pin — the next handshake will be a
+        // fresh TOFU.
+        if (ble.status.value.host == name) {
+            ble.forgetTrustedHost()
+        }
     }
 
     /** Wipe persisted lifetime counters back to zero. */
