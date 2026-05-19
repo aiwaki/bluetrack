@@ -66,6 +66,16 @@ data class CompatibilitySnapshot(
     val multipleAdvertisementSupported: Boolean? = null,
     val hidProfile: String = "Unknown",
     val scanMode: String = "Unknown",
+    /**
+     * Local `BluetoothAdapter.name`. This is the BR/EDR inquiry
+     * name the host (Mac / PC) sees in its Bluetooth settings
+     * during pair — typically the device's user-facing name
+     * (e.g. "Redmi 10"). Distinct from the HID SDP service name
+     * ("Bluetrack Pro Engine"), which is what the host shows
+     * inside its keyboard / mouse input device list after pair.
+     * `null` when permission is missing or the radio is off.
+     */
+    val adapterName: String? = null,
     val bondedDevices: List<String> = emptyList(),
     /**
      * Real Bluetooth Class of Device → kind mapping for each
@@ -154,6 +164,22 @@ class BleHidGateway(
      * row so an explicit reconnect is honoured without delay.
      */
     private var manualDisconnectAtMs = 0L
+
+    /**
+     * User-controlled toggle for the auto-connect retry path.
+     * Default `true` — matches the "calm autopilot" baseline. The
+     * Settings route flips this via [setAutoConnectEnabled] backed
+     * by `TweaksRepository.autoConnectEnabled`. When disabled the
+     * `maybeAutoConnectHost` ticker no-ops and the user must tap
+     * `CONNECT` on a TrustCard recommended row to wake a bonded
+     * host.
+     */
+    @Volatile
+    private var autoConnectEnabled: Boolean = true
+
+    fun setAutoConnectEnabled(enabled: Boolean) {
+        autoConnectEnabled = enabled
+    }
     private var lastNoComputerHostWarningMs = 0L
     private var lastReportStatusAtMs = 0L
     private var lastGamepadWakeAtMs = 0L
@@ -792,6 +818,7 @@ class BleHidGateway(
     }
 
     private fun maybeAutoConnectHost(reason: String) {
+        if (!autoConnectEnabled) return
         val snapshot = snapshotCompatibility()
         val now = SystemClock.elapsedRealtime()
         if (hid == null || registeredMode == null || host != null || snapshot.bondedDevices.isEmpty()) return
@@ -1795,6 +1822,7 @@ class BleHidGateway(
                         else -> "Bluetooth off"
                     },
                 scanMode = if (enabled) bluetoothAdapter.scanMode.scanModeLabel() else "Bluetooth off",
+                adapterName = if (enabled) bluetoothAdapter.name else null,
                 bondedDevices = bondedNames,
                 hostKinds = kinds,
                 hostCaveats = caveats,

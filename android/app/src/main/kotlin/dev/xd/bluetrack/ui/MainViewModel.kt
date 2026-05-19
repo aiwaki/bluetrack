@@ -158,6 +158,15 @@ class MainViewModel(
         ble.disconnectActiveHost()
     }
 
+    /**
+     * Push the auto-connect toggle through to the gateway. Settings
+     * route owns the user-facing preference (DataStore-backed); this
+     * is the wire from the toggle to the runtime behaviour.
+     */
+    fun setAutoConnectEnabled(enabled: Boolean) {
+        ble.setAutoConnectEnabled(enabled)
+    }
+
     fun bluetoothPermissionMissing() {
         ble.reportPermissionMissing()
     }

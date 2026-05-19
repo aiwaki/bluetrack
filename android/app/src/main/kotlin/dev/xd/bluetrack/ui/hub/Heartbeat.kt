@@ -27,31 +27,39 @@ import kotlin.math.sin
 /**
  * Mint heartbeat trace beneath the Hub. Mirrors canvas
  * `Heartbeat` (`docs/design/v1/hub.jsx`): a faint sine baseline
- * with a spike every ~36 frames so the surface always looks
- * "alive" while the HID link is up.
+ * with a spike every ~36 frames so the surface looks "alive"
+ * while the HID link is up.
  *
- * Implemented as a [Canvas] that samples the same polyline shape
- * the canvas builds in JS, driven by an [infiniteRepeatable]
- * `phase` (0..1 over [BluetrackTokens.AURORA_DURATION_MS] / 8) so
- * the trace drifts left at a steady rate without per-frame
- * `requestAnimationFrame` churn.
+ * The earlier revision drove the spike with a fixed-rate
+ * `infiniteRepeatable` regardless of actual HID activity, so the
+ * trace looked the same whether the user was moving the cursor
+ * at 200 reports/s or sitting idle on a paired-but-quiet link.
+ * That read as fake. We now scale spike rate and amplitude by
+ * [intensity] (0f..1f) — 0 collapses to the calm baseline, 1
+ * gives the canvas spike cadence. The host activity intensity
+ * is fed from the Hub composable (`isInputLive` window).
  *
- * `active = false` collapses the trace to a flat hairline (canvas
- * "host disconnected" state) so the strip never animates when
- * there is nothing to communicate.
+ * `active = false` collapses the trace to a flat dashed hairline
+ * (canvas "host disconnected" state) so the strip never
+ * animates when there is nothing to communicate.
  */
 @Composable
 fun Heartbeat(
     active: Boolean,
     modifier: Modifier = Modifier,
+    intensity: Float = 0f,
 ) {
     val palette = BluetrackTheme.palette
+    val clampedIntensity = intensity.coerceIn(0f, 1f)
     val transition = rememberInfiniteTransition(label = "heartbeat")
+    // Period shortens with intensity. Calm idle ~3.6 s, full
+    // activity ~1.4 s — the eye reads that as "fast pulse".
+    val periodMs = (3_600 - 2_200 * clampedIntensity).toInt().coerceAtLeast(900)
     val phase by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2_400, easing = LinearEasing),
+            animation = tween(durationMillis = periodMs, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
         label = "heartbeatPhase",
@@ -84,16 +92,22 @@ fun Heartbeat(
         val path = Path()
         var x = 0f
         var first = true
+        // Spike height + baseline jitter both scale with intensity
+        // so a quiet link reads as a calm hairline and a busy one
+        // reads as a tall, rapid pulse.
+        val spikeUp = 7f * clampedIntensity
+        val spikeDown = 3f * clampedIntensity
+        val sineAmp = 0.6f * (0.4f + 0.6f * clampedIntensity)
         while (x <= w) {
             val v = (x + drift) / 12f
-            var y = baseY + (sin(v.toDouble()) * 0.6).toFloat()
+            var y = baseY + (sin(v.toDouble()) * sineAmp).toFloat()
             val spikeAt = ((x + drift) % 72f)
             if (spikeAt < 8f) {
                 val s = sin((spikeAt / 8f) * PI).toFloat()
-                y -= s * 7f
+                y -= s * spikeUp
             } else if (spikeAt < 14f) {
                 val s = sin(((spikeAt - 8f) / 6f) * PI).toFloat()
-                y += s * 3f
+                y += s * spikeDown
             }
             if (first) {
                 path.moveTo(x, y)

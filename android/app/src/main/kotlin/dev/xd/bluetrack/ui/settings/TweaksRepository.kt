@@ -50,6 +50,16 @@ class TweaksRepository(
     val auroraOnLowBattery: Flow<Boolean> = ds.data.map { it[KEY_AURORA_LOW_BAT] ?: false }
     val neonStrength: Flow<Float> = ds.data.map { it[KEY_NEON_STRENGTH] ?: 1f }
 
+    /**
+     * Whether the gateway auto-connects bonded computer-class
+     * hosts. Default `true` matches the original "calm autopilot"
+     * design — the user just needs the phone paired and the
+     * Mac/PC online for the link to come back. Settings exposes
+     * this as a toggle so users who run multiple phones / hosts
+     * can opt into a fully manual `tap to CONNECT` flow.
+     */
+    val autoConnectEnabled: Flow<Boolean> = ds.data.map { it[KEY_AUTO_CONNECT] ?: true }
+
     suspend fun setMotionReduced(value: Boolean) {
         ds.edit { it[KEY_MOTION_REDUCED] = value }
     }
@@ -66,8 +76,12 @@ class TweaksRepository(
         ds.edit { it[KEY_NEON_STRENGTH] = value.coerceIn(0f, 1f) }
     }
 
+    suspend fun setAutoConnectEnabled(value: Boolean) {
+        ds.edit { it[KEY_AUTO_CONNECT] = value }
+    }
+
     /**
-     * Persist all four tweak keys in a single atomic DataStore
+     * Persist all tweak keys in a single atomic DataStore
      * transaction. Used by the Settings route so a fast slider
      * drag (or any rapid sequence of changes) cannot interleave
      * stale snapshots across coroutines and revert newer values.
@@ -80,6 +94,7 @@ class TweaksRepository(
             it[KEY_GLASS_ENABLED] = state.glassEnabled
             it[KEY_AURORA_LOW_BAT] = state.auroraOnLowBattery
             it[KEY_NEON_STRENGTH] = state.neonStrength.coerceIn(0f, 1f)
+            it[KEY_AUTO_CONNECT] = state.autoConnectEnabled
         }
     }
 
@@ -88,6 +103,7 @@ class TweaksRepository(
         val KEY_GLASS_ENABLED = booleanPreferencesKey("glass_enabled")
         val KEY_AURORA_LOW_BAT = booleanPreferencesKey("aurora_on_low_battery")
         val KEY_NEON_STRENGTH = floatPreferencesKey("neon_strength")
+        val KEY_AUTO_CONNECT = booleanPreferencesKey("auto_connect_enabled")
     }
 }
 
@@ -103,6 +119,7 @@ data class TweaksState(
     val glassEnabled: Boolean = true,
     val auroraOnLowBattery: Boolean = false,
     val neonStrength: Float = 1f,
+    val autoConnectEnabled: Boolean = true,
 ) {
     companion object {
         val Default = TweaksState()

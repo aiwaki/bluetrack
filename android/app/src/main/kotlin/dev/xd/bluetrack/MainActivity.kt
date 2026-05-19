@@ -5,15 +5,19 @@ import android.annotation.SuppressLint
 import android.app.Activity.RESULT_OK
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.provider.Settings
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -73,7 +77,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -147,17 +150,27 @@ class MainActivity : ComponentActivity() {
             BluetrackTheme {
                 val router = rememberRouter()
                 var gamepadActive by remember { mutableStateOf(false) }
-                // Combine the four DataStore-backed tweak flows
-                // into a single `TweaksState` so the shell only
-                // recomposes once per change.
-                val tweaks by remember {
-                    combine(
-                        tweaksRepo.motionReduced,
-                        tweaksRepo.glassEnabled,
-                        tweaksRepo.auroraOnLowBattery,
-                        tweaksRepo.neonStrength,
-                    ) { m, g, a, n -> TweaksState(m, g, a, n) }
-                }.collectAsState(initial = TweaksState.Default)
+                // Visual tweaks are now fixed at the design baseline
+                // — glass surfaces off (the UI reads cleaner flat),
+                // motion not reduced, no aurora-on-low-battery, neon
+                // at full strength. Only `autoConnectEnabled` is
+                // surfaced through DataStore today; the rest of the
+                // `TweaksRepository` plumbing is kept for forward-
+                // compat (a future advanced page could expose them
+                // again) but the Settings route no longer surfaces
+                // those toggles.
+                val autoConnectEnabled by tweaksRepo.autoConnectEnabled
+                    .collectAsState(initial = true)
+                LaunchedEffect(autoConnectEnabled) {
+                    vm.setAutoConnectEnabled(autoConnectEnabled)
+                }
+                val tweaks = TweaksState(
+                    motionReduced = false,
+                    glassEnabled = false,
+                    auroraOnLowBattery = false,
+                    neonStrength = 1f,
+                    autoConnectEnabled = autoConnectEnabled,
+                )
                 // Lock orientation to landscape while the gamepad
                 // surface is up; restore to sensor when we leave so
                 // the rest of the app stays portrait-first. Using
@@ -275,20 +288,23 @@ class MainActivity : ComponentActivity() {
                             Route.Activity -> ActivityScreen(
                                 status = vm.status.collectAsState().value,
                                 now = SystemClock.elapsedRealtime(),
+                                onBack = { router.navigate(Route.Hub) },
                             )
                             Route.Diagnostics -> DiagnosticsScreen(
                                 status = vm.status.collectAsState().value,
                             )
                             Route.Settings -> SettingsScreen(
                                 status = vm.status.collectAsState().value,
-                                tweaks = tweaks,
-                                onTweakChange = { next -> persistTweaks(next) },
-                                onNavigate = router::navigate,
-                                onForgetHost = { vm.forgetTrustedHost() },
                                 versionName = BuildConfig.VERSION_NAME,
                                 versionCode = BuildConfig.VERSION_CODE,
                                 nearbyPermissionGranted = hasBluetoothPermissions(),
                                 notificationsPermissionGranted = hasNotificationsPermission(),
+                                autoConnectEnabled = autoConnectEnabled,
+                                onAutoConnectChange = { persistAutoConnect(it) },
+                                onOpenNotificationSettings = { openNotificationSettings() },
+                                onOpenAppPermissions = { openAppPermissions() },
+                                onOpenSourceCode = { openSourceCode() },
+                                onResetLifetimeCounters = { vm.resetLifetimeCounters() },
                             )
                         }
                     }
@@ -425,6 +441,69 @@ class MainActivity : ComponentActivity() {
     private fun bluetoothAdapter(): BluetoothAdapter? =
         (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
 
+    /**
+     * Persist the auto-connect toggle. Uses the same conflated
+     * pipeline as the legacy Appearance toggles so a rapid
+     * tap-tap-tap cannot interleave stale writes.
+     */
+    private fun persistAutoConnect(enabled: Boolean) {
+        val next = TweaksState(
+            motionReduced = false,
+            glassEnabled = false,
+            auroraOnLowBattery = false,
+            neonStrength = 1f,
+            autoConnectEnabled = enabled,
+        )
+        pendingTweaks.tryEmit(next)
+        // Propagate to the gateway immediately so the toggle
+        // takes effect before the DataStore flow round-trip
+        // completes.
+        vm.setAutoConnectEnabled(enabled)
+    }
+
+    private fun openNotificationSettings() {
+        // `ACTION_APP_NOTIFICATION_SETTINGS` lands on the per-app
+        // channels page on API 26+; older devices fall through to
+        // the generic app-details page via `openAppPermissions`.
+        val intent =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            } else {
+                appDetailsIntent()
+            }
+        startActivitySafely(intent, "Notification settings unavailable on this device.")
+    }
+
+    private fun openAppPermissions() {
+        startActivitySafely(
+            appDetailsIntent(),
+            "App permissions screen unavailable on this device.",
+        )
+    }
+
+    private fun appDetailsIntent(): Intent =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            .setData(Uri.fromParts("package", packageName, null))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    private fun openSourceCode() {
+        val intent =
+            Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/aiwaki/bluetrack"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivitySafely(intent, "No browser available to open the source repository.")
+    }
+
+    private fun startActivitySafely(intent: Intent, fallbackToast: String) {
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, fallbackToast, Toast.LENGTH_SHORT).show()
+        } catch (_: SecurityException) {
+            Toast.makeText(this, fallbackToast, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun ensureKeepAliveService() {
         val intent = Intent(this, HidKeepAliveService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -559,7 +638,15 @@ private fun AppScreen(
                 items = status.events.take(4).map { it.toActivityItem(relativeAgeLabel(now, it.timestampMs)) },
                 onOpen = { onNavigate(Route.Activity) },
             )
-            Heartbeat(active = isConnected(status))
+            Heartbeat(
+                active = isConnected(status),
+                // Real activity feed: how recently the last HID
+                // report or input event landed. Full intensity for
+                // the first 500 ms, linear decay to 0 over the next
+                // 3 s — matches the eye's "is this still alive?"
+                // window without flapping on individual frames.
+                intensity = heartbeatIntensity(status, now),
+            )
         }
     }
 }
@@ -710,13 +797,36 @@ private fun TouchpadPanel(
                     setOnTouchListener { _, ev ->
                         var batchX = 0f
                         var batchY = 0f
+                        // Touchpad surface is portrait-shaped (taller
+                        // than wide) on the Hub route, so the same
+                        // physical finger swipe covers a smaller
+                        // fraction of the X axis than of the Y axis.
+                        // Equal-coefficient scaling (0.42f on both)
+                        // mapped that into asymmetric cursor speed:
+                        // X felt slower than Y. Normalise by the
+                        // longer dimension so a swipe across 100 %
+                        // of either axis emits the same magnitude.
+                        //
+                        // The per-axis clamp (`coerceIn`) ALSO has
+                        // to scale — a uniform `-22..22` cap squashes
+                        // the boosted X axis the moment a fast swipe
+                        // pushes the scaled delta past 22. We lift
+                        // each cap by the same factor so the linear
+                        // response holds end-to-end.
+                        val w = width.toFloat()
+                        val h = height.toFloat()
+                        val longest = kotlin.math.max(w, h).coerceAtLeast(1f)
+                        val sx = if (w > 0f) longest / w else 1f
+                        val sy = if (h > 0f) longest / h else 1f
+                        val capX = 22f * sx
+                        val capY = 22f * sy
 
                         fun processPoint(
                             x: Float,
                             y: Float,
                         ) {
-                            val dx = ((x - lastX) * 0.42f).coerceIn(-22f, 22f)
-                            val dy = ((y - lastY) * 0.42f).coerceIn(-22f, 22f)
+                            val dx = ((x - lastX) * sx * 0.42f).coerceIn(-capX, capX)
+                            val dy = ((y - lastY) * sy * 0.42f).coerceIn(-capY, capY)
                             lastX = x
                             lastY = y
                             filteredX = filteredX * 0.18f + dx * 0.82f
@@ -886,6 +996,25 @@ private fun isInputLive(
     status: GatewayStatus,
     now: Long,
 ): Boolean = status.lastInputAtMs?.let { now - it < 1400L } == true
+
+/**
+ * Map the most recent input / HID-report timestamp into a 0..1
+ * intensity the Heartbeat composable uses to scale spike height
+ * and pulse rate. Hot in the first 500 ms after activity, linear
+ * decay to 0 over the next 3 s.
+ */
+private fun heartbeatIntensity(
+    status: GatewayStatus,
+    now: Long,
+): Float {
+    val latest = listOfNotNull(status.lastInputAtMs, status.lastReportAtMs).maxOrNull() ?: return 0f
+    val age = (now - latest).coerceAtLeast(0L)
+    return when {
+        age < 500L -> 1f
+        age < 3_500L -> 1f - (age - 500L) / 3_000f
+        else -> 0f
+    }
+}
 
 private fun compactCount(value: Int): String =
     if (value < 1000) value.toString() else "${value / 1000}.${(value % 1000) / 100}k"

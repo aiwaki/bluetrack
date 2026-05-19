@@ -49,7 +49,13 @@ fun BluetrackDock(
     neonStrength: Float = 1f,
 ) {
     val palette = BluetrackTheme.palette
-    val routes = Route.entries
+    // Activity is intentionally absent from the dock — the route is
+    // still reachable via the Hub `ActivityStrip` "Open" affordance,
+    // and ActivityScreen now renders a leading `‹` back arrow that
+    // navigates back to Hub. Keeping it off the dock cuts the four-
+    // slot clutter the user flagged ("activity dock removal") while
+    // preserving the timeline view itself.
+    val routes = Route.entries.filter { it != Route.Activity }
     val activeIndex = routes.indexOf(current).coerceAtLeast(0)
 
     Box(
