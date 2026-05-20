@@ -210,11 +210,15 @@ class MainViewModel(
      * the user doesn't have to do it in two steps.
      */
     fun removeBondedDevice(name: String) {
-        ble.removeBondedDevice(name)
-        // If the removed device was the active host, also drop
-        // the trusted host pin — the next handshake will be a
-        // fresh TOFU.
-        if (ble.status.value.host == name) {
+        val wasActiveHost = ble.status.value.host == name
+        val removed = ble.removeBondedDevice(name)
+        // Only drop the TOFU pin when we actually unpaired the
+        // device. Codex review on PR #57 flagged that we used to
+        // clear the trust pin even if `removeBond()` returned
+        // false (reflection refused, OS denied, etc.), which left
+        // the bond on the adapter while wiping the trust state —
+        // a confusing partial unpair.
+        if (removed && wasActiveHost) {
             ble.forgetTrustedHost()
         }
     }

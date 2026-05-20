@@ -740,9 +740,36 @@ class BleHidGateway(
 
         try {
             val bondedDevices = bluetoothAdapter.bondedDevices
+            // Resolve the target. Bluetooth display names are NOT
+            // unique (Codex review on PR #57 — two bonded devices
+            // can share a name, e.g. "MacBook Pro" if the user
+            // owns more than one). When the name maps to multiple
+            // bonded devices we refuse the request rather than
+            // picking an arbitrary match — the alternative would
+            // silently send HID connect to the wrong host.
+            val nameMatches =
+                if (targetName != null) {
+                    bondedDevices.filter { it.safeName() == targetName }
+                } else {
+                    emptyList()
+                }
+            if (targetName != null && nameMatches.size > 1) {
+                updateStatus(
+                    pairing = "Ambiguous host name",
+                    compatibility = snapshotCompatibility(),
+                    error =
+                        "Multiple bonded devices are named \"$targetName\". " +
+                            "Rename one on its host to disambiguate, then tap CONNECT again.",
+                    eventSource = "HID",
+                    eventMessage =
+                        "Tap-to-connect refused: $targetName resolves to " +
+                            "${nameMatches.size} bonded devices.",
+                )
+                return
+            }
             val candidate =
                 if (targetName != null) {
-                    bondedDevices.firstOrNull { it.safeName() == targetName }
+                    nameMatches.firstOrNull()
                 } else {
                     bondedDevices.bestHidHost()
                 }
@@ -1563,7 +1590,24 @@ class BleHidGateway(
     fun removeBondedDevice(name: String): Boolean {
         val adapter = adapter ?: return false
         return try {
-            val device = adapter.bondedDevices.firstOrNull { it.safeName() == name } ?: return false
+            // Same ambiguous-name protection as the connect path:
+            // refuse to unpair when two bonded devices share a
+            // display name. Acting on an arbitrary match would
+            // silently kill the wrong bond.
+            val candidates = adapter.bondedDevices.filter { it.safeName() == name }
+            if (candidates.size != 1) {
+                updateStatus(
+                    eventSource = "HID",
+                    eventMessage =
+                        if (candidates.isEmpty()) {
+                            "Unpair refused: \"$name\" is not bonded."
+                        } else {
+                            "Unpair refused: ${candidates.size} bonded devices named \"$name\"."
+                        },
+                )
+                return false
+            }
+            val device = candidates.first()
             // Hidden API — public since API 5, never removed.
             // Reflection is the supported pattern in every
             // production unpair sample I could find.
