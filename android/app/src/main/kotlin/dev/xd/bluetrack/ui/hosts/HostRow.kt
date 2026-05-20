@@ -77,27 +77,55 @@ fun HostRow(
     val isIgnored = host.state == HostState.Ignored
     val isActive = host.state == HostState.Active
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
+    val isIncompatible = host.state == HostState.Incompatible
+    // Border / accent picker. Earlier only Active rows carried a
+    // visual accent, so Incompatible (e.g. iPhone — iOS does not
+    // accept third-party HID) looked identical to Available and
+    // the user had to read the chip to tell them apart. We now
+    // give each non-default state its own affordance:
+    //   - Active       → 3 dp mint left-rail
+    //   - Incompatible → 2 dp warn left-rail (calm, not loud)
+    //   - Ignored      → 1 dp hairline outline (whole row,
+    //                    paired with the existing 66 % alpha)
+    val accentBorder: Modifier =
+        when {
+            isActive ->
+                Modifier.border(
+                    width = 3.dp,
+                    color = palette.mint,
+                    shape = RoundedCornerShape(
+                        topStart = BluetrackTokens.RadiusMd,
+                        bottomStart = BluetrackTokens.RadiusMd,
+                        topEnd = 0.dp,
+                        bottomEnd = 0.dp,
+                    ),
+                )
+            isIncompatible ->
+                Modifier.border(
+                    width = 2.dp,
+                    color = palette.warn.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(
+                        topStart = BluetrackTokens.RadiusMd,
+                        bottomStart = BluetrackTokens.RadiusMd,
+                        topEnd = 0.dp,
+                        bottomEnd = 0.dp,
+                    ),
+                )
+            isIgnored ->
+                Modifier.border(
+                    width = 1.dp,
+                    color = palette.hairline,
+                    shape = shape,
+                )
+            else -> Modifier
+        }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
             .btGlass(strong = false, shape = shape)
-            .let { m ->
-                if (isActive) {
-                    m.border(
-                        width = 3.dp,
-                        color = palette.mint,
-                        shape = RoundedCornerShape(
-                            topStart = BluetrackTokens.RadiusMd,
-                            bottomStart = BluetrackTokens.RadiusMd,
-                            topEnd = 0.dp,
-                            bottomEnd = 0.dp,
-                        ),
-                    )
-                } else {
-                    m
-                }
-            }.alpha(if (isIgnored) 0.66f else 1f)
+            .then(accentBorder)
+            .alpha(if (isIgnored) 0.66f else 1f)
             .padding(BluetrackTokens.Sp3),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
