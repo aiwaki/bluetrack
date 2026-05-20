@@ -185,7 +185,7 @@ class BleHidGateway(
     private var lastGamepadWakeAtMs = 0L
     private var lastGamepadDiscoveryWakeAtMs = 0L
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private val _status = MutableStateFlow(GatewayStatus())
+    private val _status = MutableStateFlow(GatewayStatus(lifetimeCounters = lifetimeCounters.current()))
     val status: StateFlow<GatewayStatus> = _status
 
     /**
