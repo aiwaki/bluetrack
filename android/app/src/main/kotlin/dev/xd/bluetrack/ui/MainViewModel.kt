@@ -59,12 +59,31 @@ class MainViewModel(
 
     init {
         viewModelScope.launch(Dispatchers.Default) {
+            // Seed both baselines but DROP the first computed
+            // delta. At VM construction the gateway's StateFlow
+            // is still in its initial empty state — the persisted
+            // `lifetimeCounters` from `LifetimeCountersStore` only
+            // surfaces in `_status` once the first updateStatus()
+            // fires (typically when the first HID report is sent
+            // or compatibility is refreshed). If we count that
+            // first sample we record the entire persisted lifetime
+            // total as a single 1-second delta (e.g. 3802/s on a
+            // device with 3802 reports retained). Skipping the
+            // first tick lets the seed settle on the real disk
+            // value before deltas start accumulating.
             var lastReports = ble.status.value.lifetimeCounters.reports
             var lastFeedback = ble.status.value.lifetimeCounters.feedback
+            var primed = false
             while (isActive) {
                 delay(1_000L)
                 val currentReports = ble.status.value.lifetimeCounters.reports
                 val currentFeedback = ble.status.value.lifetimeCounters.feedback
+                if (!primed) {
+                    lastReports = currentReports
+                    lastFeedback = currentFeedback
+                    primed = true
+                    continue
+                }
                 val dR = (currentReports - lastReports).coerceAtLeast(0L)
                 val dF = (currentFeedback - lastFeedback).coerceAtLeast(0L)
                 lastReports = currentReports
