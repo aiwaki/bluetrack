@@ -7,11 +7,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,7 +32,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.xd.bluetrack.ui.shell.btGlass
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
-import dev.xd.bluetrack.ui.theme.BluetrackTokens
 import kotlinx.coroutines.delay
 
 /**
@@ -66,7 +68,6 @@ fun GamepadSurface(
     modifier: Modifier = Modifier,
 ) {
     val palette = BluetrackTheme.palette
-    var diagOpen by remember { mutableStateOf(false) }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -75,15 +76,23 @@ fun GamepadSurface(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                // Respect status / navigation bar insets — earlier the
+                // top rail (Exit pill, host chip) sat under the
+                // carrier-name / clock band and got clipped on notch
+                // devices.
+                .windowInsetsPadding(WindowInsets.systemBars)
                 .padding(horizontal = 28.dp, vertical = 14.dp),
         ) {
             TopRail(
                 hostName = hostName,
                 onExit = onExit,
-                diagOpen = diagOpen,
-                onToggleDiag = { diagOpen = !diagOpen },
             )
-            // Main row: 4 equal columns.
+            // Main row: 4 equal columns. Reorganised to match the
+            // physical Xbox controller layout — LT/RT now sit at
+            // the top of each side column (analog triggers sit on
+            // top of the bumpers on real hardware when the
+            // controller is held), LB/RB below, then the
+            // thumbstick anchored at the bottom corner.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -97,14 +106,14 @@ fun GamepadSurface(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Trigger(
-                        label = "LB",
-                        digital = false,
-                        onChange = { p -> onButton("LB", p) },
-                    )
-                    Trigger(
                         label = "LT",
                         digital = true,
                         onChange = { p -> onButton("LT", p) },
+                    )
+                    Trigger(
+                        label = "LB",
+                        digital = false,
+                        onChange = { p -> onButton("LB", p) },
                     )
                     Stick(
                         label = "L",
@@ -133,14 +142,14 @@ fun GamepadSurface(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Trigger(
-                        label = "RB",
-                        digital = false,
-                        onChange = { p -> onButton("RB", p) },
-                    )
-                    Trigger(
                         label = "RT",
                         digital = true,
                         onChange = { p -> onButton("RT", p) },
+                    )
+                    Trigger(
+                        label = "RB",
+                        digital = false,
+                        onChange = { p -> onButton("RB", p) },
                     )
                     Stick(
                         label = "R",
@@ -150,9 +159,6 @@ fun GamepadSurface(
                 }
             }
         }
-        if (diagOpen) {
-            DiagFold(seq = seq, modifier = Modifier.align(Alignment.CenterEnd))
-        }
     }
 }
 
@@ -160,8 +166,6 @@ fun GamepadSurface(
 private fun TopRail(
     hostName: String,
     onExit: () -> Unit,
-    diagOpen: Boolean,
-    onToggleDiag: () -> Unit,
 ) {
     val palette = BluetrackTheme.palette
     Row(
@@ -198,84 +202,6 @@ private fun TopRail(
         ConnectionLozenge(host = hostName, latency = "—")
         WakeTrainChip()
         Box(modifier = Modifier.weight(1f))
-        // Diag handle.
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
-                .btGlass(strong = false, shape = RoundedCornerShape(BluetrackTokens.RadiusSm))
-                .border(
-                    1.dp,
-                    if (diagOpen) palette.mintBright else palette.glassBorder,
-                    RoundedCornerShape(BluetrackTokens.RadiusSm),
-                ).clickable(onClick = onToggleDiag),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "≡",
-                color = if (diagOpen) palette.mintBright else palette.fg1,
-                fontSize = 18.sp,
-                fontFamily = FontFamily.Monospace,
-            )
-        }
-    }
-}
-
-@Composable
-private fun DiagFold(
-    seq: Long,
-    modifier: Modifier = Modifier,
-) {
-    val palette = BluetrackTheme.palette
-    val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
-    Column(
-        modifier = modifier
-            .padding(end = 28.dp, top = 56.dp, bottom = 14.dp)
-            .clip(shape)
-            .btGlass(strong = true, shape = shape)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Text(
-            text = "LIVE STATE",
-            color = palette.fg2,
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 1.6.sp,
-        )
-        DiagLine(k = "Seq", v = "#$seq")
-        DiagLine(k = "Trigger pressure", v = "digital only")
-        // Last 6 reports — synthetic placeholder until the
-        // transport exposes a real per-report log; mirrors the
-        // canvas mock.
-        Text(
-            text = "LAST 6 REPORTS",
-            color = palette.fg2,
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 1.6.sp,
-            modifier = Modifier.padding(top = 6.dp),
-        )
-        (0 until 6).forEach { i ->
-            Text(
-                text = "#${seq - i} · ${(i * 8 + 12).toString().padStart(3, '0')}ms · 7B",
-                color = palette.fg2,
-                fontSize = 9.sp,
-                fontFamily = FontFamily.Monospace,
-            )
-        }
-    }
-}
-
-@Composable
-private fun DiagLine(k: String, v: String) {
-    val palette = BluetrackTheme.palette
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(text = k, color = palette.fg2, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-        Text(text = v, color = palette.fg0, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
     }
 }
 

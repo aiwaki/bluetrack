@@ -17,6 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -78,54 +81,43 @@ fun HostRow(
     val isActive = host.state == HostState.Active
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
     val isIncompatible = host.state == HostState.Incompatible
-    // Border / accent picker. Earlier only Active rows carried a
-    // visual accent, so Incompatible (e.g. iPhone — iOS does not
-    // accept third-party HID) looked identical to Available and
-    // the user had to read the chip to tell them apart. We now
-    // give each non-default state its own affordance:
-    //   - Active       → 3 dp mint left-rail
-    //   - Incompatible → 2 dp warn left-rail (calm, not loud)
-    //   - Ignored      → 1 dp hairline outline (whole row,
-    //                    paired with the existing 66 % alpha)
-    val accentBorder: Modifier =
+    // Each non-default state gets its own affordance. We can't
+    // use a square-cornered `Modifier.border` here because the
+    // row is clipped to a fully rounded shape and the
+    // accent rectangle's right-side sharp corners would get
+    // truncated by the clip — visible as a notch on Active /
+    // Incompatible rows. Instead the left rail is painted via
+    // `drawBehind` inside the clipped area; Ignored still uses
+    // a full-perimeter hairline border whose shape matches the
+    // clip exactly.
+    val leftRail: Pair<Color, Float>? =
         when {
-            isActive ->
-                Modifier.border(
-                    width = 3.dp,
-                    color = palette.mint,
-                    shape = RoundedCornerShape(
-                        topStart = BluetrackTokens.RadiusMd,
-                        bottomStart = BluetrackTokens.RadiusMd,
-                        topEnd = 0.dp,
-                        bottomEnd = 0.dp,
-                    ),
-                )
-            isIncompatible ->
-                Modifier.border(
-                    width = 2.dp,
-                    color = palette.warn.copy(alpha = 0.55f),
-                    shape = RoundedCornerShape(
-                        topStart = BluetrackTokens.RadiusMd,
-                        bottomStart = BluetrackTokens.RadiusMd,
-                        topEnd = 0.dp,
-                        bottomEnd = 0.dp,
-                    ),
-                )
-            isIgnored ->
-                Modifier.border(
-                    width = 1.dp,
-                    color = palette.hairline,
-                    shape = shape,
-                )
-            else -> Modifier
+            isActive -> palette.mint to 3.dp.value
+            isIncompatible -> palette.warn.copy(alpha = 0.55f) to 2.dp.value
+            else -> null
+        }
+    val outline: Modifier =
+        if (isIgnored) {
+            Modifier.border(width = 1.dp, color = palette.hairline, shape = shape)
+        } else {
+            Modifier
         }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
             .btGlass(strong = false, shape = shape)
-            .then(accentBorder)
-            .alpha(if (isIgnored) 0.66f else 1f)
+            .then(outline)
+            .drawBehind {
+                leftRail?.let { (color, widthDp) ->
+                    val px = widthDp * density
+                    drawRect(
+                        color = color,
+                        topLeft = Offset.Zero,
+                        size = Size(px, size.height),
+                    )
+                }
+            }.alpha(if (isIgnored) 0.66f else 1f)
             .padding(BluetrackTokens.Sp3),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),

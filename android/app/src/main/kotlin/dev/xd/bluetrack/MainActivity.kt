@@ -19,7 +19,9 @@ import android.view.MotionEvent
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -81,6 +83,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import android.graphics.Color as AndroidColor
 
 class MainActivity : ComponentActivity() {
     private lateinit var vm: MainViewModel
@@ -147,6 +150,16 @@ class MainActivity : ComponentActivity() {
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Edge-to-edge: status + navigation bars go transparent
+        // so the app's dark background bleeds through and the
+        // system bars stop reading as a foreign band on top /
+        // bottom. `SystemBarStyle.dark(...)` forces light icons,
+        // which is what we want against the Bluetrack dark
+        // palette (`bg0`). Must be called before `super.onCreate`.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+        )
         super.onCreate(savedInstanceState)
         val container = (application as BluetrackApplication).container
         vm = MainViewModel(container.bleGateway, container.translationEngine)
