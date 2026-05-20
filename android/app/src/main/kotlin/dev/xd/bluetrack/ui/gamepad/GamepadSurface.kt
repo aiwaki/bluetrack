@@ -3,18 +3,24 @@ package dev.xd.bluetrack.ui.gamepad
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,35 +33,36 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.xd.bluetrack.ui.shell.btGlass
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
 import kotlinx.coroutines.delay
 
 /**
- * Full landscape gamepad surface. Mirrors canvas `GamepadScreen`
- * + `GamepadLandscape` (`docs/design/v1/gamepad.jsx`).
+ * Full landscape gamepad surface — redesigned 2026-05-20.
  *
- * Layout (left → right):
+ * Layout (landscape):
  *
- *   ┌────────────────────────────────────────────────────┐
- *   │ EXIT  HOST · 14 ms  WAKE TRAIN  diag-handle        │  ← top rail
- *   ├──────┬──────────────┬──────────────┬───────────────┤
- *   │  LB  │              │              │      RB       │
- *   │  LT  │  D-Pad       │  Face btns   │      RT       │
- *   │  L●  │  centre rail │  FrameCount  │      R●       │
- *   └──────┴──────────────┴──────────────┴───────────────┘
+ *   ┌──────────────────────────────────────────────────────────────┐
+ *   │  ← EXIT       ● GAMEPAD LIVE · MacBook · XINPUT · 16-BTN     │  ← top status
+ *   ├──────────────────────────────────────────────────────────────┤
+ *   │       L2 ▓          L1 ━                R1 ━          ▓ R2  │  ← shoulders / triggers
+ *   │                                                              │
+ *   │  ◉ L-stick   D-pad   SELECT  ● HOME ●  START   ABXY  R-stick ◉│
+ *   │                                                              │
+ *   ├──────────────────────────────────────────────────────────────┤
+ *   │  POLL 1000   LAT 6.2 ms   REPORTS 42 k   UPTIME 3:41         │  ← stats
+ *   └──────────────────────────────────────────────────────────────┘
  *
  * Pure presentation + local press / drag state. Stick drags fire
  * [onStickMotion] (left = source `"L"`, right = `"R"`), button /
  * trigger / D-pad / face presses fire [onButton]; the host
  * activity wires those into `MainViewModel` / the HID transport.
- *
- * The connection lozenge and frame counter pull from
- * [hostName] / [seq] / [pulse] passed in by the caller so the
- * surface stays a stateless composable easy to preview.
  */
 @Composable
 fun GamepadSurface(
@@ -66,6 +73,10 @@ fun GamepadSurface(
     onStickMotion: (source: String, x: Float, y: Float) -> Unit,
     onButton: (label: String, pressed: Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    pollHz: Int = 0,
+    latencyMs: Float = 0f,
+    reportsTotal: Long = 0L,
+    uptimeMs: Long = 0L,
 ) {
     val palette = BluetrackTheme.palette
     Box(
@@ -76,94 +87,58 @@ fun GamepadSurface(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                // Respect status / navigation bar insets — earlier the
-                // top rail (Exit pill, host chip) sat under the
-                // carrier-name / clock band and got clipped on notch
-                // devices.
+                // Respect system bars so the top status row clears
+                // the carrier / clock band and the bottom stat rail
+                // clears the gesture handle on Android 10+.
                 .windowInsetsPadding(WindowInsets.systemBars)
-                .padding(horizontal = 28.dp, vertical = 14.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            TopRail(
+            TopStatusRail(
                 hostName = hostName,
                 onExit = onExit,
             )
-            // Main row: 4 equal columns. Reorganised to match the
-            // physical Xbox controller layout — LT/RT now sit at
-            // the top of each side column (analog triggers sit on
-            // top of the bumpers on real hardware when the
-            // controller is held), LB/RB below, then the
-            // thumbstick anchored at the bottom corner.
+
+            // Body row: 5 zones from left to right.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    .weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Column(
+                LeftThumbStack(
+                    onStickMotion = onStickMotion,
+                    onButton = onButton,
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Trigger(
-                        label = "LT",
-                        digital = true,
-                        onChange = { p -> onButton("LT", p) },
-                    )
-                    Trigger(
-                        label = "LB",
-                        digital = false,
-                        onChange = { p -> onButton("LB", p) },
-                    )
-                    Stick(
-                        label = "L",
-                        onChange = { x, y -> onStickMotion("L", x, y) },
-                        modifier = Modifier.size(110.dp),
-                    )
-                }
-                Column(
+                )
+                CenterStack(
+                    seq = seq,
+                    pulse = pulse,
+                    onButton = onButton,
+                    modifier = Modifier.weight(1.2f),
+                )
+                RightThumbStack(
+                    onStickMotion = onStickMotion,
+                    onButton = onButton,
                     modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    DPad(onHat = { hat -> onButton("HAT_$hat", hat != 8) })
-                    CenterRail(onPress = onButton)
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    FaceButtons(onChange = onButton)
-                    FrameCounter(seq = seq, pulse = pulse)
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Trigger(
-                        label = "RT",
-                        digital = true,
-                        onChange = { p -> onButton("RT", p) },
-                    )
-                    Trigger(
-                        label = "RB",
-                        digital = false,
-                        onChange = { p -> onButton("RB", p) },
-                    )
-                    Stick(
-                        label = "R",
-                        onChange = { x, y -> onStickMotion("R", x, y) },
-                        modifier = Modifier.size(110.dp),
-                    )
-                }
+                )
             }
+
+            BottomStatsRail(
+                pollHz = pollHz,
+                latencyMs = latencyMs,
+                reportsTotal = reportsTotal,
+                uptimeMs = uptimeMs,
+            )
         }
     }
 }
 
+// ─── Top status rail ────────────────────────────────────────
+
 @Composable
-private fun TopRail(
+private fun TopStatusRail(
     hostName: String,
     onExit: () -> Unit,
 ) {
@@ -171,17 +146,16 @@ private fun TopRail(
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Exit pill.
+        // Exit pill — leading.
         Row(
             modifier = Modifier
-                .height(28.dp)
+                .height(32.dp)
                 .clip(RoundedCornerShape(999.dp))
-                .btGlass(strong = false, shape = RoundedCornerShape(999.dp))
                 .border(1.dp, palette.glassBorder, RoundedCornerShape(999.dp))
                 .clickable(onClick = onExit)
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
@@ -194,22 +168,499 @@ private fun TopRail(
             Text(
                 text = "EXIT",
                 color = palette.fg1,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
                 letterSpacing = 1.6.sp,
+                fontWeight = FontWeight.Bold,
             )
         }
-        ConnectionLozenge(host = hostName, latency = "—")
-        WakeTrainChip()
-        Box(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.weight(1f))
+        // Status badges.
+        StatusDotLabel(label = "GAMEPAD LIVE", color = palette.crit)
+        StatusDivider()
+        Text(
+            text = hostName,
+            color = palette.fg2,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        StatusDivider()
+        Text(
+            text = "XINPUT · 16-BTN",
+            color = palette.fg2,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 0.6.sp,
+        )
+    }
+}
+
+@Composable
+private fun StatusDotLabel(label: String, color: Color) {
+    val palette = BluetrackTheme.palette
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(7.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        Text(
+            text = label,
+            color = palette.fg1,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp,
+        )
+    }
+}
+
+@Composable
+private fun StatusDivider() {
+    val palette = BluetrackTheme.palette
+    Text(
+        text = "·",
+        color = palette.fg3,
+        fontSize = 11.sp,
+        fontFamily = FontFamily.Monospace,
+    )
+}
+
+// ─── Left thumb stack: L-stick + D-pad + L1/L2 ─────────────
+
+@Composable
+private fun LeftThumbStack(
+    onStickMotion: (String, Float, Float) -> Unit,
+    onButton: (String, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxHeight(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Outer rail: L2 vertical bar.
+        VerticalTriggerBar(
+            label = "L2",
+            digital = true,
+            onChange = { p -> onButton("LT", p) },
+            modifier = Modifier.fillMaxHeight(0.85f),
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            HorizontalShoulderPill(
+                label = "L1",
+                onChange = { p -> onButton("LB", p) },
+            )
+            Stick(
+                label = "L",
+                onChange = { x, y -> onStickMotion("L", x, y) },
+                modifier = Modifier.size(124.dp),
+            )
+            DPad(onHat = { hat -> onButton("HAT_$hat", hat != 8) })
+        }
+    }
+}
+
+// ─── Right thumb stack: R-stick + ABXY + R1/R2 ────────────
+
+@Composable
+private fun RightThumbStack(
+    onStickMotion: (String, Float, Float) -> Unit,
+    onButton: (String, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxHeight(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            HorizontalShoulderPill(
+                label = "R1",
+                onChange = { p -> onButton("RB", p) },
+            )
+            FaceButtons(onChange = onButton)
+            Stick(
+                label = "R",
+                onChange = { x, y -> onStickMotion("R", x, y) },
+                modifier = Modifier.size(124.dp),
+            )
+        }
+        VerticalTriggerBar(
+            label = "R2",
+            digital = true,
+            onChange = { p -> onButton("RT", p) },
+            modifier = Modifier.fillMaxHeight(0.85f),
+        )
+    }
+}
+
+// ─── Center: SELECT · HOME · START · frame counter ──────
+
+@Composable
+private fun CenterStack(
+    seq: Long,
+    pulse: Boolean,
+    onButton: (String, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val palette = BluetrackTheme.palette
+    Column(
+        modifier = modifier.fillMaxHeight(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            CenterPillButton(
+                label = "SELECT",
+                onChange = { p -> onButton("BACK", p) },
+            )
+            HomeButton(onChange = { p -> onButton("GUIDE", p) })
+            CenterPillButton(
+                label = "START",
+                onChange = { p -> onButton("START", p) },
+            )
+        }
+        FrameBadge(seq = seq, pulse = pulse, palette = palette)
+    }
+}
+
+@Composable
+private fun CenterPillButton(
+    label: String,
+    onChange: (Boolean) -> Unit,
+) {
+    val palette = BluetrackTheme.palette
+    var pressed by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(999.dp)
+    Box(
+        modifier = Modifier
+            .height(34.dp)
+            .clip(shape)
+            .background(
+                if (pressed) palette.mintGlowSoft else Color.White.copy(alpha = 0.04f),
+            ).border(
+                1.dp,
+                if (pressed) palette.mintBright else palette.glassBorder,
+                shape,
+            ).padding(horizontal = 16.dp)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        onChange(true)
+                        tryAwaitRelease()
+                        pressed = false
+                        onChange(false)
+                    },
+                )
+            }.wrapContentSize(Alignment.Center),
+    ) {
+        Text(
+            text = label,
+            color = if (pressed) palette.mintBright else palette.fg1,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.4.sp,
+        )
     }
 }
 
 /**
- * Convenience holder for the 130 ms frame-counter pulse used by
- * the canvas. Drives [seq] forward and toggles [pulse] for ~80 ms
- * each step. Kept here so callers do not have to re-derive the
- * cadence on every screen.
+ * Large central HOME button (Guide / Xbox button equivalent).
+ * Renders a red disc with a glow ring on press. Primary visual
+ * anchor of the surface.
+ */
+@Composable
+private fun HomeButton(onChange: (Boolean) -> Unit) {
+    val palette = BluetrackTheme.palette
+    var pressed by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .size(if (pressed) 64.dp else 58.dp)
+            .clip(CircleShape)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(
+                        palette.crit,
+                        palette.crit.copy(alpha = 0.85f),
+                        palette.crit.copy(alpha = 0.65f),
+                    ),
+                ),
+            ).border(
+                width = if (pressed) 2.dp else 1.dp,
+                color = if (pressed) Color.White.copy(alpha = 0.5f) else palette.crit.copy(alpha = 0.4f),
+                shape = CircleShape,
+            ).pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        onChange(true)
+                        tryAwaitRelease()
+                        pressed = false
+                        onChange(false)
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "HOME",
+            color = Color.White,
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp,
+        )
+    }
+}
+
+@Composable
+private fun FrameBadge(
+    seq: Long,
+    pulse: Boolean,
+    palette: dev.xd.bluetrack.ui.theme.BluetrackPalette,
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(Color.White.copy(alpha = 0.03f))
+            .border(1.dp, palette.hairline, RoundedCornerShape(999.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(5.dp)
+                .clip(CircleShape)
+                .background(if (pulse) palette.mintBright else palette.fg3),
+        )
+        Text(
+            text = "FRAME · #$seq",
+            color = palette.fg2,
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 0.6.sp,
+        )
+    }
+}
+
+// ─── Shoulder triggers ──────────────────────────────────────
+
+/**
+ * Horizontal pill for L1 / R1 (digital bumpers). Mint glow on
+ * press matches the `Trigger` composable but stays compact for
+ * the corner placement called out in the canvas reference.
+ */
+@Composable
+private fun HorizontalShoulderPill(
+    label: String,
+    onChange: (Boolean) -> Unit,
+) {
+    val palette = BluetrackTheme.palette
+    var pressed by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(999.dp)
+    Box(
+        modifier = Modifier
+            .width(110.dp)
+            .height(28.dp)
+            .clip(shape)
+            .background(
+                if (pressed) {
+                    Brush.verticalGradient(listOf(palette.mintBright, palette.mintDeep))
+                } else {
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.05f),
+                            Color.Black.copy(alpha = 0.3f),
+                        ),
+                    )
+                },
+            ).border(
+                1.dp,
+                if (pressed) Color.Transparent else palette.glassBorder,
+                shape,
+            ).pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        onChange(true)
+                        tryAwaitRelease()
+                        pressed = false
+                        onChange(false)
+                    },
+                )
+            }.wrapContentSize(Alignment.Center),
+    ) {
+        Text(
+            text = label,
+            color = if (pressed) Color.White else palette.fg1,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.4.sp,
+        )
+    }
+}
+
+/**
+ * Vertical trigger bar for L2 / R2 — full-height analog feel
+ * even though we only emit the digital press bit.
+ */
+@Composable
+private fun VerticalTriggerBar(
+    label: String,
+    digital: Boolean,
+    onChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val palette = BluetrackTheme.palette
+    var pressed by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(8.dp)
+    Box(
+        modifier = modifier
+            .width(28.dp)
+            .clip(shape)
+            .background(
+                if (pressed) {
+                    Brush.verticalGradient(listOf(palette.mintDeep, palette.mintBright))
+                } else {
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.Black.copy(alpha = 0.4f),
+                            Color.White.copy(alpha = 0.04f),
+                        ),
+                    )
+                },
+            ).border(
+                1.dp,
+                if (pressed) Color.Transparent else palette.glassBorder,
+                shape,
+            ).pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        onChange(true)
+                        tryAwaitRelease()
+                        pressed = false
+                        onChange(false)
+                    },
+                )
+            },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Text(
+            text = label,
+            color = if (pressed) Color.White else palette.fg1,
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.4.sp,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+        @Suppress("UNUSED_EXPRESSION")
+        digital
+    }
+}
+
+// ─── Bottom stats rail ─────────────────────────────────────
+
+@Composable
+private fun BottomStatsRail(
+    pollHz: Int,
+    latencyMs: Float,
+    reportsTotal: Long,
+    uptimeMs: Long,
+) {
+    val palette = BluetrackTheme.palette
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatPair("POLL", "$pollHz Hz")
+        StatPair("LAT", "${"%.1f".format(latencyMs)} ms")
+        StatPair("REPORTS", compactCountForStat(reportsTotal))
+        StatPair("UPTIME", uptimeLabel(uptimeMs))
+        @Suppress("UNUSED_EXPRESSION")
+        palette
+    }
+}
+
+@Composable
+private fun StatPair(label: String, value: String) {
+    val palette = BluetrackTheme.palette
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = label,
+            color = palette.fg3,
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 1.6.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = value,
+            color = palette.fg1,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+private fun compactCountForStat(value: Long): String =
+    when {
+        value < 1_000L -> value.toString()
+        value < 1_000_000L -> "${value / 1000L}.${(value % 1000L) / 100L} k"
+        else -> "${value / 1_000_000L}.${(value % 1_000_000L) / 100_000L} M"
+    }
+
+private fun uptimeLabel(ms: Long): String {
+    if (ms <= 0L) return "—"
+    val secs = ms / 1000L
+    val h = secs / 3600L
+    val m = (secs % 3600L) / 60L
+    val s = secs % 60L
+    return if (h > 0L) {
+        "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
+    } else {
+        "$m:${s.toString().padStart(2, '0')}"
+    }
+}
+
+// ─── Frame counter loop (kept) ──────────────────────────────
+
+/**
+ * Convenience holder for the 130 ms frame-counter pulse. Drives
+ * [FrameCounterState.seq] forward and toggles [FrameCounterState.pulse]
+ * for ~80 ms each step.
  */
 @Composable
 fun rememberFrameCounterState(): FrameCounterState {

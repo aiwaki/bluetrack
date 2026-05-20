@@ -255,16 +255,34 @@ class MainActivity : ComponentActivity() {
                 }
                 if (gamepadActive) {
                     val frame = rememberFrameCounterState()
+                    val gamepadStatus = vm.status.collectAsState().value
+                    val hidWaveForPad = vm.hidRateWindow.collectAsState().value
+                    val sessionStartMs = remember { SystemClock.elapsedRealtime() }
+                    var nowForPad by remember {
+                        mutableLongStateOf(SystemClock.elapsedRealtime())
+                    }
+                    LaunchedEffect(Unit) {
+                        while (true) {
+                            delay(1_000)
+                            nowForPad = SystemClock.elapsedRealtime()
+                        }
+                    }
+                    val pollHz = hidWaveForPad.lastOrNull()?.toInt() ?: 0
+                    val latency = gamepadStatus.lastReportAtMs?.let {
+                        ((nowForPad - it).coerceAtLeast(0L)).toFloat()
+                    } ?: 0f
                     GamepadSurface(
-                        hostName = vm.status
-                            .collectAsState()
-                            .value.host ?: "Bluetrack",
+                        hostName = gamepadStatus.host ?: "Bluetrack",
                         seq = frame.seq,
                         pulse = frame.pulse,
                         onExit = {
                             gamepadActive = false
                             vm.toggle(false)
                         },
+                        pollHz = pollHz,
+                        latencyMs = latency,
+                        reportsTotal = gamepadStatus.lifetimeCounters.reports,
+                        uptimeMs = (nowForPad - sessionStartMs).coerceAtLeast(0L),
                         onStickMotion = { _, x, y ->
                             // Forward stick deflection through the
                             // existing mouse-delta entry point until
