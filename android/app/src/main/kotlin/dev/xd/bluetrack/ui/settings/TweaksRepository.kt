@@ -60,6 +60,15 @@ class TweaksRepository(
      */
     val autoConnectEnabled: Flow<Boolean> = ds.data.map { it[KEY_AUTO_CONNECT] ?: true }
 
+    /**
+     * True after the user has dismissed the first-run Welcome
+     * screen. The shell hides Welcome and proceeds to the dock
+     * once this flips. Persisted so reinstalls do not re-trigger
+     * the flow if data was retained, while a fresh install (or
+     * "Clear data" from system settings) shows it again.
+     */
+    val onboarded: Flow<Boolean> = ds.data.map { it[KEY_ONBOARDED] ?: false }
+
     suspend fun setMotionReduced(value: Boolean) {
         ds.edit { it[KEY_MOTION_REDUCED] = value }
     }
@@ -78,6 +87,10 @@ class TweaksRepository(
 
     suspend fun setAutoConnectEnabled(value: Boolean) {
         ds.edit { it[KEY_AUTO_CONNECT] = value }
+    }
+
+    suspend fun setOnboarded(value: Boolean) {
+        ds.edit { it[KEY_ONBOARDED] = value }
     }
 
     /**
@@ -104,6 +117,7 @@ class TweaksRepository(
         val KEY_AURORA_LOW_BAT = booleanPreferencesKey("aurora_on_low_battery")
         val KEY_NEON_STRENGTH = floatPreferencesKey("neon_strength")
         val KEY_AUTO_CONNECT = booleanPreferencesKey("auto_connect_enabled")
+        val KEY_ONBOARDED = booleanPreferencesKey("onboarded")
     }
 }
 

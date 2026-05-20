@@ -72,11 +72,13 @@ import dev.xd.bluetrack.ui.shouldAutoRequestDiscoverability
 import dev.xd.bluetrack.ui.stickDeflectionLabel
 import dev.xd.bluetrack.ui.stickOverlayState
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
+import dev.xd.bluetrack.ui.welcome.WelcomeScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -103,6 +105,14 @@ class MainActivity : ComponentActivity() {
                 vm.bluetoothDisabled()
             }
         }
+    private val notificationsPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            // The grant outcome is informational only — we never
+            // block the HID path on the notifications grant.
+            // `SettingsScreen.PERMISSIONS` reflects the new state
+            // on the next composition via `hasNotificationsPermission`.
+        }
+
     private val discoverableBluetooth =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val seconds =
@@ -214,6 +224,22 @@ class MainActivity : ComponentActivity() {
                         vm.refreshCompatibility()
                     }
                 }
+                // First-run gate. Welcome screen carries the
+                // permission explainer + a CTA that flips the
+                // persisted flag and triggers the actual permission
+                // request — we deliberately do NOT fire the runtime
+                // dialog before the user has read the rationale.
+                val onboarded by tweaksRepo.onboarded.collectAsState(initial = true)
+                if (!onboarded) {
+                    WelcomeScreen(
+                        onGetStarted = {
+                            ioScope.launch { tweaksRepo.setOnboarded(true) }
+                            requestBtPermissions()
+                            maybeRequestNotificationsPermission()
+                        },
+                    )
+                    return@BluetrackTheme
+                }
                 if (gamepadActive) {
                     val frame = rememberFrameCounterState()
                     GamepadSurface(
@@ -311,7 +337,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        requestBtPermissions()
+        // No unconditional permission request here — Welcome's
+        // CTA fires `requestBtPermissions()` after the user has
+        // read the rationale. Subsequent launches (where
+        // `onboarded == true`) hit the runtime check via the
+        // existing `bluetoothPermissions` / `enableBluetooth`
+        // result handlers; `onResume` re-validates state.
+        ioScope.launch {
+            if (tweaksRepo.onboarded.firstOrNull() == true) {
+                runOnUiThread { requestBtPermissions() }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -328,6 +364,18 @@ class MainActivity : ComponentActivity() {
                 vm.refreshCompatibility()
             }
         }
+    }
+
+    /**
+     * Fire the `POST_NOTIFICATIONS` request on Android 13+. No-op
+     * on older platforms (the permission did not exist) and when
+     * already granted. Used by the Welcome CTA so the system
+     * dialog appears right after the user reads the rationale.
+     */
+    private fun maybeRequestNotificationsPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (hasNotificationsPermission()) return
+        notificationsPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private fun requestBtPermissions() {
