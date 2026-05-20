@@ -318,6 +318,8 @@ class MainActivity : ComponentActivity() {
                             )
                             Route.Diagnostics -> DiagnosticsScreen(
                                 status = vm.status.collectAsState().value,
+                                hidWave = vm.hidRateWindow.collectAsState().value,
+                                fbWave = vm.feedbackRateWindow.collectAsState().value,
                             )
                             Route.Settings -> SettingsScreen(
                                 status = vm.status.collectAsState().value,

@@ -41,6 +41,40 @@ class MainViewModel(
     private val touchMotionPredictor = TouchMotionPredictor()
     private val inputDiagnostics = InputDiagnostics()
 
+    /**
+     * Process-lifetime 60-sample rolling rate windows for the
+     * Diagnostics route. Earlier the screen owned its own sampler
+     * inside a `LaunchedEffect`, which meant the wave reset
+     * whenever the user navigated away from Diag — so opening the
+     * route after a long Hub touchpad session showed a flat zero
+     * line even though the gateway had been busy. Sampling at
+     * the ViewModel keeps the window alive for the lifetime of
+     * the activity, which is the natural "since this app launch"
+     * scope a user expects.
+     */
+    private val _hidRateWindow = MutableStateFlow<List<Float>>(emptyList())
+    val hidRateWindow: StateFlow<List<Float>> = _hidRateWindow
+    private val _feedbackRateWindow = MutableStateFlow<List<Float>>(emptyList())
+    val feedbackRateWindow: StateFlow<List<Float>> = _feedbackRateWindow
+
+    init {
+        viewModelScope.launch(Dispatchers.Default) {
+            var lastReports = ble.status.value.lifetimeCounters.reports
+            var lastFeedback = ble.status.value.lifetimeCounters.feedback
+            while (isActive) {
+                delay(1_000L)
+                val currentReports = ble.status.value.lifetimeCounters.reports
+                val currentFeedback = ble.status.value.lifetimeCounters.feedback
+                val dR = (currentReports - lastReports).coerceAtLeast(0L)
+                val dF = (currentFeedback - lastFeedback).coerceAtLeast(0L)
+                lastReports = currentReports
+                lastFeedback = currentFeedback
+                _hidRateWindow.value = (_hidRateWindow.value + dR.toFloat()).takeLast(60)
+                _feedbackRateWindow.value = (_feedbackRateWindow.value + dF.toFloat()).takeLast(60)
+            }
+        }
+    }
+
     fun start() {
         started = true
         ble.maintainRegistration(_mode.value)
