@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -35,11 +36,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.ble.RejectionCause
+import dev.xd.bluetrack.ui.automationLabel
+import dev.xd.bluetrack.ui.hostFallbackLabel
 import dev.xd.bluetrack.ui.hub.Chip
 import dev.xd.bluetrack.ui.hub.ChipKind
 import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.Pulse
 import dev.xd.bluetrack.ui.hub.SectionLabel
+import dev.xd.bluetrack.ui.inputSourceLabel
+import dev.xd.bluetrack.ui.primaryStatusLabel
 import dev.xd.bluetrack.ui.shell.btGlass
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
 import dev.xd.bluetrack.ui.theme.BluetrackTokens
@@ -115,6 +120,14 @@ fun DiagnosticsScreen(
             modifier = Modifier.padding(horizontal = BluetrackTokens.Sp6),
             verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
         ) {
+            // Connection + System cards moved from Hub to
+            // Diagnostics (2026-05-20). Hub keeps the at-a-glance
+            // StatusHero and TrustCard; raw transport state is a
+            // Diag concern.
+            SectionLabel(label = "Connection")
+            ConnectionCard(status = status, now = nowMs)
+            SectionLabel(label = "System")
+            SystemCard(status = status)
             val empty =
                 status.lifetimeCounters.reports == 0L &&
                     status.lifetimeCounters.feedback == 0L &&
@@ -196,6 +209,11 @@ fun DiagnosticsScreen(
                 },
             )
             RejectionsCard(byCause = status.lifetimeCounters.rejectionsByCause)
+            // Bottom breathing room so the last card never sits
+            // flush against the dock. Matches the trailing
+            // `Modifier.padding(bottom = 24.dp)` on the Settings,
+            // Hosts, and Activity routes.
+            Box(modifier = Modifier.padding(bottom = 24.dp))
         }
     }
 }
@@ -619,3 +637,82 @@ private data class Rejection(
     val color: Color,
     val count: Int,
 )
+
+@Composable
+private fun ConnectionCard(
+    status: GatewayStatus,
+    now: Long,
+) {
+    val palette = BluetrackTheme.palette
+    val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .btGlass(strong = false, shape = shape)
+            .padding(BluetrackTokens.Sp4),
+        verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
+    ) {
+        DiagStatusLine(label = "STATE", value = primaryStatusLabel(status, now))
+        DiagStatusLine(label = "HOST", value = status.host ?: hostFallbackLabel(status))
+        DiagStatusLine(label = "INPUT", value = inputSourceLabel(status, now))
+        DiagStatusLine(label = "FLOW", value = status.automationLabel())
+        status.error?.let { error ->
+            Text(
+                text = error,
+                color = palette.warn,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SystemCard(status: GatewayStatus) {
+    val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .btGlass(strong = false, shape = shape)
+            .padding(BluetrackTokens.Sp4),
+        verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
+    ) {
+        DiagStatusLine(
+            label = "BT",
+            value = if (status.compatibility.bluetoothEnabled) "Ready" else "Off",
+        )
+        DiagStatusLine(label = "HID", value = status.hid)
+        DiagStatusLine(label = "PAIR", value = status.pairing)
+        DiagStatusLine(label = "BLE", value = status.feedback)
+    }
+}
+
+@Composable
+private fun DiagStatusLine(label: String, value: String) {
+    val palette = BluetrackTheme.palette
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = palette.fg3,
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 1.6.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.width(58.dp),
+        )
+        Text(
+            text = value,
+            color = palette.fg0,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}

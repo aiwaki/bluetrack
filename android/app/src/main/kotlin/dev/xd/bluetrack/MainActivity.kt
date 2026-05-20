@@ -47,7 +47,6 @@ import dev.xd.bluetrack.ui.MainViewModel
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.StickDeflection
 import dev.xd.bluetrack.ui.activity.ActivityScreen
-import dev.xd.bluetrack.ui.automationLabel
 import dev.xd.bluetrack.ui.diag.DiagnosticsScreen
 import dev.xd.bluetrack.ui.gamepad.GamepadSurface
 import dev.xd.bluetrack.ui.gamepad.rememberFrameCounterState
@@ -329,6 +328,7 @@ class MainActivity : ComponentActivity() {
                                     vm.toggle(true)
                                     gamepadActive = true
                                 },
+                                onShowTrustQR = { showTrustFingerprintToast() },
                             )
                             Route.Hosts -> HostsScreen(
                                 status = vm.status.collectAsState().value,
@@ -542,6 +542,21 @@ class MainActivity : ComponentActivity() {
         vm.setAutoConnectEnabled(enabled)
     }
 
+    /**
+     * Placeholder until the identity-QR sheet lands (`--export-
+     * identity` CLI). Surfaces the TOFU fingerprint via toast so
+     * the Hub TrustCard "SHOW QR" button is not a dead tap.
+     */
+    private fun showTrustFingerprintToast() {
+        val fp = vm.status.value.trustedHostFingerprint
+        val msg = if (fp != null) {
+            "Identity QR sheet is on the way. Trust pin: $fp"
+        } else {
+            "No host pinned yet — feedback channel must open first."
+        }
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+    }
+
     private fun openNotificationSettings() {
         // `ACTION_APP_NOTIFICATION_SETTINGS` lands on the per-app
         // channels page on API 26+; older devices fall through to
@@ -601,6 +616,7 @@ private fun AppScreen(
     vm: MainViewModel,
     onNavigate: (Route) -> Unit = {},
     onEnterGamepad: () -> Unit = {},
+    onShowTrustQR: () -> Unit = {},
 ) {
     val mode by vm.mode.collectAsState()
     val status by vm.status.collectAsState()
@@ -658,10 +674,10 @@ private fun AppScreen(
                     null
                 },
             )
-            // Compatibility / fallback rows kept as ConnectionPanel
-            // below the hero so the host fallback, input live label,
-            // and any error message stay one tap away.
-            ConnectionPanel(status = status, now = now)
+            // ConnectionPanel (State / Host / Input / Flow + error)
+            // moved to the Diagnostics route. Hub keeps the at-a-
+            // glance hero + TrustCard; raw transport rows belong
+            // with the rest of the diagnostic plumbing.
             PinBlock(
                 pin = status.feedbackPin,
                 session = sessionCount,
@@ -671,7 +687,7 @@ private fun AppScreen(
                 state = trustState,
                 fingerprint = status.trustedHostFingerprint,
                 onForget = { vm.forgetTrustedHost() },
-                onShowQR = { /* TODO: identity QR sheet — follow-up after --export-identity CLI lands */ },
+                onShowQR = onShowTrustQR,
                 // Show bonded computer-class hosts as tappable
                 // "recommended" rows so the user can wake the
                 // Mac/PC from sleep without waiting for the
@@ -688,20 +704,9 @@ private fun AppScreen(
                 mode = mode,
                 onToggle = { next -> vm.toggle(next == HidMode.GAMEPAD) },
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MetricTile(
-                    label = "Reports",
-                    value = compactCount(status.reportsSent),
-                    modifier = Modifier.weight(1f),
-                    subtitle = relativeAgeLabel(now, status.lastReportAtMs),
-                )
-                MetricTile(
-                    label = "Feedback",
-                    value = status.feedbackPackets.toString(),
-                    modifier = Modifier.weight(1f),
-                    subtitle = relativeAgeLabel(now, status.lastFeedbackAtMs),
-                )
-            }
+            // Reports + Feedback `MetricTile` row moved to the
+            // Diagnostics LiveRateHero (which already shows the
+            // lifetime totals next to the peak-rate sparklines).
             TouchpadPanel(
                 modifier = Modifier.fillMaxWidth().height(260.dp),
                 mode = mode,
@@ -710,10 +715,8 @@ private fun AppScreen(
                 onTouchStart = { vm.beginTouchGesture() },
                 onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
             )
-            SystemPanel(
-                status = status,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            // SystemPanel (BT / HID / Pair / BLE) moved to the
+            // Diagnostics route alongside Connection.
             GamepadShortcut(onEnter = onEnterGamepad)
             ActivityStrip(
                 items = status.events.take(4).map { it.toActivityItem(relativeAgeLabel(now, it.timestampMs)) },
@@ -728,22 +731,6 @@ private fun AppScreen(
                 // window without flapping on individual frames.
                 intensity = heartbeatIntensity(status, now),
             )
-        }
-    }
-}
-
-@Composable
-private fun ConnectionPanel(
-    status: GatewayStatus,
-    now: Long,
-) {
-    Panel(Modifier.fillMaxWidth()) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatusLine("State", primaryStatus(status, now))
-            StatusLine("Host", status.host ?: hostFallback(status))
-            StatusLine("Input", inputLabel(status, now))
-            StatusLine("Flow", status.automationLabel())
-            status.error?.let { Text(it, color = Color(0xFFFFB4AB)) }
         }
     }
 }
@@ -966,59 +953,6 @@ private fun TouchpadPanel(
 }
 
 @Composable
-private fun SystemPanel(
-    status: GatewayStatus,
-    modifier: Modifier,
-) {
-    // PIN and Trust rows moved to dedicated `PinBlock` + `TrustCard`
-    // cards above (UI port step 3b). System panel keeps the four
-    // transport-state rows it always had.
-    Panel(modifier) {
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("System", color = Color.White, fontWeight = FontWeight.Bold)
-            StatusLine("BT", if (status.compatibility.bluetoothEnabled) "Ready" else "Off")
-            StatusLine("HID", status.hid)
-            StatusLine("Pair", status.pairing)
-            StatusLine("BLE", status.feedback)
-        }
-    }
-}
-
-@Composable
-private fun StatusLine(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, color = Color.White.copy(alpha = 0.62f), modifier = Modifier.width(74.dp))
-        Text(value, color = Color.White, modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun MetricTile(
-    label: String,
-    value: String,
-    modifier: Modifier,
-    subtitle: String? = null,
-) {
-    Panel(modifier) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(label, color = Color.White.copy(alpha = 0.62f))
-            Text(value, color = Color.White, fontWeight = FontWeight.Bold)
-            subtitle?.let {
-                Text(it, color = Color.White.copy(alpha = 0.5f))
-            }
-        }
-    }
-}
-
-@Composable
 private fun Panel(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
@@ -1029,35 +963,6 @@ private fun Panel(
             .padding(14.dp),
         content = content,
     )
-}
-
-private fun primaryStatus(
-    status: GatewayStatus,
-    now: Long,
-): String = when {
-    status.error != null -> "Needs attention"
-    isConnected(status) && isInputLive(status, now) -> "Ready - input live"
-    isConnected(status) -> "Ready"
-    status.hid.contains("connecting", ignoreCase = true) ||
-        status.pairing.contains("connecting", ignoreCase = true) -> "Connecting"
-    status.pairing.contains("discoverable", ignoreCase = true) ||
-        status.pairing.contains("pairing", ignoreCase = true) -> "Pairing"
-    else -> "Preparing"
-}
-
-private fun hostFallback(status: GatewayStatus): String = when {
-    status.compatibility.bondedDevices.isNotEmpty() -> "Bonded"
-    status.pairing.contains("discoverable", ignoreCase = true) -> "Pairing"
-    else -> "Searching"
-}
-
-private fun inputLabel(
-    status: GatewayStatus,
-    now: Long,
-): String = when {
-    isInputLive(status, now) -> "${status.lastInputSource ?: "Input"} live"
-    status.lastInputSource != null -> status.lastInputSource
-    else -> "Idle"
 }
 
 /**

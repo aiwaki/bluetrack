@@ -57,13 +57,19 @@ fun FaceButtons(
 ) {
     val palette = BluetrackTheme.palette
     var active by remember { mutableStateOf<String?>(null) }
+    // Container 108 dp + buttons offset 30 dp from centre. With
+    // 36 dp circles the previous 22 dp offset gave centre-to-
+    // centre distance sqrt(22² + 22²) = 31 dp on adjacent
+    // diagonals — less than the 36 dp sum of radii, so adjacent
+    // buttons clipped into each other. 30 dp clears the diagonal
+    // (centre-to-centre ≈ 42 dp).
     val buttons = listOf(
-        FaceButton(label = "Y", accent = Color(0xFFFFD23F), dx = 0, dy = -22),
-        FaceButton(label = "X", accent = Color(0xFF3FB6FF), dx = -22, dy = 0),
-        FaceButton(label = "B", accent = Color(0xFFFF4060), dx = 22, dy = 0),
-        FaceButton(label = "A", accent = Color(0xFF3FFF80), dx = 0, dy = 22),
+        FaceButton(label = "Y", accent = Color(0xFFFFD23F), dx = 0, dy = -30),
+        FaceButton(label = "X", accent = Color(0xFF3FB6FF), dx = -30, dy = 0),
+        FaceButton(label = "B", accent = Color(0xFFFF4060), dx = 30, dy = 0),
+        FaceButton(label = "A", accent = Color(0xFF3FFF80), dx = 0, dy = 30),
     )
-    Box(modifier = modifier.size(96.dp)) {
+    Box(modifier = modifier.size(108.dp)) {
         buttons.forEach { btn ->
             val pressed = active == btn.label
             Box(
