@@ -100,6 +100,7 @@ private enum class FilterKey(
 fun ActivityScreen(
     status: GatewayStatus,
     now: Long,
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val palette = BluetrackTheme.palette
@@ -110,10 +111,10 @@ fun ActivityScreen(
     val warnings = classified.count {
         it.second == ActivityKind.Warn || it.second == ActivityKind.Reject
     }
-    val sessionLength = remember(limited) { sessionLengthLabel(limited) }
-    val hostCount = remember(status.host, classified) {
-        (classified.mapNotNull { extractHost(it.first) }.toSet() + listOfNotNull(status.host)).count()
-    }
+    // Length anchors on now so the cell tracks wall-clock session
+    // duration (oldest event → now) rather than the tight 24-event
+    // window the old math gave.
+    val sessionLength = remember(status.events, now) { sessionLengthLabel(status.events, now) }
 
     Column(
         modifier = modifier
@@ -121,13 +122,12 @@ fun ActivityScreen(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
     ) {
-        HubHeader(title = "Activity")
+        HubHeader(title = "Activity", onBack = onBack)
         Column(
             modifier = Modifier.padding(horizontal = BluetrackTokens.Sp6),
             verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
         ) {
             SessionSummary(
-                hosts = hostCount,
                 events = classified.size,
                 warnings = warnings,
                 length = sessionLength,
@@ -145,13 +145,16 @@ fun ActivityScreen(
 
 @Composable
 private fun SessionSummary(
-    hosts: Int,
     events: Int,
     warnings: Int,
     length: String,
 ) {
     val palette = BluetrackTheme.palette
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
+    // HOSTS cell removed — its value (count of unique host names
+    // referenced in the event ring) was confusing on a single-host
+    // workflow and the user flagged it as noise. The remaining
+    // three cells carry actionable signal.
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -160,7 +163,6 @@ private fun SessionSummary(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        SummaryCell(label = "HOSTS", value = hosts.toString())
         SummaryCell(label = "EVENTS", value = events.toString())
         SummaryCell(
             label = "WARNINGS",
@@ -387,11 +389,22 @@ private fun matches(filter: FilterKey, kind: ActivityKind): Boolean = when (filt
     FilterKey.Errors -> kind == ActivityKind.Warn || kind == ActivityKind.Reject
 }
 
-private fun sessionLengthLabel(events: List<GatewayEvent>): String {
+/**
+ * "Session length" reads as wall-clock from the oldest event in
+ * the ring up to *now*. Earlier this computed `newest - oldest`
+ * over a 24-event window, which produced numbers like "11m"
+ * even after the app had been running for hours — the 24 most
+ * recent events spanned a tight burst at the end of the day,
+ * but the user reads the cell as "how long has this session
+ * been live". Anchoring on `now` matches that mental model.
+ */
+private fun sessionLengthLabel(
+    events: List<GatewayEvent>,
+    now: Long,
+): String {
     if (events.isEmpty()) return "—"
     val oldest = events.minByOrNull { it.timestampMs }?.timestampMs ?: return "—"
-    val newest = events.maxByOrNull { it.timestampMs }?.timestampMs ?: return "—"
-    val ms = (newest - oldest).coerceAtLeast(0L)
+    val ms = (now - oldest).coerceAtLeast(0L)
     val mins = ms / 60_000L
     val hours = mins / 60L
     val rem = mins % 60L
@@ -400,10 +413,4 @@ private fun sessionLengthLabel(events: List<GatewayEvent>): String {
         mins > 0L -> "${mins}m"
         else -> "<1m"
     }
-}
-
-private fun extractHost(event: GatewayEvent): String? {
-    // Heuristic: pull a quoted host name out of the message if any.
-    val match = Regex("'([^']{1,32})'").find(event.message)
-    return match?.groupValues?.get(1)
 }

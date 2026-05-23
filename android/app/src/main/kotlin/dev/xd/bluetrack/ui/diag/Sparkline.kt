@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -32,9 +33,25 @@ fun Sparkline(
     fill: Boolean = false,
 ) {
     Canvas(modifier = modifier.fillMaxWidth().height(height)) {
-        if (data.isEmpty()) return@Canvas
         val w = size.width
         val h = size.height
+        // Empty + all-zero both render as a faint dashed baseline
+        // through the centre — same visual idiom as the canvas
+        // `Heartbeat` strip. Earlier the canvas returned blank so
+        // the user could not tell whether the widget was alive or
+        // genuinely flat-lined; the dashed line removes that
+        // ambiguity without implying activity that is not there.
+        val empty = data.isEmpty() || (data.maxOrNull() ?: 0f) <= 0f
+        if (empty) {
+            drawLine(
+                color = color.copy(alpha = 0.18f),
+                start = Offset(0f, h * 0.5f),
+                end = Offset(w, h * 0.5f),
+                strokeWidth = 1f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)),
+            )
+            return@Canvas
+        }
         val max = (data.maxOrNull() ?: 1f).coerceAtLeast(1f)
         val n = data.size
         val path = Path()

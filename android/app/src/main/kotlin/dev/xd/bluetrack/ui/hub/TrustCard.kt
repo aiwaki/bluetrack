@@ -2,6 +2,7 @@ package dev.xd.bluetrack.ui.hub
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.xd.bluetrack.ui.shell.btGlass
@@ -55,6 +57,10 @@ fun TrustCard(
     onForget: () -> Unit,
     onShowQR: () -> Unit,
     modifier: Modifier = Modifier,
+    recommendedHosts: List<String> = emptyList(),
+    activeHost: String? = null,
+    onConnect: (String) -> Unit = {},
+    onDisconnect: () -> Unit = {},
 ) {
     val palette = BluetrackTheme.palette
     val shape = RoundedCornerShape(BluetrackTokens.RadiusLg)
@@ -90,6 +96,146 @@ fun TrustCard(
                 TrustState.Empty -> EmptyBody(palette)
                 TrustState.Pinned -> PinnedBody(palette, fingerprint, onForget)
                 TrustState.Rejection -> RejectionBody(palette)
+            }
+            if (recommendedHosts.isNotEmpty()) {
+                RecommendedHostsSection(
+                    palette = palette,
+                    hosts = recommendedHosts,
+                    activeHost = activeHost,
+                    onConnect = onConnect,
+                    onDisconnect = onDisconnect,
+                )
+            } else if (state == TrustState.Empty) {
+                // No computer-class host bonded yet. Surface the
+                // empty rail with a hint so the user knows where
+                // pairing must start (the Mac/PC side, not the
+                // phone — Android cannot force its way into the
+                // host's Bluetooth menu).
+                NoRecommendedHostsHint(palette)
+            }
+        }
+    }
+}
+
+/**
+ * List of bonded computer-class devices a tap can route a fresh
+ * HID connect to. Used so the user does not have to wait for
+ * the auto-connect tick (or rely on the host initiating from
+ * its side, which Mac/PC do unreliably after sleep).
+ */
+@Composable
+private fun NoRecommendedHostsHint(
+    palette: dev.xd.bluetrack.ui.theme.BluetrackPalette,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2)) {
+        Text(
+            text = "RECOMMENDED",
+            style = MaterialTheme.typography.labelMedium,
+            color = palette.fg2,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
+                .border(
+                    1.dp,
+                    palette.hairline,
+                    RoundedCornerShape(BluetrackTokens.RadiusSm),
+                ).padding(BluetrackTokens.Sp3),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "No computer host bonded",
+                    color = palette.fg1,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = "On your Mac / PC open Bluetooth settings, " +
+                        "find \"Bluetrack\" and pair. It will appear here.",
+                    color = palette.fg2,
+                    fontSize = 11.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecommendedHostsSection(
+    palette: dev.xd.bluetrack.ui.theme.BluetrackPalette,
+    hosts: List<String>,
+    activeHost: String?,
+    onConnect: (String) -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2)) {
+        Text(
+            text = "RECOMMENDED",
+            style = MaterialTheme.typography.labelMedium,
+            color = palette.fg2,
+        )
+        hosts.forEach { name ->
+            val isActive = name == activeHost
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
+                    .border(
+                        1.dp,
+                        if (isActive) palette.mintBright.copy(alpha = 0.4f) else palette.hairline,
+                        RoundedCornerShape(BluetrackTokens.RadiusSm),
+                    ).clickable {
+                        if (isActive) onDisconnect() else onConnect(name)
+                    }.padding(horizontal = BluetrackTokens.Sp3, vertical = BluetrackTokens.Sp3),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
+                    modifier = Modifier.weight(1f, fill = false),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
+                            .background(
+                                if (isActive) palette.mintGlowSoft else palette.hairline.copy(alpha = 0.5f),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "▭",
+                            color = if (isActive) palette.mintBright else palette.fg2,
+                            fontSize = 14.sp,
+                        )
+                    }
+                    Text(
+                        text = name,
+                        color = palette.fg0,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                // Tap an active row to force-disconnect; tap an
+                // inactive one to wake the host. Stuck-link rescue
+                // path — silent disconnects (Mac sleep / lid close)
+                // can leave the cached host pinned until the LMP
+                // supervision timer fires 30+ s later, and toggling
+                // Bluetooth radio is overkill. The DISCONNECT pill
+                // calls `BluetoothHidDevice.disconnect` which does
+                // synchronously update the profile state.
+                Text(
+                    text = if (isActive) "DISCONNECT" else "CONNECT",
+                    color = if (isActive) palette.warn else palette.fg1,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.6.sp,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }

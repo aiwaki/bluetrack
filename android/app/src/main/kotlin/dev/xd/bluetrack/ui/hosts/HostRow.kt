@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,6 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -78,25 +80,42 @@ fun HostRow(
     val isIgnored = host.state == HostState.Ignored
     val isActive = host.state == HostState.Active
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
+    val isIncompatible = host.state == HostState.Incompatible
+    // Each non-default state gets its own affordance. We can't
+    // use a square-cornered `Modifier.border` here because the
+    // row is clipped to a fully rounded shape and the
+    // accent rectangle's right-side sharp corners would get
+    // truncated by the clip — visible as a notch on Active /
+    // Incompatible rows. Instead the left rail is painted via
+    // `drawBehind` inside the clipped area; Ignored still uses
+    // a full-perimeter hairline border whose shape matches the
+    // clip exactly.
+    val leftRail: Pair<Color, Float>? =
+        when {
+            isActive -> palette.mint to 3.dp.value
+            isIncompatible -> palette.warn.copy(alpha = 0.55f) to 2.dp.value
+            else -> null
+        }
+    val outline: Modifier =
+        if (isIgnored) {
+            Modifier.border(width = 1.dp, color = palette.hairline, shape = shape)
+        } else {
+            Modifier
+        }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
             .btGlass(strong = false, shape = shape)
-            .let { m ->
-                if (isActive) {
-                    m.border(
-                        width = 3.dp,
-                        color = palette.mint,
-                        shape = RoundedCornerShape(
-                            topStart = BluetrackTokens.RadiusMd,
-                            bottomStart = BluetrackTokens.RadiusMd,
-                            topEnd = 0.dp,
-                            bottomEnd = 0.dp,
-                        ),
+            .then(outline)
+            .drawBehind {
+                leftRail?.let { (color, widthDp) ->
+                    val px = widthDp * density
+                    drawRect(
+                        color = color,
+                        topLeft = Offset.Zero,
+                        size = Size(px, size.height),
                     )
-                } else {
-                    m
                 }
             }.alpha(if (isIgnored) 0.66f else 1f)
             .padding(BluetrackTokens.Sp3),
@@ -187,34 +206,15 @@ fun HostRow(
                 )
             }
         }
-        // Trailing action.
-        when (host.state) {
-            HostState.Available -> ConnectPill(onConnect)
-            HostState.Active -> DisconnectButton(onDisconnect)
-            else -> {}
+        // Trailing action: ✕ on rows where unpair is meaningful
+        // (Active = currently connected; Available = bonded
+        // computer waiting for auto-connect). Skipped on
+        // Ignored / Incompatible — those rows are visible for
+        // transparency only; nothing the user does there
+        // affects the HID path.
+        if (host.state == HostState.Active || host.state == HostState.Available) {
+            DisconnectButton(onDisconnect)
         }
-    }
-}
-
-@Composable
-private fun ConnectPill(onConnect: () -> Unit) {
-    val palette = BluetrackTheme.palette
-    Box(
-        modifier = Modifier
-            .height(32.dp)
-            .clip(RoundedCornerShape(999.dp))
-            .background(palette.mint)
-            .clickable(onClick = onConnect)
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "CONNECT",
-            color = Color.White,
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 0.8.sp,
-        )
     }
 }
 

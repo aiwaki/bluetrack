@@ -12,6 +12,51 @@ must "Forget This Device" and pair fresh after these.
 
 Targets `versionName 3.0.0` / `versionCode 3` once UI redesign lands.
 
+### UI & Connection UX
+
+- **#57** Real-device polish across three commits. Connection UX:
+  `shouldAutoRequestDiscoverability` now gates on `hostKinds.none
+  { Computer }` instead of `bondedDevices.isEmpty()` so a phone
+  paired with audio / accessories still triggers the system
+  discoverability prompt; TrustCard grew a tap-to-connect
+  `RECOMMENDED` section with a `DISCONNECT` pill that calls
+  `BluetoothHidDevice.disconnect` synchronously; manual
+  disconnects honour a 60 s grace window so the auto-connect
+  ticker cannot bounce the host back. Stale host clear: ACL
+  broadcast receiver + per-route header back arrow + rewrite of
+  `isConnected(status)` to a pure `host != null` check. Lock
+  contention: the 3 s `refreshCompatibility` ticker now runs
+  only while `status.host == null` so the gateway lock no
+  longer blocks `BleHidGateway.send()` during active mouse
+  input — fixed the visible cursor lag. Host classifier:
+  `HidHostClassifier` keyword fallback rank 75 + PHONE blacklist;
+  `BluetoothHostKind.classifyByName` is the single source of
+  truth for HostsScreen, TrustCard recommended list, and the
+  discoverability guard. `registerApp` orphan-slot failure now
+  surfaces an actionable "Toggle Bluetooth off and back on"
+  error. Settings cleanup: dropped Identity / Appearance /
+  Diagnostics & Activity / Scan mode / About-storage rows; added
+  Maintenance group with `Reset lifetime counters`; Visible-as
+  reads real `BluetoothAdapter.name`; Auto-connect is a
+  persisted DataStore toggle (default on) wired to a new
+  `@Volatile BleHidGateway.autoConnectEnabled` gate. Activity:
+  removed from the dock, reachable via the Hub `ActivityStrip`;
+  `sessionLengthLabel` now anchors on `now` so the cell tracks
+  wall-clock duration; HOSTS summary cell removed. Hub heartbeat
+  drives its spike rate + amplitude from a real activity
+  intensity (`max(lastInputAtMs, lastReportAtMs)` recency).
+  PinBlock relabelled "FEEDBACK PIN" with copy explaining it is
+  separate from the system Bluetooth pairing prompt. Touchpad
+  motion is now normalised by the longer surface dimension so
+  X and Y swipes of equal fraction emit equal cursor delta.
+  First-run Welcome route (`ui/welcome/`) carries the BT /
+  notifications rationale and a CTA that persists
+  `TweaksRepository.onboarded` and triggers the runtime
+  permission flow — replaces the immediate cold-launch system
+  dialog. `AutomationStateTest` extended for the new
+  `hostKinds`-based discoverability guard. 25 files changed,
+  ~1100 insertions across three squash-mergeable commits.
+
 ### Protocol & Security
 
 - **#34** Persist lifetime HID + feedback + rejection counters across

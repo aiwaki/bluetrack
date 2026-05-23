@@ -104,8 +104,15 @@ fun PinBlock(
                 verticalAlignment = Alignment.Top,
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    // Renamed "PAIRING PIN" → "FEEDBACK PIN" because
+                    // this is NOT the system BR/EDR pairing PIN.
+                    // It is the per-session secret the encrypted BLE
+                    // correction-packet channel uses to authenticate
+                    // the host. Calling it "pairing" misled users
+                    // into looking for it during Bluetooth pair on
+                    // the host side, where it has no role.
                     Text(
-                        text = "PAIRING PIN",
+                        text = "FEEDBACK PIN",
                         style = MaterialTheme.typography.labelMedium,
                         color = palette.fg2,
                     )
@@ -172,7 +179,13 @@ fun PinBlock(
                     )
                 }
                 Text(
-                    text = "New PIN every time the feedback channel opens. Auto-clears clipboard after 30s.",
+                    // Tell the user what to actually do with the
+                    // digits. Earlier copy implied a process (PIN
+                    // rotation, clipboard clearing) but never said
+                    // *where* the PIN is used.
+                    text = "Enter this on your Mac / PC feedback receiver to authorize encrypted " +
+                        "correction packets. A new PIN is generated every session. " +
+                        "Clipboard auto-clears after 30 s.",
                     color = palette.fg3,
                     fontSize = 11.sp,
                 )
@@ -192,7 +205,9 @@ fun PinBlock(
                         letterSpacing = 6.sp,
                     )
                     Text(
-                        text = "PIN appears once a host opens the feedback channel.",
+                        text = "A 6-digit feedback PIN appears here when a host opens the encrypted " +
+                            "BLE channel. Enter it on the host to authorize correction packets — " +
+                            "this is separate from the system Bluetooth pairing prompt.",
                         color = palette.fg2,
                         fontSize = 12.sp,
                     )

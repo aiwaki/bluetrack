@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -22,9 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,11 +36,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.ble.RejectionCause
+import dev.xd.bluetrack.ui.automationLabel
+import dev.xd.bluetrack.ui.hostFallbackLabel
 import dev.xd.bluetrack.ui.hub.Chip
 import dev.xd.bluetrack.ui.hub.ChipKind
 import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.Pulse
 import dev.xd.bluetrack.ui.hub.SectionLabel
+import dev.xd.bluetrack.ui.inputSourceLabel
+import dev.xd.bluetrack.ui.primaryStatusLabel
 import dev.xd.bluetrack.ui.shell.btGlass
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
 import dev.xd.bluetrack.ui.theme.BluetrackTokens
@@ -69,37 +72,31 @@ import kotlinx.coroutines.delay
 @Composable
 fun DiagnosticsScreen(
     status: GatewayStatus,
+    hidWave: List<Float>,
+    fbWave: List<Float>,
     modifier: Modifier = Modifier,
 ) {
     val palette = BluetrackTheme.palette
-    val hidWave = remember { mutableStateListOf<Float>() }
-    val fbWave = remember { mutableStateListOf<Float>() }
-    var lastReports by remember { mutableLongStateOf(status.reportsSent.toLong()) }
-    var lastFb by remember { mutableLongStateOf(status.feedbackPackets.toLong()) }
-    // Read the *current* `GatewayStatus` snapshot inside the tick
-    // loop instead of capturing the value seen at composition time.
-    // Without `rememberUpdatedState`, the `LaunchedEffect(Unit)`
-    // closes over the initial `status` and every later delta
-    // collapses to zero, freezing the live counters and the
-    // sparklines. Caught by Codex review on PR #51.
-    val statusState = rememberUpdatedState(status)
+    // Surface peak rate over the 60 s rolling window owned by
+    // the ViewModel. Diagnostics has no touchpad of its own, so
+    // a "latest second" delta is almost always 0 while the user
+    // reads the screen — the 60 s peak still reflects whether
+    // the gateway was busy recently, and the wave survives
+    // navigating away from Hub and back because the sampler
+    // lives at the VM, not the composable.
+    val hidRate by remember(hidWave) { derivedStateOf { hidWave.maxOrNull() ?: 0f } }
+    val fbRate by remember(fbWave) { derivedStateOf { fbWave.maxOrNull() ?: 0f } }
+
+    // 1 s ticking clock drives the "last seen Xs ago" labels on
+    // each rate card. Same cadence as the sparkline pump so the
+    // ageing text updates in lock-step with the chart.
+    var nowMs by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
     LaunchedEffect(Unit) {
         while (true) {
             delay(1_000L)
-            val nowReports = statusState.value.reportsSent.toLong()
-            val nowFb = statusState.value.feedbackPackets.toLong()
-            val dR = (nowReports - lastReports).coerceAtLeast(0L)
-            val dF = (nowFb - lastFb).coerceAtLeast(0L)
-            lastReports = nowReports
-            lastFb = nowFb
-            if (hidWave.size >= 60) hidWave.removeAt(0)
-            if (fbWave.size >= 60) fbWave.removeAt(0)
-            hidWave.add(dR.toFloat())
-            fbWave.add(dF.toFloat())
+            nowMs = android.os.SystemClock.elapsedRealtime()
         }
     }
-    val hidRate by remember { derivedStateOf { hidWave.lastOrNull() ?: 0f } }
-    val fbRate by remember { derivedStateOf { fbWave.lastOrNull() ?: 0f } }
 
     Column(
         modifier = modifier
@@ -123,18 +120,76 @@ fun DiagnosticsScreen(
             modifier = Modifier.padding(horizontal = BluetrackTokens.Sp6),
             verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
         ) {
+            // Connection + System cards moved from Hub to
+            // Diagnostics (2026-05-20). Hub keeps the at-a-glance
+            // StatusHero and TrustCard; raw transport state is a
+            // Diag concern.
+            SectionLabel(label = "Connection")
+            ConnectionCard(status = status, now = nowMs)
+            SectionLabel(label = "System")
+            SystemCard(status = status)
+            val empty =
+                status.lifetimeCounters.reports == 0L &&
+                    status.lifetimeCounters.feedback == 0L &&
+                    status.lifetimeCounters.rejections == 0L
+            if (empty) {
+                Text(
+                    text = "Counters appear once a host connects.",
+                    color = palette.fg0,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Bluetrack only meters traffic during an active HID session. " +
+                        "Moving the touchpad in the app while no host is paired emits " +
+                        "no HID reports, so the counters stay at zero.",
+                    color = palette.fg2,
+                    fontSize = 12.sp,
+                )
+                return@Column
+            }
             LiveRateHero(
                 hidRate = hidRate.toLong(),
                 fbRate = fbRate.toLong(),
-                hidTotal = status.reportsSent.toLong(),
-                fbTotal = status.feedbackPackets.toLong(),
+                // Show lifetime totals from the persisted counters
+                // rather than the per-session `reportsSent` /
+                // `feedbackPackets` fields. Lifetime values survive
+                // a process kill and reflect the cumulative work the
+                // engine has done — what a user opening Diagnostics
+                // actually wants to see.
+                hidTotal = status.lifetimeCounters.reports,
+                fbTotal = status.lifetimeCounters.feedback,
                 hidWave = hidWave,
                 fbWave = fbWave,
+                hidLastAtMs = status.lastReportAtMs,
+                fbLastAtMs = status.lastFeedbackAtMs,
+                now = nowMs,
             )
+            // The three blocks below (Replay window / PIN lifecycle
+            // / Feedback rejections) only carry signal once the
+            // encrypted BLE feedback channel is actually in use. A
+            // plain HID-only session (cursor + scroll on the host)
+            // never opens that channel, so the cards stay empty —
+            // explain that explicitly rather than leaving the user
+            // staring at "0 / 0 / 0" wondering whether something
+            // is broken.
+            val feedbackChannelEverUsed =
+                status.lifetimeCounters.feedback > 0L ||
+                    status.lifetimeCounters.rejections > 0L ||
+                    status.feedbackPin != null
+            if (!feedbackChannelEverUsed) {
+                FeedbackChannelDormantHint(palette)
+            }
             SectionLabel(label = "Replay window")
             ReplayWindowCard(
+                // Replay window's "last counter" is the per-frame
+                // counter the gateway acked, not the count of
+                // accepted packets. Display the accepted-feedback
+                // count anyway until the gateway exposes the real
+                // counter value; clearer label below makes that
+                // explicit.
                 lastCounter = status.feedbackPackets.toLong(),
-                drops = status.rejectedFeedbackPackets,
+                drops = (status.lifetimeCounters.rejectionsByCause[RejectionCause.Replay] ?: 0L).toInt(),
             )
             SectionLabel(label = "PIN lifecycle")
             PinLifecycleCard(
@@ -154,6 +209,11 @@ fun DiagnosticsScreen(
                 },
             )
             RejectionsCard(byCause = status.lifetimeCounters.rejectionsByCause)
+            // Bottom breathing room so the last card never sits
+            // flush against the dock. Matches the trailing
+            // `Modifier.padding(bottom = 24.dp)` on the Settings,
+            // Hosts, and Activity routes.
+            Box(modifier = Modifier.padding(bottom = 24.dp))
         }
     }
 }
@@ -166,6 +226,9 @@ private fun LiveRateHero(
     fbTotal: Long,
     hidWave: List<Float>,
     fbWave: List<Float>,
+    hidLastAtMs: Long?,
+    fbLastAtMs: Long?,
+    now: Long,
 ) {
     val palette = BluetrackTheme.palette
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
@@ -186,6 +249,8 @@ private fun LiveRateHero(
                 value = hidRate,
                 color = palette.mintBright,
                 wave = hidWave,
+                lastSeenAtMs = hidLastAtMs,
+                now = now,
                 modifier = Modifier.weight(1f),
             )
             RateColumn(
@@ -193,6 +258,8 @@ private fun LiveRateHero(
                 value = fbRate,
                 color = palette.cool,
                 wave = fbWave,
+                lastSeenAtMs = fbLastAtMs,
+                now = now,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -224,6 +291,8 @@ private fun RateColumn(
     value: Long,
     color: Color,
     wave: List<Float>,
+    lastSeenAtMs: Long?,
+    now: Long,
     modifier: Modifier = Modifier,
 ) {
     val palette = BluetrackTheme.palette
@@ -231,11 +300,24 @@ private fun RateColumn(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = palette.fg2,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.fg2,
+            )
+            Text(
+                text = "PEAK 60s",
+                color = palette.fg3,
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.2.sp,
+            )
+        }
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = value.toString(),
@@ -251,6 +333,78 @@ private fun RateColumn(
             )
         }
         Sparkline(data = wave, color = color, height = 28.dp, fill = true)
+        Text(
+            // Diagnostics has no touchpad of its own, so the live
+            // "/s" delta is almost always zero while the user reads
+            // the screen. "Last seen Xs ago" tells the user the
+            // pipeline is alive — and goes "—" when the channel
+            // has never fired (typical for FEEDBACK without the
+            // macOS-hid-inspector running on the host).
+            text = lastSeenAgoLabel(lastSeenAtMs, now),
+            color = palette.fg3,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+}
+
+/**
+ * "last X seconds ago" / "last X minutes ago" formatter for the
+ * per-channel rate cards. `null` = no event has ever fired in
+ * this session.
+ */
+private fun lastSeenAgoLabel(lastSeenAtMs: Long?, now: Long): String {
+    if (lastSeenAtMs == null) return "last seen —"
+    val ageMs = (now - lastSeenAtMs).coerceAtLeast(0L)
+    val secs = ageMs / 1_000L
+    val mins = secs / 60L
+    val hours = mins / 60L
+    return when {
+        secs < 2L -> "active now"
+        secs < 60L -> "last seen ${secs}s ago"
+        mins < 60L -> "last seen ${mins}m ago"
+        else -> "last seen ${hours}h ago"
+    }
+}
+
+@Composable
+private fun FeedbackChannelDormantHint(
+    palette: dev.xd.bluetrack.ui.theme.BluetrackPalette,
+) {
+    val shape = RoundedCornerShape(BluetrackTokens.RadiusSm)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .border(1.dp, palette.cool.copy(alpha = 0.3f), shape)
+            .background(palette.cool.copy(alpha = 0.05f))
+            .padding(BluetrackTokens.Sp3),
+        horizontalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = "ⓘ",
+            color = palette.cool,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = "Feedback channel dormant",
+                color = palette.fg0,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text =
+                    "Replay window, PIN lifecycle and rejection counters only " +
+                        "tick while an encrypted feedback channel is open. Run the " +
+                        "macOS-hid-inspector `feedback` subcommand on the host to " +
+                        "exercise this path.",
+                color = palette.fg2,
+                fontSize = 11.sp,
+            )
+        }
     }
 }
 
@@ -351,7 +505,12 @@ private fun PinLifecycleCard(
             )
         }
         Text(
-            text = "PIN itself only shown on Hub.",
+            text =
+                if (pinPresent) {
+                    "PIN digits themselves are only shown on the Hub."
+                } else {
+                    "No PIN issued yet — appears when the host opens the encrypted channel."
+                },
             color = palette.fg3,
             fontSize = 10.sp,
             fontFamily = FontFamily.Monospace,
@@ -478,3 +637,82 @@ private data class Rejection(
     val color: Color,
     val count: Int,
 )
+
+@Composable
+private fun ConnectionCard(
+    status: GatewayStatus,
+    now: Long,
+) {
+    val palette = BluetrackTheme.palette
+    val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .btGlass(strong = false, shape = shape)
+            .padding(BluetrackTokens.Sp4),
+        verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
+    ) {
+        DiagStatusLine(label = "STATE", value = primaryStatusLabel(status, now))
+        DiagStatusLine(label = "HOST", value = status.host ?: hostFallbackLabel(status))
+        DiagStatusLine(label = "INPUT", value = inputSourceLabel(status, now))
+        DiagStatusLine(label = "FLOW", value = status.automationLabel())
+        status.error?.let { error ->
+            Text(
+                text = error,
+                color = palette.warn,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SystemCard(status: GatewayStatus) {
+    val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .btGlass(strong = false, shape = shape)
+            .padding(BluetrackTokens.Sp4),
+        verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
+    ) {
+        DiagStatusLine(
+            label = "BT",
+            value = if (status.compatibility.bluetoothEnabled) "Ready" else "Off",
+        )
+        DiagStatusLine(label = "HID", value = status.hid)
+        DiagStatusLine(label = "PAIR", value = status.pairing)
+        DiagStatusLine(label = "BLE", value = status.feedback)
+    }
+}
+
+@Composable
+private fun DiagStatusLine(label: String, value: String) {
+    val palette = BluetrackTheme.palette
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = palette.fg3,
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 1.6.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.width(58.dp),
+        )
+        Text(
+            text = value,
+            color = palette.fg0,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}

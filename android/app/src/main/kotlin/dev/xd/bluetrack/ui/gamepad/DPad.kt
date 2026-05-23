@@ -46,23 +46,38 @@ fun DPad(
 ) {
     val palette = BluetrackTheme.palette
     var active by remember { mutableStateOf<Int?>(null) }
+
+    // DualSense-style cross: each arm is a tall pill oriented
+    // along its own axis so adjacent arrows share parallel
+    // edges (not corners). Up / Down are 28 dp wide x 40 dp
+    // tall, Left / Right swap dimensions. With centres offset
+    // 30 dp from origin, edges just touch — no overlap, all
+    // four reading as one continuous cross.
+    data class Arm(
+        val hat: Int,
+        val dx: Int,
+        val dy: Int,
+        val glyph: String,
+        val vertical: Boolean,
+    )
     val dirs = listOf(
-        Triple(0, 0 to -1, "↑"),
-        Triple(2, 1 to 0, "→"),
-        Triple(4, 0 to 1, "↓"),
-        Triple(6, -1 to 0, "←"),
+        Arm(hat = 0, dx = 0, dy = -1, glyph = "↑", vertical = true),
+        Arm(hat = 2, dx = 1, dy = 0, glyph = "→", vertical = false),
+        Arm(hat = 4, dx = 0, dy = 1, glyph = "↓", vertical = true),
+        Arm(hat = 6, dx = -1, dy = 0, glyph = "←", vertical = false),
     )
     Box(
-        modifier = modifier.size(88.dp),
+        modifier = modifier.size(112.dp),
     ) {
-        dirs.forEach { (hatValue, xy, glyph) ->
-            val (dx, dy) = xy
-            val isActive = active == hatValue
+        dirs.forEach { arm ->
+            val isActive = active == arm.hat
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .size(32.dp)
-                    .offset(x = (dx * 22).dp, y = (dy * 22).dp)
+                    .size(
+                        width = if (arm.vertical) 28.dp else 40.dp,
+                        height = if (arm.vertical) 40.dp else 28.dp,
+                    ).offset(x = (arm.dx * 30).dp, y = (arm.dy * 30).dp)
                     .clip(RoundedCornerShape(BluetrackTokens.RadiusXs))
                     .background(
                         if (isActive) {
@@ -81,8 +96,8 @@ fun DPad(
                     ).pointerInput(Unit) {
                         detectTapGestures(
                             onPress = {
-                                active = hatValue
-                                onHat(hatValue)
+                                active = arm.hat
+                                onHat(arm.hat)
                                 val released = tryAwaitRelease()
                                 active = null
                                 onHat(8)
@@ -94,7 +109,7 @@ fun DPad(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = glyph,
+                    text = arm.glyph,
                     color = if (isActive) Color.White else palette.fg1,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,

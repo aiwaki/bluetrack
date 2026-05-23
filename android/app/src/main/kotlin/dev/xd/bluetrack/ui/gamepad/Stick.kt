@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,9 +21,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
 import kotlin.math.hypot
 
@@ -159,15 +156,11 @@ fun Stick(
                     ).border(2.dp, Color.White.copy(alpha = if (inDead) 0.06f else 0.18f), CircleShape),
             )
         }
-        Text(
-            text = "$label · ${if (label == "L") "L3" else "R3"}",
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .offset(y = (wellSize.value / 2f + 12f).dp),
-            color = palette.fg2,
-            fontSize = 9.sp,
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 0.36.sp,
-        )
+        // Caption removed — earlier "L · L3" / "R · R3" labels
+        // sat below the stick well at a fixed offset and routinely
+        // clipped into the D-pad / face buttons or off-screen in
+        // landscape. The stick's position alone telegraphs L vs R.
+        @Suppress("UNUSED_EXPRESSION")
+        palette
     }
 }

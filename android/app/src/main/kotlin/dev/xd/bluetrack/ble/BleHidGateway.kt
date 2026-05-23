@@ -6,7 +6,10 @@ import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.ParcelUuid
 import android.os.SystemClock
 import android.util.Log
@@ -63,6 +66,16 @@ data class CompatibilitySnapshot(
     val multipleAdvertisementSupported: Boolean? = null,
     val hidProfile: String = "Unknown",
     val scanMode: String = "Unknown",
+    /**
+     * Local `BluetoothAdapter.name`. This is the BR/EDR inquiry
+     * name the host (Mac / PC) sees in its Bluetooth settings
+     * during pair — typically the device's user-facing name
+     * (e.g. "Redmi 10"). Distinct from the HID SDP service name
+     * ("Bluetrack Pro Engine"), which is what the host shows
+     * inside its keyboard / mouse input device list after pair.
+     * `null` when permission is missing or the radio is off.
+     */
+    val adapterName: String? = null,
     val bondedDevices: List<String> = emptyList(),
     /**
      * Real Bluetooth Class of Device → kind mapping for each
@@ -140,13 +153,53 @@ class BleHidGateway(
     private var rejectedFeedbackPackets = 0
     private var lastNoHostReportWarningMs = 0L
     private var lastAutoConnectAttemptMs = 0L
+
+    /**
+     * Wall-clock timestamp of the most recent user-initiated
+     * disconnect (TrustCard "DISCONNECT" pill). The auto-connect
+     * ticker honours a grace window after this — otherwise the
+     * 3 s refresh tick re-picks the same host immediately and the
+     * Hub bounces back to ACTIVE LINK within a frame. The window
+     * is cleared the moment the user taps CONNECT on a recommended
+     * row so an explicit reconnect is honoured without delay.
+     */
+    private var manualDisconnectAtMs = 0L
+
+    /**
+     * User-controlled toggle for the auto-connect retry path.
+     * Default `true` — matches the "calm autopilot" baseline. The
+     * Settings route flips this via [setAutoConnectEnabled] backed
+     * by `TweaksRepository.autoConnectEnabled`. When disabled the
+     * `maybeAutoConnectHost` ticker no-ops and the user must tap
+     * `CONNECT` on a TrustCard recommended row to wake a bonded
+     * host.
+     */
+    @Volatile
+    private var autoConnectEnabled: Boolean = true
+
+    fun setAutoConnectEnabled(enabled: Boolean) {
+        autoConnectEnabled = enabled
+    }
     private var lastNoComputerHostWarningMs = 0L
     private var lastReportStatusAtMs = 0L
     private var lastGamepadWakeAtMs = 0L
     private var lastGamepadDiscoveryWakeAtMs = 0L
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private val _status = MutableStateFlow(GatewayStatus())
+    private val _status = MutableStateFlow(GatewayStatus(lifetimeCounters = lifetimeCounters.current()))
     val status: StateFlow<GatewayStatus> = _status
+
+    /**
+     * Broadcast receiver that listens for
+     * `BluetoothDevice.ACTION_ACL_DISCONNECTED`. Android only fires
+     * the HID callback for explicit disconnects; silent disconnects
+     * (Mac sleep / lid close / out-of-range) leave the cached HID
+     * state stuck at STATE_CONNECTED until the LMP supervision
+     * timeout fires. The ACL receiver wakes when supervision finally
+     * gives up — typically ~7 s after link loss on modern stacks —
+     * and we use that to drop the cached host without waiting for
+     * the per-profile callback that never comes.
+     */
+    private var aclReceiver: BroadcastReceiver? = null
 
     private val profileListener =
         object : BluetoothProfile.ServiceListener {
@@ -325,6 +378,7 @@ class BleHidGateway(
 
     @Synchronized
     fun initialize(announceCompatibility: Boolean = true) {
+        ensureAclReceiverRegistered()
         refreshCompatibility(announce = announceCompatibility)
         val bluetoothAdapter =
             adapter ?: run {
@@ -522,21 +576,140 @@ class BleHidGateway(
                 )
             registrationInFlight = accepted
             if (!accepted) {
-                updateStatus(
-                    hid = "HID registration rejected",
-                    compatibility = snapshotCompatibility(),
-                    error = "HID registration request was rejected; Bluetrack will retry automatically.",
-                    eventSource = "HID",
-                    eventMessage = "BluetoothHidDevice.registerApp returned false.",
-                )
+                // Common cause: a previous Bluetrack process (or a
+                // reinstall) left an orphan HID app registration
+                // attached to the profile proxy. Android refuses a
+                // second `registerApp` with
+                // `failed because another app is registered`.
+                // Force-clear the slot and retry once before
+                // surfacing the failure.
+                val retried = try {
+                    device.unregisterApp()
+                    device.registerApp(
+                        sdp,
+                        null,
+                        q,
+                        ioExecutor,
+                        object : BluetoothHidDevice.Callback() {
+                            override fun onAppStatusChanged(
+                                pluggedDevice: BluetoothDevice?,
+                                registered: Boolean,
+                            ) {
+                                registrationInFlight = false
+                                if (registered) registeredMode = modeAtRegistration
+                                updateStatus(
+                                    hid =
+                                        if (registered) {
+                                            "HID ready (${modeAtRegistration.name})"
+                                        } else {
+                                            "HID app inactive"
+                                        },
+                                    compatibility = snapshotCompatibility(),
+                                    error = if (registered) null else _status.value.error,
+                                    eventSource = "HID",
+                                    eventMessage =
+                                        if (registered) {
+                                            "HID app registered after orphan-slot retry."
+                                        } else {
+                                            "HID app registration retry failed."
+                                        },
+                                )
+                                if (registered) maybeAutoConnectHost("HID registration retry")
+                            }
+
+                            override fun onConnectionStateChanged(
+                                device: BluetoothDevice,
+                                state: Int,
+                            ) {
+                                host = if (state == BluetoothProfile.STATE_CONNECTED) device else null
+                                updateStatus(
+                                    hid =
+                                        when (state) {
+                                            BluetoothProfile.STATE_CONNECTING -> "Connecting"
+                                            BluetoothProfile.STATE_CONNECTED ->
+                                                "Connected (${registeredMode?.name ?: modeAtRegistration.name})"
+                                            BluetoothProfile.STATE_DISCONNECTING -> "Disconnecting"
+                                            else ->
+                                                "HID ready (${registeredMode?.name ?: modeAtRegistration.name})"
+                                        },
+                                    compatibility = snapshotCompatibility(),
+                                    pairing =
+                                        if (state == BluetoothProfile.STATE_CONNECTED) {
+                                            "Paired and HID connected"
+                                        } else {
+                                            pairingLabel(snapshotCompatibility())
+                                        },
+                                    host =
+                                        if (state == BluetoothProfile.STATE_CONNECTED) {
+                                            device.safeName()
+                                        } else {
+                                            null
+                                        },
+                                    eventSource = "HID",
+                                    eventMessage = "Host ${device.safeName()} is ${state.connectionStateLabel()}.",
+                                )
+                            }
+                        },
+                    )
+                } catch (_: Throwable) {
+                    false
+                }
+                registrationInFlight = retried
+                if (!retried) {
+                    // Android's Bluedroid `HidDeviceService` reports
+                    // `registerApp(): failed because another app is
+                    // registered` (errno 4 = HID_STATUS_ALREADY_REGISTERED).
+                    // The HID slot is held by a previous registration
+                    // we can no longer reach (process gone, callback
+                    // discarded, etc.). The unregister+retry path also
+                    // fails because we are not the owner. Only a radio
+                    // reset clears it — surface that to the user.
+                    updateStatus(
+                        hid = "HID slot busy",
+                        compatibility = snapshotCompatibility(),
+                        error =
+                            "HID slot is held by another registration. " +
+                                "Toggle Bluetooth off and back on in Quick Settings, " +
+                                "then reopen Bluetrack.",
+                        eventSource = "HID",
+                        eventMessage =
+                            "registerApp blocked by HID_STATUS_ALREADY_REGISTERED; " +
+                                "user must toggle Bluetooth to clear orphan slot.",
+                    )
+                } else {
+                    updateStatus(
+                        hid = "HID registration retrying",
+                        eventSource = "HID",
+                        eventMessage = "Orphan HID slot detected; retrying registerApp.",
+                    )
+                }
             }
         } catch (_: SecurityException) {
             reportPermissionMissing()
         }
     }
 
+    /**
+     * Connect a specific bonded host by display name. Surfaced as
+     * the tap-to-connect action on the Hub TrustCard recommended-host
+     * list. Falls through to [connectBondedHost] (auto-pick best) if
+     * [name] is null.
+     */
+    @Synchronized
+    fun connectBondedHost(name: String) {
+        // Explicit user tap overrides the manual-disconnect grace
+        // window so a fresh CONNECT doesn't have to wait it out.
+        manualDisconnectAtMs = 0L
+        connectBondedHostInternal(name)
+    }
+
     @Synchronized
     fun connectBondedHost() {
+        connectBondedHostInternal(null)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun connectBondedHostInternal(targetName: String?) {
         val device =
             hid ?: run {
                 updateStatus(
@@ -567,28 +740,72 @@ class BleHidGateway(
 
         try {
             val bondedDevices = bluetoothAdapter.bondedDevices
-            val candidate = bondedDevices.bestHidHost()
+            // Resolve the target. Bluetooth display names are NOT
+            // unique (Codex review on PR #57 — two bonded devices
+            // can share a name, e.g. "MacBook Pro" if the user
+            // owns more than one). When the name maps to multiple
+            // bonded devices we refuse the request rather than
+            // picking an arbitrary match — the alternative would
+            // silently send HID connect to the wrong host.
+            val nameMatches =
+                if (targetName != null) {
+                    bondedDevices.filter { it.safeName() == targetName }
+                } else {
+                    emptyList()
+                }
+            if (targetName != null && nameMatches.size > 1) {
+                updateStatus(
+                    pairing = "Ambiguous host name",
+                    compatibility = snapshotCompatibility(),
+                    error =
+                        "Multiple bonded devices are named \"$targetName\". " +
+                            "Rename one on its host to disambiguate, then tap CONNECT again.",
+                    eventSource = "HID",
+                    eventMessage =
+                        "Tap-to-connect refused: $targetName resolves to " +
+                            "${nameMatches.size} bonded devices.",
+                )
+                return
+            }
+            val candidate =
+                if (targetName != null) {
+                    nameMatches.firstOrNull()
+                } else {
+                    bondedDevices.bestHidHost()
+                }
 
             if (candidate == null) {
                 val ignoredDevices =
                     bondedDevices
                         .map { it.safeName() }
                         .sorted()
+                val notFoundByName = targetName != null
                 updateStatus(
-                    pairing = if (ignoredDevices.isEmpty()) "No bonded host" else "No computer HID host",
+                    pairing =
+                        when {
+                            notFoundByName -> "Host not bonded"
+                            ignoredDevices.isEmpty() -> "No bonded host"
+                            else -> "No computer HID host"
+                        },
                     compatibility = snapshotCompatibility(),
                     error =
-                        if (ignoredDevices.isEmpty()) {
-                            "Pair the PC first; Bluetrack will connect the HID host automatically."
-                        } else {
-                            "Ignoring bonded devices that do not look like computer HID hosts."
+                        when {
+                            notFoundByName ->
+                                "Bonded device \"$targetName\" was not found; re-pair on the host."
+                            ignoredDevices.isEmpty() ->
+                                "Pair the PC first; Bluetrack will connect the HID host automatically."
+                            else ->
+                                "Ignoring bonded devices that do not look like computer HID hosts."
                         },
                     eventSource = "HID",
                     eventMessage =
-                        if (ignoredDevices.isEmpty()) {
-                            "No bonded Bluetooth devices are available for HID connect."
-                        } else {
-                            "Ignored non-host bonded devices: ${ignoredDevices.joinToString()}."
+                        when {
+                            notFoundByName ->
+                                "Tap-to-connect: \"$targetName\" no longer bonded."
+                            ignoredDevices.isEmpty() ->
+                                "No bonded Bluetooth devices are available for HID connect."
+                            else ->
+                                "Ignored non-host bonded devices: ${ignoredDevices.joinToString()}."
                         },
                 )
                 return
@@ -628,10 +845,16 @@ class BleHidGateway(
     }
 
     private fun maybeAutoConnectHost(reason: String) {
+        if (!autoConnectEnabled) return
         val snapshot = snapshotCompatibility()
         val now = SystemClock.elapsedRealtime()
         if (hid == null || registeredMode == null || host != null || snapshot.bondedDevices.isEmpty()) return
         if (now - lastAutoConnectAttemptMs < 4000L) return
+        // Respect a user-initiated disconnect for 60 s. Without
+        // this the 3 s refresh tick would re-pick the same host
+        // and the Hub would bounce ACTIVE LINK back the next frame
+        // after the user tapped "DISCONNECT".
+        if (manualDisconnectAtMs != 0L && now - manualDisconnectAtMs < 60_000L) return
         val bluetoothAdapter = adapter ?: return
         val candidate =
             try {
@@ -840,12 +1063,98 @@ class BleHidGateway(
         } catch (_: SecurityException) {
             // Activity is already shutting down; state no longer matters.
         }
+        aclReceiver?.let {
+            try {
+                context.unregisterReceiver(it)
+            } catch (_: IllegalArgumentException) {
+                // Receiver wasn't registered (e.g. initialize never ran).
+            }
+        }
+        aclReceiver = null
         hid = null
         host = null
         registeredMode = null
         registrationInFlight = false
         profileProxyRequested = false
         ioExecutor.shutdownNow()
+    }
+
+    /**
+     * Force-disconnect the currently active HID host. Surfaced to
+     * the user as the manual "DISCONNECT" pill on the Hub TrustCard
+     * recommended-host row. Unlike the silent-disconnect path
+     * (Mac sleep, lid close), calling `BluetoothHidDevice.disconnect`
+     * does fire `onConnectionStateChanged(STATE_DISCONNECTED)`
+     * synchronously inside Bluedroid, so the cached `host` clears
+     * within a single status flow emission.
+     */
+    @Synchronized
+    @SuppressLint("MissingPermission")
+    fun disconnectActiveHost() {
+        val currentHost = host ?: return
+        manualDisconnectAtMs = SystemClock.elapsedRealtime()
+        val proxy = hid ?: run {
+            // No proxy → we cannot ask Bluedroid to disconnect,
+            // but the cached host is stale anyway. Drop it.
+            host = null
+            updateStatus(
+                host = null,
+                pairing = pairingLabel(snapshotCompatibility()),
+                eventSource = "HID",
+                eventMessage = "Manual disconnect: no HID proxy, dropped cached host.",
+            )
+            return
+        }
+        try {
+            proxy.disconnect(currentHost)
+            updateStatus(
+                eventSource = "HID",
+                eventMessage = "Manual disconnect requested for ${currentHost.safeName()}.",
+            )
+        } catch (_: SecurityException) {
+            reportPermissionMissing()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun ensureAclReceiverRegistered() {
+        if (aclReceiver != null) return
+        val receiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(receivedContext: Context?, intent: Intent?) {
+                    if (intent?.action != BluetoothDevice.ACTION_ACL_DISCONNECTED) return
+                    val device: BluetoothDevice? =
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    val currentHost = host ?: return
+                    if (device?.address != currentHost.address) return
+                    host = null
+                    updateStatus(
+                        host = null,
+                        hid =
+                            if (registeredMode != null) {
+                                "HID ready (${registeredMode?.name})"
+                            } else {
+                                "HID slot busy"
+                            },
+                        pairing = pairingLabel(snapshotCompatibility()),
+                        eventSource = "HID",
+                        eventMessage =
+                            "ACL_DISCONNECTED for ${currentHost.safeName()}; cleared cached host.",
+                    )
+                }
+            }
+        try {
+            context.registerReceiver(
+                receiver,
+                IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED),
+            )
+            aclReceiver = receiver
+        } catch (_: SecurityException) {
+            // Bluetooth permission missing — `reportPermissionMissing`
+            // will surface the actual error elsewhere; the ACL probe
+            // is a best-effort latency optimization.
+        }
     }
 
     @Synchronized
@@ -856,7 +1165,70 @@ class BleHidGateway(
     }
 
     @Synchronized
+    @SuppressLint("MissingPermission")
     fun refreshCompatibility(announce: Boolean = true) {
+        // Verify our cached `host` is still actually connected.
+        // Android's `BluetoothHidDevice.Callback.onConnectionStateChanged`
+        // fires reliably on explicit disconnects, but Mac → sleep
+        // / radio off / quick suspend skip the callback entirely
+        // and leave `host` stale → the Hub keeps reading
+        // "Active link" forever. Probe the live HID profile state
+        // on every compatibility refresh (triggered by Activity
+        // onResume + UI refreshes) and clear `host` if the
+        // profile says it is disconnected.
+        host?.let { currentHost ->
+            // Drop the cached `host` if either:
+            //
+            //  1. HID proxy null — radio toggled or orphan-slot
+            //     retry never completed. Profile is gone, so the
+            //     cached host is by definition invalid.
+            //
+            //  2. `hid.getConnectionState(host) != CONNECTED` —
+            //     this catches *explicit* disconnects (host side
+            //     clicked "Disconnect", host BT radio disabled,
+            //     phone-side disconnect call). Silent disconnects
+            //     (Mac sleep, lid close, host walked out of range)
+            //     are NOT caught here: the link state stays
+            //     STATE_CONNECTED until the LMP supervision timer
+            //     fires 30–60 s later. `connectedDevices` reads
+            //     the same cache, `sendReport` returns true while
+            //     L2CAP buffers writes. There is no fast probe at
+            //     this API surface — the ACL_DISCONNECTED broadcast
+            //     receiver (`aclReceiver`) catches the eventual
+            //     link loss when supervision finally fires.
+            val proxy = hid
+            val state =
+                if (proxy != null) {
+                    try {
+                        proxy.getConnectionState(currentHost)
+                    } catch (_: SecurityException) {
+                        BluetoothProfile.STATE_DISCONNECTED
+                    }
+                } else {
+                    BluetoothProfile.STATE_DISCONNECTED
+                }
+            if (state != BluetoothProfile.STATE_CONNECTED) {
+                host = null
+                // Reset both `hid` and `pairing` strings here.
+                // Earlier this only reset `hid`, leaving
+                // `pairing = "Paired and HID connected"` stale so
+                // `isConnected(status)` would keep returning true
+                // via its string sniff and the Hub kept reading
+                // "ACTIVE LINK".
+                updateStatus(
+                    host = null,
+                    hid =
+                        if (registeredMode != null) {
+                            "HID ready (${registeredMode?.name})"
+                        } else {
+                            "HID slot busy"
+                        },
+                    pairing = pairingLabel(snapshotCompatibility()),
+                    eventSource = "HID",
+                    eventMessage = "Cleared stale ${currentHost.safeName()} link (no callback after disconnect).",
+                )
+            }
+        }
         val snapshot = snapshotCompatibility()
         updateStatus(
             pairing = pairingLabel(snapshot),
@@ -1202,6 +1574,64 @@ class BleHidGateway(
     }
 
     /**
+     * Unpair a bonded device by name. Android's
+     * `BluetoothDevice.removeBond()` is a hidden API but stable
+     * across every OEM Bluetrack supports, so we call it via
+     * reflection. Surfaced for the Hosts route ✕ button — the
+     * only "delete this host" action the gateway can perform.
+     *
+     * Returns `true` if a matching bonded device was found and
+     * the reflection call did not throw. Caller refreshes the
+     * compatibility snapshot afterwards so the row drops out of
+     * the list on the next status emit.
+     */
+    @Synchronized
+    @SuppressLint("MissingPermission")
+    fun removeBondedDevice(name: String): Boolean {
+        val adapter = adapter ?: return false
+        return try {
+            // Same ambiguous-name protection as the connect path:
+            // refuse to unpair when two bonded devices share a
+            // display name. Acting on an arbitrary match would
+            // silently kill the wrong bond.
+            val candidates = adapter.bondedDevices.filter { it.safeName() == name }
+            if (candidates.size != 1) {
+                updateStatus(
+                    eventSource = "HID",
+                    eventMessage =
+                        if (candidates.isEmpty()) {
+                            "Unpair refused: \"$name\" is not bonded."
+                        } else {
+                            "Unpair refused: ${candidates.size} bonded devices named \"$name\"."
+                        },
+                )
+                return false
+            }
+            val device = candidates.first()
+            // Hidden API — public since API 5, never removed.
+            // Reflection is the supported pattern in every
+            // production unpair sample I could find.
+            val method = device.javaClass.getMethod("removeBond")
+            val ok = method.invoke(device) as? Boolean ?: false
+            if (ok) {
+                refreshCompatibility()
+                updateStatus(
+                    compatibility = snapshotCompatibility(),
+                    eventSource = "Pairing",
+                    eventMessage = "Removed bond with $name.",
+                )
+            }
+            ok
+        } catch (t: Throwable) {
+            updateStatus(
+                eventSource = "Pairing",
+                eventMessage = "Failed to remove bond with $name: ${t.javaClass.simpleName}.",
+            )
+            false
+        }
+    }
+
+    /**
      * Reset the persisted lifetime counters to zero. Surfaced for an
      * eventual Settings → Diagnostics "Reset counters" CTA.
      */
@@ -1400,7 +1830,18 @@ class BleHidGateway(
                 bluetoothAdapter.bondedDevices.forEach { device ->
                     val name = device.safeName()
                     bondedNames += name
-                    val kind = classifyBluetoothHost(device.bluetoothClass)
+                    // Prefer BluetoothClass; fall back to a
+                    // name-keyword heuristic when the class is
+                    // missing / uninformative (some older bonded
+                    // records on Android arrive with a null or
+                    // uncategorised BluetoothClass, especially
+                    // PCs paired before BTHID rebonding).
+                    val klassKind = classifyBluetoothHost(device.bluetoothClass)
+                    val kind = if (klassKind == BluetoothHostKind.Unknown) {
+                        classifyByName(name)
+                    } else {
+                        klassKind
+                    }
                     kinds[name] = kind
                     val perHost = mutableSetOf<String>()
                     if (kind == BluetoothHostKind.Phone) perHost += "ios-hid"
@@ -1425,6 +1866,7 @@ class BleHidGateway(
                         else -> "Bluetooth off"
                     },
                 scanMode = if (enabled) bluetoothAdapter.scanMode.scanModeLabel() else "Bluetooth off",
+                adapterName = if (enabled) bluetoothAdapter.name else null,
                 bondedDevices = bondedNames,
                 hostKinds = kinds,
                 hostCaveats = caveats,

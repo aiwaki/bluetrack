@@ -14,58 +14,56 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ble.GatewayStatus
-import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.SectionLabel
 import dev.xd.bluetrack.ui.shell.btGlass
 import dev.xd.bluetrack.ui.theme.BluetrackTokens
 
 /**
- * Settings route. Mirrors canvas `SettingsScreen`
- * (`docs/design/v1/settings.jsx`).
+ * Settings route. Slimmed down to four groups that actually
+ * carry signal: read-only Bluetooth state the user might care
+ * about, permission shortcuts, a maintenance action, and the
+ * About block. Identity / appearance / route-shortcut groups
+ * were removed — Hub already surfaces the trusted host pin,
+ * the dock covers Diagnostics and Activity, and the appearance
+ * toggles drove cosmetic-only knobs that the design now keeps
+ * at a fixed baseline.
  *
- * Six groups in canvas order:
- *
- *  - **Identity** — visible-as name, trusted-host shortcut, raw
- *    fingerprint, show-QR + forget actions.
- *  - **Connectivity** — FG-service state, auto-connect toggle,
- *    HID profile / BLE advertiser / multi-adv availability.
- *  - **Permissions** — BT nearby + notifications grants, link to
- *    system permissions screen.
- *  - **Diagnostics & Activity** — deep links to those two
- *    routes + export shortcut.
- *  - **Appearance** — Tweaks panel placeholder + reduce-motion
- *    + aurora-on-low-battery toggles (UI-only for now).
- *  - **About** — version, commit, identity storage hint,
- *    source-code link, "what is Bluetrack?".
- *
- * Wired to [GatewayStatus] for everything the gateway tracks
- * today; the rest are surface-level placeholders until backing
- * DataStore + permissions plumbing land.
+ *  - **Connection** — visible-as name + read-only adapter
+ *    snapshot (FG service, BLE advertiser, multi-adv, scan
+ *    mode). Auto-connect behaviour is implicit ("computer-class
+ *    hosts only") and called out in the hint.
+ *  - **Permissions** — BT nearby + notifications grants with
+ *    clickable Manage shortcut. Tapping a row that is
+ *    "Required" / unknown opens the matching system page.
+ *  - **Maintenance** — single action: reset lifetime counters.
+ *    Useful for new-device testing without reinstalling.
+ *  - **About** — version, commit, source-code link.
  */
 @Composable
 fun SettingsScreen(
     status: GatewayStatus,
-    tweaks: TweaksState,
-    onTweakChange: (TweaksState) -> Unit,
-    onNavigate: (Route) -> Unit,
-    onForgetHost: () -> Unit,
     versionName: String,
     versionCode: Int,
     /**
      * Runtime BT nearby permission grant. `null` = activity has
      * not plumbed `ContextCompat.checkSelfPermission(...)` through
      * yet; the row renders as "Unknown" instead of guessing from
-     * adapter state (which would mislead a user who has granted
-     * the permission but disabled the BT radio).
+     * adapter state.
      */
     nearbyPermissionGranted: Boolean? = null,
     /**
      * Runtime `POST_NOTIFICATIONS` grant (API 33+). `null` when
-     * not plumbed; rendered as "Unknown".
+     * not plumbed.
      */
     notificationsPermissionGranted: Boolean? = null,
     commitShort: String? = null,
+    autoConnectEnabled: Boolean = true,
+    onAutoConnectChange: (Boolean) -> Unit = {},
+    onOpenNotificationSettings: () -> Unit = {},
+    onOpenAppPermissions: () -> Unit = {},
+    onOpenSourceCode: () -> Unit = {},
+    onResetLifetimeCounters: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val compat = status.compatibility
@@ -76,46 +74,24 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
     ) {
         HubHeader(title = "Settings")
-        SettingsGroup(title = "IDENTITY") {
+        SettingsGroup(title = "CONNECTION") {
             SettingsRow(
                 label = "Visible as",
-                value = "Bluetrack Pro Engine",
+                value = compat.adapterName ?: "—",
                 mono = true,
                 hint = "Search for this name in macOS · Windows BT settings",
             )
-            val trusted = status.trustedHostFingerprint
-            SettingsRow(
-                label = "Trusted host",
-                value = status.host ?: trusted?.let { "fingerprint pinned" } ?: "—",
-                accent = trusted != null,
-                kind = SettingsRowKind.Chev,
-            )
-            if (trusted != null) {
-                SettingsRow(
-                    label = "Fingerprint",
-                    value = trusted,
-                    mono = true,
-                )
-            }
-            SettingsRow(label = "Show identity QR", kind = SettingsRowKind.Chev)
-            SettingsRow(
-                label = "Forget host…",
-                kind = SettingsRowKind.Chev,
-                onClick = if (trusted != null) onForgetHost else null,
-            )
-        }
-        SettingsGroup(title = "CONNECTIVITY") {
             SettingsRow(
                 label = "Foreground service",
                 value = if (compat.bluetoothEnabled) "Running" else "Off",
                 accent = compat.bluetoothEnabled,
             )
-            SettingsRow(
-                label = "Auto-connect to bonded",
-                value = "On",
-                hint = "Computer-class hosts only · audio + accessories skipped",
+            SettingsToggleRow(
+                label = "Auto-connect to bonded host",
+                hint = "Computer-class hosts only · audio + accessories are skipped",
+                checked = autoConnectEnabled,
+                onCheckedChange = onAutoConnectChange,
             )
-            SettingsRow(label = "HID profile", value = compat.hidProfile)
             SettingsRow(
                 label = "BLE advertiser",
                 value = compat.bleAdvertiserAvailable.availabilityLabel(),
@@ -124,63 +100,43 @@ fun SettingsScreen(
                 label = "Multi advertisement",
                 value = compat.multipleAdvertisementSupported.availabilityLabel(),
             )
-            SettingsRow(label = "Scan mode", value = compat.scanMode, mono = true)
         }
         SettingsGroup(title = "PERMISSIONS") {
-            // Drive directly from runtime grant state, not from
-            // adapter power. The two are separate (a user can
-            // grant the permission and still toggle Bluetooth off
-            // — that should not show as `Required` here).
+            // Drive directly from runtime grant state — adapter
+            // power is independent (a user can grant the
+            // permission and still toggle BT off; that should
+            // not say "Required" here).
             SettingsRow(
                 label = "Bluetooth nearby",
                 value = nearbyPermissionGranted.grantLabel(),
                 accent = nearbyPermissionGranted == true,
+                kind = SettingsRowKind.Chev,
+                onClick = onOpenAppPermissions,
             )
             SettingsRow(
                 label = "Notifications",
                 value = notificationsPermissionGranted.grantLabel(),
                 accent = notificationsPermissionGranted == true,
                 kind = SettingsRowKind.Chev,
-            )
-            SettingsRow(label = "Manage all permissions", kind = SettingsRowKind.Chev)
-        }
-        SettingsGroup(title = "DIAGNOSTICS & ACTIVITY") {
-            SettingsRow(
-                label = "Open Diagnostics",
-                kind = SettingsRowKind.Chev,
-                onClick = { onNavigate(Route.Diagnostics) },
+                onClick = onOpenNotificationSettings,
             )
             SettingsRow(
-                label = "Open Activity log",
+                label = "Manage all permissions",
                 kind = SettingsRowKind.Chev,
-                onClick = { onNavigate(Route.Activity) },
+                onClick = onOpenAppPermissions,
             )
-            SettingsRow(label = "Export session log", kind = SettingsRowKind.Chev)
         }
-        SettingsGroup(title = "APPEARANCE") {
-            SettingsToggleRow(
-                label = "Glass surfaces",
-                hint = "Aurora layer + tinted cards. Off renders flat.",
-                checked = tweaks.glassEnabled,
-                onCheckedChange = { onTweakChange(tweaks.copy(glassEnabled = it)) },
-            )
-            SettingsToggleRow(
-                label = "Reduce motion",
-                hint = "Freezes aurora drift + breath rings. Static halos stay visible.",
-                checked = tweaks.motionReduced,
-                onCheckedChange = { onTweakChange(tweaks.copy(motionReduced = it)) },
-            )
-            SettingsToggleRow(
-                label = "Aurora on low battery",
-                hint = "Keep the aurora animating below 20% charge.",
-                checked = tweaks.auroraOnLowBattery,
-                onCheckedChange = { onTweakChange(tweaks.copy(auroraOnLowBattery = it)) },
-            )
-            SettingsSliderRow(
-                label = "Neon strength",
-                hint = "Halo intensity on the dock indicator + status hero.",
-                value = tweaks.neonStrength,
-                onValueChange = { onTweakChange(tweaks.copy(neonStrength = it)) },
+        SettingsGroup(title = "MAINTENANCE") {
+            // The only mutating action on the route. Lifetime
+            // counters survive process kill (see
+            // `LifetimeCountersAccumulator`); a manual reset is
+            // useful when re-testing a fresh pairing or before
+            // capturing a clean diagnostic snapshot.
+            SettingsRow(
+                label = "Reset lifetime counters",
+                kind = SettingsRowKind.Chev,
+                onClick = onResetLifetimeCounters,
+                hint = "Clears report / feedback / rejection totals",
             )
         }
         SettingsGroup(title = "ABOUT") {
@@ -193,13 +149,10 @@ fun SettingsScreen(
                 SettingsRow(label = "Commit", value = it, mono = true)
             }
             SettingsRow(
-                label = "Identity storage",
-                value = "SharedPreferences · host_identity_v1",
-                mono = true,
-                hint = "App-private, never leaves the device",
+                label = "Source code",
+                kind = SettingsRowKind.Ext,
+                onClick = onOpenSourceCode,
             )
-            SettingsRow(label = "Source code", kind = SettingsRowKind.Ext)
-            SettingsRow(label = "What is Bluetrack?", kind = SettingsRowKind.Chev)
         }
         // Bottom breathing room so the dock never overlaps the last row.
         Box(modifier = Modifier.padding(bottom = 24.dp))

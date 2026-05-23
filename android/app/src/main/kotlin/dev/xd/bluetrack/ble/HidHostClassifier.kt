@@ -19,8 +19,22 @@ internal fun HidHostCandidate.hidHostRank(): Int? {
         BluetoothClass.Device.Major.PERIPHERAL,
         BluetoothClass.Device.Major.TOY,
         BluetoothClass.Device.Major.WEARABLE,
+        BluetoothClass.Device.Major.PHONE,
         -> null
-        else -> if (normalizedName.looksLikeComputer()) 75 else null
+        // Name match (any major class) ranks high enough to win
+        // over uncategorised peers.
+        else -> if (normalizedName.looksLikeComputer()) {
+            75
+        } else if (majorDeviceClass == null || majorDeviceClass == 0 || majorDeviceClass == -1) {
+            // Uncategorised / null BluetoothClass is common for
+            // older PCs paired before BTHID rebonding. Trust the
+            // bonded record and let auto-connect try anyway — the
+            // accessory blacklist above already filters out the
+            // obvious "not a HID host" devices.
+            50
+        } else {
+            null
+        }
     }
 }
 

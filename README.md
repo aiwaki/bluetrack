@@ -162,23 +162,29 @@ Bluetooth support.
 
 1. Install and open the app on an Android device that supports the
    Bluetooth HID Device profile.
-2. Grant the nearby-devices Bluetooth permission and the
-   foreground-service notification when prompted.
+2. First-run Welcome screen explains the BT-nearby + Notifications
+   grants and what Bluetrack does. Tap `GET STARTED` to proceed; the
+   system permission dialogs fire right after. Skipped on
+   subsequent launches.
 3. Accept Android's Bluetooth-enable and discoverability sheets if they
    appear. Bluetrack opens the pairing window automatically when no
-   bonded host exists.
+   computer-class host is bonded yet.
 4. On the PC, open Bluetooth settings and add `Bluetrack Pro Engine` as
    a HID input device.
-5. Return to the app. Bluetrack keeps a foreground HID keep-alive
-   service running, refreshes the compatibility snapshot, and
-   auto-connects to a bonded computer-class host when possible.
-6. Drag inside the input surface or move a mouse / trackpad connected
-   to the Android device. Frames flow.
+5. Back in the app, the Hub `TrustCard` lists bonded computer-class
+   hosts as tappable `RECOMMENDED` rows — tap `CONNECT` to wake one
+   (or `DISCONNECT` on an active row to tear the link down). Auto-
+   connect is on by default and can be toggled in Settings.
+6. Drag inside the touchpad surface or move a mouse / trackpad
+   connected to the Android device. Frames flow.
 
-The status row carries six fields: Bluetooth state, HID profile state,
-pairing state, BLE feedback state, the current 6-digit `Pin` (when the
-GATT server is open), and the `Trust` fingerprint of the pinned host
-identity (with a Forget button next to it).
+The Hub surfaces at-a-glance state — `StatusHero` host card,
+`PinBlock` feedback PIN, `TrustCard` with recommended hosts +
+TOFU pin, the touchpad surface, recent activity strip, and a
+`Heartbeat` driven by real HID activity. The Diagnostics route
+carries the raw transport rows (State / Host / Input / Flow, BT /
+HID / Pair / BLE), live + lifetime rate counters, replay window
+viz, PIN lifecycle, and per-cause feedback rejections.
 
 If a PC does not see the phone, check the rows. `HID profile
 unavailable` means the Android firmware does not expose the HID Device

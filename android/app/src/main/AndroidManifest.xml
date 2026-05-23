@@ -23,7 +23,16 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize">
+            <!--
+              `configChanges` keeps MainActivity alive across a
+              rotation so the gamepad surface can flip to landscape
+              via `requestedOrientation` without the system tearing
+              the activity down and recreating it (which would reset
+              the `gamepadActive` Compose state and snap us back to
+              portrait the moment the rotation completes).
+            -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>

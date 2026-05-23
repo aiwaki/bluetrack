@@ -41,6 +41,59 @@ class MainViewModel(
     private val touchMotionPredictor = TouchMotionPredictor()
     private val inputDiagnostics = InputDiagnostics()
 
+    /**
+     * Process-lifetime 60-sample rolling rate windows for the
+     * Diagnostics route. Earlier the screen owned its own sampler
+     * inside a `LaunchedEffect`, which meant the wave reset
+     * whenever the user navigated away from Diag — so opening the
+     * route after a long Hub touchpad session showed a flat zero
+     * line even though the gateway had been busy. Sampling at
+     * the ViewModel keeps the window alive for the lifetime of
+     * the activity, which is the natural "since this app launch"
+     * scope a user expects.
+     */
+    private val _hidRateWindow = MutableStateFlow<List<Float>>(emptyList())
+    val hidRateWindow: StateFlow<List<Float>> = _hidRateWindow
+    private val _feedbackRateWindow = MutableStateFlow<List<Float>>(emptyList())
+    val feedbackRateWindow: StateFlow<List<Float>> = _feedbackRateWindow
+
+    init {
+        viewModelScope.launch(Dispatchers.Default) {
+            // Seed both baselines but DROP the first computed
+            // delta. At VM construction the gateway's StateFlow
+            // is still in its initial empty state — the persisted
+            // `lifetimeCounters` from `LifetimeCountersStore` only
+            // surfaces in `_status` once the first updateStatus()
+            // fires (typically when the first HID report is sent
+            // or compatibility is refreshed). If we count that
+            // first sample we record the entire persisted lifetime
+            // total as a single 1-second delta (e.g. 3802/s on a
+            // device with 3802 reports retained). Skipping the
+            // first tick lets the seed settle on the real disk
+            // value before deltas start accumulating.
+            var lastReports = ble.status.value.lifetimeCounters.reports
+            var lastFeedback = ble.status.value.lifetimeCounters.feedback
+            var primed = false
+            while (isActive) {
+                delay(1_000L)
+                val currentReports = ble.status.value.lifetimeCounters.reports
+                val currentFeedback = ble.status.value.lifetimeCounters.feedback
+                if (!primed) {
+                    lastReports = currentReports
+                    lastFeedback = currentFeedback
+                    primed = true
+                    continue
+                }
+                val dR = (currentReports - lastReports).coerceAtLeast(0L)
+                val dF = (currentFeedback - lastFeedback).coerceAtLeast(0L)
+                lastReports = currentReports
+                lastFeedback = currentFeedback
+                _hidRateWindow.value = (_hidRateWindow.value + dR.toFloat()).takeLast(60)
+                _feedbackRateWindow.value = (_feedbackRateWindow.value + dF.toFloat()).takeLast(60)
+            }
+        }
+    }
+
     fun start() {
         started = true
         ble.maintainRegistration(_mode.value)
@@ -139,6 +192,34 @@ class MainViewModel(
         ble.connectBondedHost()
     }
 
+    /**
+     * Tap-to-connect a specific bonded host. Used by the Hub
+     * TrustCard recommended-host list so the user can wake a
+     * bonded computer from sleep without waiting for the
+     * auto-connect tick.
+     */
+    fun connectHost(name: String) {
+        ble.connectBondedHost(name)
+    }
+
+    /**
+     * Manual disconnect from the active HID host. Surfaced as the
+     * TrustCard recommended-host "DISCONNECT" pill so the user can
+     * tear down a sticky link without toggling Bluetooth radio.
+     */
+    fun disconnectActiveHost() {
+        ble.disconnectActiveHost()
+    }
+
+    /**
+     * Push the auto-connect toggle through to the gateway. Settings
+     * route owns the user-facing preference (DataStore-backed); this
+     * is the wire from the toggle to the runtime behaviour.
+     */
+    fun setAutoConnectEnabled(enabled: Boolean) {
+        ble.setAutoConnectEnabled(enabled)
+    }
+
     fun bluetoothPermissionMissing() {
         ble.reportPermissionMissing()
     }
@@ -173,6 +254,26 @@ class MainViewModel(
     /** Drop the TOFU-pinned host identity (re-pair on next handshake). */
     fun forgetTrustedHost() {
         ble.forgetTrustedHost()
+    }
+
+    /**
+     * Unpair a bonded device by name. Surfaced for the Hosts
+     * route ✕ button. Forgets the TOFU host identity too if the
+     * unpaired device is the currently-pinned trust target so
+     * the user doesn't have to do it in two steps.
+     */
+    fun removeBondedDevice(name: String) {
+        val wasActiveHost = ble.status.value.host == name
+        val removed = ble.removeBondedDevice(name)
+        // Only drop the TOFU pin when we actually unpaired the
+        // device. Codex review on PR #57 flagged that we used to
+        // clear the trust pin even if `removeBond()` returned
+        // false (reflection refused, OS denied, etc.), which left
+        // the bond on the adapter while wiping the trust state —
+        // a confusing partial unpair.
+        if (removed && wasActiveHost) {
+            ble.forgetTrustedHost()
+        }
     }
 
     /** Wipe persisted lifetime counters back to zero. */

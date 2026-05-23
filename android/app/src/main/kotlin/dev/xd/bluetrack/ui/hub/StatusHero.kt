@@ -25,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,13 +84,13 @@ fun StatusHero(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = if (connected) "ACTIVE LINK" else "WAITING",
+                    text = if (connected) "ACTIVE LINK" else "SEARCHING",
                     style = MaterialTheme.typography.labelMedium,
-                    color = palette.fg2,
+                    color = if (connected) palette.fg2 else palette.cool,
                 )
                 Text(
-                    text = if (connected) (hostName ?: "host") else "no host",
-                    color = palette.fg0,
+                    text = if (connected) (hostName ?: "host") else "no host connected",
+                    color = if (connected) palette.fg0 else palette.fg1,
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.65).sp,
@@ -102,6 +101,17 @@ fun StatusHero(
                     Text(
                         text = metric,
                         color = palette.fg2,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                } else if (!connected) {
+                    Text(
+                        // Cool-tinted hint that the route is alive
+                        // and looking. Pairs with the cool breath
+                        // ring on the avatar to signal "scanning",
+                        // not "broken".
+                        text = "tap a host below to connect",
+                        color = palette.cool,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
                     )
@@ -119,52 +129,62 @@ private fun AvatarBlock(connected: Boolean) {
         modifier = Modifier.size(64.dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (connected) {
-            // Breath ring: scale 1 → 1.18 with alpha 0.6 → 0
-            // on a 2.4 s reversed ease curve. Sits *outside* the
-            // 56 dp avatar so it reads as a halo expanding.
-            val transition = rememberInfiniteTransition(label = "hero-breath")
-            val scale by transition.animateFloat(
-                initialValue = 1f,
-                targetValue = 1.18f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 2_400, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse,
+        // Breath ring is rendered in both states, but with
+        // different tempo + colour. Connected = fast mint pulse
+        // ("active link"). Disconnected = slow cool pulse
+        // ("searching, alive"). Keeping the animation in the
+        // empty state was the user-flagged polish — the earlier
+        // `✕` glyph read as a broken connection rather than a
+        // calm idle.
+        val transition = rememberInfiniteTransition(label = "hero-breath")
+        val periodMs = if (connected) 2_400 else 3_600
+        val scale by transition.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.18f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = periodMs, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "hero-breath-scale",
+        )
+        val ringAlpha by transition.animateFloat(
+            initialValue = if (connected) 0.55f else 0.32f,
+            targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = periodMs, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "hero-breath-alpha",
+        )
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .scale(scale)
+                .alpha(ringAlpha)
+                .border(
+                    1.dp,
+                    if (connected) palette.mintGlowSoft else palette.cool.copy(alpha = 0.55f),
+                    RoundedCornerShape(BluetrackTokens.RadiusLg),
                 ),
-                label = "hero-breath-scale",
-            )
-            val ringAlpha by transition.animateFloat(
-                initialValue = 0.55f,
-                targetValue = 0f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 2_400, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "hero-breath-alpha",
-            )
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .scale(scale)
-                    .alpha(ringAlpha)
-                    .border(1.dp, palette.mintGlowSoft, RoundedCornerShape(BluetrackTokens.RadiusLg)),
-            )
-        }
+        )
         Box(
             modifier = Modifier
                 .size(56.dp)
                 .clip(shape)
                 .background(
-                    if (connected) palette.mintGlowSoft else Color.White.copy(alpha = 0.05f),
+                    if (connected) palette.mintGlowSoft else palette.cool.copy(alpha = 0.08f),
                 ),
             contentAlignment = Alignment.Center,
         ) {
             if (connected) {
                 Pulse(size = 14.dp)
             } else {
+                // Three-dot searching glyph — reads as "looking"
+                // rather than "error" / "rejected" the old `✕`
+                // conveyed.
                 Text(
-                    text = "✕",
-                    color = palette.fg2,
+                    text = "···",
+                    color = palette.cool,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                 )
