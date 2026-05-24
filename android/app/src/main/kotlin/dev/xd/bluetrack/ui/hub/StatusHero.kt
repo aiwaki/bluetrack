@@ -1,10 +1,13 @@
 package dev.xd.bluetrack.ui.hub
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,7 +22,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -66,9 +73,30 @@ fun StatusHero(
 ) {
     val palette = BluetrackTheme.palette
     val shape = RoundedCornerShape(BluetrackTokens.RadiusLg)
+    // Connect-burst: when `connected` flips false → true, scale
+    // the hero from 1.04 back to 1.0 over a single spring beat.
+    // Reads as a tactile "snap-in" matching the moment the host
+    // name fills in. Disconnects do not get the burst — going
+    // dark should feel calm, not punchy.
+    var prevConnected by remember { mutableStateOf(connected) }
+    val burst = remember { Animatable(1f) }
+    LaunchedEffect(connected) {
+        if (connected && !prevConnected) {
+            burst.snapTo(1.04f)
+            burst.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+            )
+        }
+        prevConnected = connected
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .scale(burst.value)
             .clip(shape)
             .btGlass(strong = true, shape = shape)
             .padding(BluetrackTokens.Sp5),
@@ -89,12 +117,19 @@ fun StatusHero(
                     color = if (connected) palette.fg2 else palette.cool,
                 )
                 Text(
+                    // Host name is now the dominant typography on
+                    // the Hub — matches the v2.4 design reference
+                    // where the host display sits at ~60 sp as the
+                    // primary visual anchor. Stays single-line via
+                    // ellipsis; long names still ride the same
+                    // pulse / colour treatment.
                     text = if (connected) (hostName ?: "host") else "no host connected",
                     color = if (connected) palette.fg0 else palette.fg1,
-                    fontSize = 26.sp,
+                    fontSize = if (connected) 44.sp else 28.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.65).sp,
-                    maxLines = 1,
+                    letterSpacing = (-1.2).sp,
+                    lineHeight = 44.sp,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (connected && metric != null) {
@@ -163,7 +198,7 @@ private fun AvatarBlock(connected: Boolean) {
                 .alpha(ringAlpha)
                 .border(
                     1.dp,
-                    if (connected) palette.mintGlowSoft else palette.cool.copy(alpha = 0.55f),
+                    if (connected) palette.crit.copy(alpha = 0.65f) else palette.cool.copy(alpha = 0.55f),
                     RoundedCornerShape(BluetrackTokens.RadiusLg),
                 ),
         )
@@ -172,12 +207,17 @@ private fun AvatarBlock(connected: Boolean) {
                 .size(56.dp)
                 .clip(shape)
                 .background(
-                    if (connected) palette.mintGlowSoft else palette.cool.copy(alpha = 0.08f),
+                    if (connected) palette.crit.copy(alpha = 0.18f) else palette.cool.copy(alpha = 0.08f),
                 ),
             contentAlignment = Alignment.Center,
         ) {
             if (connected) {
-                Pulse(size = 14.dp)
+                Box(
+                    modifier = Modifier
+                        .size(14.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(palette.crit),
+                )
             } else {
                 // Three-dot searching glyph — reads as "looking"
                 // rather than "error" / "rejected" the old `✕`

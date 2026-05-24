@@ -14,7 +14,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -121,12 +120,12 @@ fun Heartbeat(
         // the line still reads on the dark surface.
         drawPath(
             path = path,
-            color = palette.mintGlow.copy(alpha = palette.mintGlow.alpha * 0.55f),
+            color = palette.crit.copy(alpha = 0.30f),
             style = Stroke(width = 4f),
         )
         drawPath(
             path = path,
-            color = Color(palette.mintBright.value),
+            color = palette.crit,
             style = Stroke(width = 1.4f),
         )
     }

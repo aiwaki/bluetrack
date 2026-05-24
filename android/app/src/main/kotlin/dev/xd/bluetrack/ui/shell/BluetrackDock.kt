@@ -1,92 +1,79 @@
 package dev.xd.bluetrack.ui.shell
 
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
-import dev.xd.bluetrack.ui.theme.BluetrackTokens
-import dev.xd.bluetrack.ui.theme.bluetrackGlow
 
 /**
- * Five-destination bottom dock — icons only, glass surface, spring-
- * eased active indicator. Matches the canvas `bt-dock` shape:
- * Hub / Hosts / Activity / Diag / Settings.
+ * Bottom dock — redesigned 2026-05-23 to match the v2.4 design
+ * reference. Tighter pill, icons only, active slot is a filled
+ * red circle behind the icon instead of an underline bar. Drops
+ * the labels entirely — the active route's name lives in the
+ * route header (`HubHeader`) so the dock can stay quiet.
  *
- * The dock itself is opaque tint + hairline (see [btGlass]); the
- * aurora layer in [ScreenShell] sits behind it. Each slot is a
- * 44 dp tap target (a11y baseline) with the icon at 24 dp and a
- * 2 dp accent bar that springs to the active slot's centre.
+ * Activity is intentionally absent from the dock — the route is
+ * still reachable via the Hub `ActivityStrip` "Open" affordance
+ * and `ActivityScreen` renders a leading `‹` back arrow.
  */
 @Composable
 fun BluetrackDock(
     current: Route,
     onSelect: (Route) -> Unit,
     modifier: Modifier = Modifier,
-    neonStrength: Float = 1f,
+    @Suppress("UNUSED_PARAMETER") neonStrength: Float = 1f,
 ) {
     val palette = BluetrackTheme.palette
-    // Activity is intentionally absent from the dock — the route is
-    // still reachable via the Hub `ActivityStrip` "Open" affordance,
-    // and ActivityScreen now renders a leading `‹` back arrow that
-    // navigates back to Hub. Keeping it off the dock cuts the four-
-    // slot clutter the user flagged ("activity dock removal") while
-    // preserving the timeline view itself.
     val routes = Route.entries.filter { it != Route.Activity }
-    val activeIndex = routes.indexOf(current).coerceAtLeast(0)
 
-    Box(
+    // Dock floats on the aurora background — no glass surface,
+    // no border, just the slot row. User read the previous
+    // `btGlass(strong=true)` panel as "black bar at the bottom"
+    // rather than the intended translucent shelf. Going fully
+    // transparent matches the design reference where the icon
+    // row reads as anchored UI without a chrome rail.
+    // Outer wrapper is now a Row directly. Earlier we wrapped
+    // it in a Box with horizontal padding, which combined with
+    // `SpaceEvenly` placed extra slack at the edges and visibly
+    // shifted the icon cluster off centre. Row fills the dock's
+    // assigned width and `SpaceAround` equalises the gaps so the
+    // four icons sit symmetric on both axes.
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .wrapContentHeight()
-            .clip(RoundedCornerShape(BluetrackTokens.RadiusLg))
-            .btGlass(strong = true, shape = RoundedCornerShape(BluetrackTokens.RadiusLg))
-            .padding(horizontal = BluetrackTokens.Sp3, vertical = BluetrackTokens.Sp2),
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceAround,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                routes.forEachIndexed { _, route ->
-                    DockSlot(
-                        route = route,
-                        active = route == current,
-                        onClick = { onSelect(route) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-            // Active indicator: thin neon bar under the current slot.
-            // Springs between slot centres with the Bluetrack settle.
-            ActiveIndicator(
-                slotCount = routes.size,
-                activeIndex = activeIndex,
-                neonStrength = neonStrength,
+        routes.forEach { route ->
+            DockSlot(
+                route = route,
+                active = route == current,
+                activeColor = palette.crit,
+                inactiveTint = palette.fg2,
+                onClick = { onSelect(route) },
             )
         }
     }
@@ -96,105 +83,60 @@ fun BluetrackDock(
 private fun DockSlot(
     route: Route,
     active: Boolean,
+    activeColor: Color,
+    inactiveTint: Color,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    val palette = BluetrackTheme.palette
-    val tint = if (active) palette.mintBright else palette.fg2
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
-            .clickable(onClick = onClick)
-            .padding(vertical = BluetrackTokens.Sp2),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // Animated active indicator. Background colour crossfades
+    // between transparent ↔ crit red; icon tint crossfades fg2 ↔
+    // white; circle scale springs slightly above 1.0 when the
+    // route becomes active and back to 1.0 — gives the dock a
+    // tactile "settle" instead of an instant swap. Springs use
+    // medium-low stiffness so the motion reads as deliberate, not
+    // bouncy.
+    val springSpec = spring<Float>(
+        dampingRatio = Spring.DampingRatioMediumBouncy,
+        stiffness = Spring.StiffnessLow,
+    )
+    val bgColor by animateColorAsState(
+        targetValue = if (active) activeColor else Color.Transparent,
+        animationSpec = tweenColor(220),
+        label = "dock-slot-bg",
+    )
+    val iconTint by animateColorAsState(
+        targetValue = if (active) Color.White else inactiveTint,
+        animationSpec = tweenColor(220),
+        label = "dock-slot-tint",
+    )
+    val slotScale by animateFloatAsState(
+        targetValue = if (active) 1.06f else 1f,
+        animationSpec = springSpec,
+        label = "dock-slot-scale",
+    )
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .scale(slotScale)
+            .clip(CircleShape)
+            .background(bgColor)
+            .clickable(onClick = {
+                haptic.performHapticFeedback(
+                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                )
+                onClick()
+            }),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = route.icon,
             contentDescription = route.label,
-            modifier = Modifier.size(24.dp),
-            tint = tint,
-        )
-        Text(
-            text = route.label,
-            style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-            color = tint.copy(alpha = if (active) 1f else 0.7f),
-            modifier = Modifier
-                .padding(top = 2.dp)
-                .alpha(if (active) 1f else 0.85f),
+            modifier = Modifier.size(18.dp),
+            tint = iconTint,
         )
     }
 }
 
-/**
- * Thin accent bar that springs between dock slot centres on
- * selection change. The bar width is fixed; the offset animates.
- * `Modifier.bluetrackGlow` adds the neon halo so the indicator
- * carries the brand presence without dominating.
- */
-@Composable
-private fun ActiveIndicator(
-    slotCount: Int,
-    activeIndex: Int,
-    neonStrength: Float,
-) {
-    val palette = BluetrackTheme.palette
-    // Indicator width: ~40% of slot width, centred under the icon.
-    val barWidth: Dp = 26.dp
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(3.dp)
-            .padding(top = 2.dp),
-    ) {
-        // BoxWithConstraints would be heavier; instead, use offset
-        // expressed as a fraction-based padding via the
-        // `weight(1f)` parents above and a manual
-        // `animateDpAsState` for the slot centre.
-        SlotIndicator(
-            slotCount = slotCount,
-            activeIndex = activeIndex,
-            barWidth = barWidth,
-            neonStrength = neonStrength,
-            barColor = palette.mintBright,
-        )
-    }
-}
-
-@Composable
-private fun SlotIndicator(
-    slotCount: Int,
-    activeIndex: Int,
-    barWidth: Dp,
-    neonStrength: Float,
-    barColor: androidx.compose.ui.graphics.Color,
-) {
-    // Each slot occupies 1/N of the dock width. Anchor the bar at
-    // the start of the slot then nudge it to centre via a half-
-    // slot offset minus half-bar; the parent uses a weight-equal
-    // Row so we can express the centring with `fillMaxWidth() *
-    // fraction` via a simple Box layout.
-    androidx.compose.foundation.layout.BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        val slotWidth = maxWidth / slotCount
-        val target = slotWidth * activeIndex + (slotWidth - barWidth) / 2
-        val offsetX by animateDpAsState(
-            targetValue = target,
-            animationSpec = spring(
-                dampingRatio = 0.78f,
-                stiffness = 320f,
-            ),
-            label = "dockIndicator",
-        )
-        Box(
-            modifier = Modifier
-                .offset(x = offsetX)
-                .width(barWidth)
-                .height(3.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .bluetrackGlow(strength = neonStrength)
-                .background(barColor),
-        )
-    }
-}
+private fun tweenColor(durMs: Int) =
+    androidx.compose.animation.core
+        .tween<Color>(durationMillis = durMs)

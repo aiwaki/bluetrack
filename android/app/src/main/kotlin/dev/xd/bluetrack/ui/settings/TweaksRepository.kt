@@ -69,6 +69,16 @@ class TweaksRepository(
      */
     val onboarded: Flow<Boolean> = ds.data.map { it[KEY_ONBOARDED] ?: false }
 
+    /**
+     * Theme mode preference. One of `SYSTEM` / `LIGHT` / `DARK`.
+     * `SYSTEM` resolves at composition time via
+     * `isSystemInDarkTheme()` so the app follows the OS toggle.
+     * Default `SYSTEM` matches the platform expectation — the
+     * very first launch picks up whatever the user already runs
+     * the rest of their phone in.
+     */
+    val themeMode: Flow<String> = ds.data.map { it[KEY_THEME_MODE] ?: "SYSTEM" }
+
     suspend fun setMotionReduced(value: Boolean) {
         ds.edit { it[KEY_MOTION_REDUCED] = value }
     }
@@ -91,6 +101,10 @@ class TweaksRepository(
 
     suspend fun setOnboarded(value: Boolean) {
         ds.edit { it[KEY_ONBOARDED] = value }
+    }
+
+    suspend fun setThemeMode(value: String) {
+        ds.edit { it[KEY_THEME_MODE] = value }
     }
 
     /**
@@ -118,6 +132,8 @@ class TweaksRepository(
         val KEY_NEON_STRENGTH = floatPreferencesKey("neon_strength")
         val KEY_AUTO_CONNECT = booleanPreferencesKey("auto_connect_enabled")
         val KEY_ONBOARDED = booleanPreferencesKey("onboarded")
+        val KEY_THEME_MODE = androidx.datastore.preferences.core
+            .stringPreferencesKey("theme_mode")
     }
 }
 

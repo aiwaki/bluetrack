@@ -1,5 +1,18 @@
 package dev.xd.bluetrack.ui.shell
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,13 +27,18 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.RouterState
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
-import dev.xd.bluetrack.ui.theme.BluetrackTokens
 
 /**
  * Root shell every Bluetrack screen lives inside.
@@ -53,10 +71,43 @@ fun ScreenShell(
     content: @Composable (Route) -> Unit,
 ) {
     val palette = BluetrackTheme.palette
+    // Slow deep-red radial pulse drawn behind everything — same
+    // idiom as the gamepad surface so the main shell shares the
+    // ambient warmth. Lower max alpha keeps it from competing
+    // with content. Period 8 s reads as ambient, not active.
+    val pulse = rememberInfiniteTransition(label = "shell-bg-pulse")
+    val pulseAlpha by pulse.animateFloat(
+        initialValue = 0.06f,
+        targetValue = 0.18f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 8_000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "shell-bg-pulse-alpha",
+    )
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(palette.bg0),
+            .background(palette.bg0)
+            .drawBehind {
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                val radius = (size.width.coerceAtLeast(size.height)) * 0.7f
+                val deep = Color(0xFF8B0000)
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            deep.copy(alpha = pulseAlpha),
+                            deep.copy(alpha = pulseAlpha * 0.4f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(cx, cy),
+                        radius = radius,
+                    ),
+                    topLeft = Offset.Zero,
+                    size = Size(size.width, size.height),
+                )
+            },
     ) {
         AuroraBackground(
             modifier = Modifier.fillMaxSize(),
@@ -69,7 +120,36 @@ fun ScreenShell(
                 .windowInsetsPadding(WindowInsets.systemBars)
                 .padding(bottom = DOCK_RESERVED_HEIGHT_DP.dp),
         ) {
-            content(router.current)
+            // Route transitions. Direction follows the dock's
+            // left-to-right enum order so navigating from Hub →
+            // Settings slides in from the right, and Settings →
+            // Hub slides in from the left. Reads as native
+            // tab-bar motion without pulling in
+            // Compose Navigation. Disabled when `motionReduced`
+            // is on — accessibility users get an instant swap.
+            AnimatedContent(
+                targetState = router.current,
+                transitionSpec = {
+                    if (motionReduced) {
+                        fadeIn(animationSpec = tween(0)) togetherWith
+                            fadeOut(animationSpec = tween(0))
+                    } else {
+                        val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                        val durMs = 260
+                        slideInHorizontally(
+                            animationSpec = tween(durMs, easing = FastOutSlowInEasing),
+                            initialOffsetX = { full -> direction * full / 6 },
+                        ) + fadeIn(animationSpec = tween(durMs)) togetherWith
+                            slideOutHorizontally(
+                                animationSpec = tween(durMs, easing = FastOutSlowInEasing),
+                                targetOffsetX = { full -> -direction * full / 6 },
+                            ) + fadeOut(animationSpec = tween(durMs))
+                    }
+                },
+                label = "route-transition",
+            ) { route ->
+                content(route)
+            }
         }
         BluetrackDock(
             current = router.current,
@@ -80,10 +160,10 @@ fun ScreenShell(
                 .fillMaxWidth()
                 .wrapContentHeight()
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(
-                    horizontal = BluetrackTokens.Sp5,
-                    vertical = BluetrackTokens.Sp3,
-                ),
+                // Tiny lift off the gesture bar — earlier 18 dp
+                // floated the icons too high; 6 dp matches the
+                // breathing room above other route content.
+                .padding(bottom = 6.dp),
         )
     }
 }
@@ -124,4 +204,4 @@ fun ComingSoonScreen(label: String) {
  * (~ 60 dp) plus a 12 dp safety margin so spring overshoot doesn't
  * clip into content.
  */
-private const val DOCK_RESERVED_HEIGHT_DP: Int = 84
+private const val DOCK_RESERVED_HEIGHT_DP: Int = 56

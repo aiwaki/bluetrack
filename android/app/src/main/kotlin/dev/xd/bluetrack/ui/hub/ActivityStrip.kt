@@ -123,11 +123,16 @@ private fun ActivityRow(
     onClick: () -> Unit,
     palette: dev.xd.bluetrack.ui.theme.BluetrackPalette,
 ) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = BluetrackTokens.Sp3, vertical = BluetrackTokens.Sp2),
+            .clickable {
+                haptic.performHapticFeedback(
+                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                )
+                onClick()
+            }.padding(horizontal = BluetrackTokens.Sp3, vertical = BluetrackTokens.Sp2),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
     ) {

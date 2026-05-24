@@ -14,7 +14,9 @@
     <application
         android:name=".BluetrackApplication"
         android:allowBackup="false"
-        android:label="Bluetrack Pro Engine"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="Bluetrack"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
         <service
             android:name=".HidKeepAliveService"

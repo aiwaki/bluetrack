@@ -66,6 +66,7 @@ fun PinBlock(
 ) {
     val palette = BluetrackTheme.palette
     val context = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val shape = RoundedCornerShape(BluetrackTokens.RadiusLg)
     var copied by remember(pin) { mutableStateOf(false) }
     var secs by remember { mutableIntStateOf(0) }
@@ -138,6 +139,9 @@ fun PinBlock(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
                         .clickable {
+                            haptic.performHapticFeedback(
+                                androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                            )
                             copyToClipboard(context, pin)
                             copied = true
                         }.padding(vertical = BluetrackTokens.Sp2),
