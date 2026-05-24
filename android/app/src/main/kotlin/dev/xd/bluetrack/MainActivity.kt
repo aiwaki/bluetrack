@@ -25,6 +25,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,8 +38,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.xd.bluetrack.ble.BluetoothHostKind
 import dev.xd.bluetrack.ble.GatewayStatus
@@ -46,6 +49,7 @@ import dev.xd.bluetrack.engine.HidMode
 import dev.xd.bluetrack.ui.MainViewModel
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.StickDeflection
+import dev.xd.bluetrack.ui.TouchpadSurfaceMode
 import dev.xd.bluetrack.ui.activity.ActivityScreen
 import dev.xd.bluetrack.ui.diag.DiagnosticsScreen
 import dev.xd.bluetrack.ui.gamepad.GamepadSurface
@@ -56,6 +60,7 @@ import dev.xd.bluetrack.ui.hub.GamepadShortcut
 import dev.xd.bluetrack.ui.hub.Heartbeat
 import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.ModeToggle
+import dev.xd.bluetrack.ui.hub.MouseMirrorPanel
 import dev.xd.bluetrack.ui.hub.NeonRibbon
 import dev.xd.bluetrack.ui.hub.PinBlock
 import dev.xd.bluetrack.ui.hub.ServiceChip
@@ -163,13 +168,53 @@ class MainActivity : ComponentActivity() {
         val container = (application as BluetrackApplication).container
         vm = MainViewModel(container.bleGateway, container.translationEngine)
         tweaksRepo = TweaksRepository(applicationContext)
+        // Preload the theme mode synchronously so the first frame
+        // already paints in the right palette. Without this the
+        // StateFlow's `initial = "SYSTEM"` could flash the wrong
+        // palette for ~150 ms before the DataStore reader emitted
+        // the persisted value, visible as a black ↔ white flip.
+        val initialThemeMode = kotlinx.coroutines.runBlocking {
+            tweaksRepo.themeMode.firstOrNull() ?: "SYSTEM"
+        }
         // Drain pending tweaks on a single coroutine so writes
         // happen in arrival order and never race.
         ioScope.launch {
             pendingTweaks.collect { state -> tweaksRepo.setAll(state) }
         }
         setContent {
-            BluetrackTheme {
+            val themeMode by tweaksRepo.themeMode.collectAsState(initial = initialThemeMode)
+            val systemInDark = androidx.compose.foundation.isSystemInDarkTheme()
+            val darkTheme = when (themeMode) {
+                "LIGHT" -> false
+                "DARK" -> true
+                else -> systemInDark
+            }
+            // Flip the system bar icon palette to match the
+            // active theme. Light bg → dark icons, dark bg →
+            // light icons. Re-applies `enableEdgeToEdge` with the
+            // matching `SystemBarStyle` whenever `darkTheme`
+            // changes; cheap because it just updates a couple of
+            // window flags.
+            androidx.compose.runtime.LaunchedEffect(darkTheme) {
+                if (darkTheme) {
+                    enableEdgeToEdge(
+                        statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+                        navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+                    )
+                } else {
+                    enableEdgeToEdge(
+                        statusBarStyle = SystemBarStyle.light(
+                            AndroidColor.TRANSPARENT,
+                            AndroidColor.TRANSPARENT,
+                        ),
+                        navigationBarStyle = SystemBarStyle.light(
+                            AndroidColor.TRANSPARENT,
+                            AndroidColor.TRANSPARENT,
+                        ),
+                    )
+                }
+            }
+            BluetrackTheme(darkTheme = darkTheme) {
                 val router = rememberRouter()
                 var gamepadActive by remember { mutableStateOf(false) }
                 // Visual tweaks are now fixed at the design baseline
@@ -194,11 +239,14 @@ class MainActivity : ComponentActivity() {
                     autoConnectEnabled = autoConnectEnabled,
                 )
                 // Lock orientation to landscape while the gamepad
-                // surface is up; restore to sensor when we leave so
-                // the rest of the app stays portrait-first. Using
-                // `LaunchedEffect(gamepadActive)` keeps this idempotent
-                // when state survives recomposition.
-                LaunchedEffect(gamepadActive) {
+                // surface is up; restore to sensor when we leave.
+                // `SideEffect` runs in the same frame as composition
+                // so the rotation request fires before the gamepad
+                // body draws — earlier `LaunchedEffect` deferred the
+                // call by one frame, which painted the gamepad in
+                // portrait first and then flipped, reading as a
+                // visible orientation glitch.
+                androidx.compose.runtime.SideEffect {
                     requestedOrientation = if (gamepadActive) {
                         ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                     } else {
@@ -244,15 +292,38 @@ class MainActivity : ComponentActivity() {
                 val onboarded by tweaksRepo.onboarded.collectAsState(initial = true)
                 if (!onboarded) {
                     WelcomeScreen(
-                        onGetStarted = {
+                        onFinish = {
                             ioScope.launch { tweaksRepo.setOnboarded(true) }
+                        },
+                        onRequestPermissions = {
                             requestBtPermissions()
                             maybeRequestNotificationsPermission()
                         },
+                        nearbyPermissionGranted = hasBluetoothPermissions(),
+                        notificationsPermissionGranted = hasNotificationsPermission(),
                     )
                     return@BluetrackTheme
                 }
                 if (gamepadActive) {
+                    // Hide the gamepad body until the activity has
+                    // actually rotated into landscape. Without this
+                    // gate Compose paints the surface once in
+                    // portrait, then the system rotation fires and
+                    // we re-paint in landscape — visible as a
+                    // glitchy flip. The placeholder fills the same
+                    // bg0 so the transition reads as a smooth fade
+                    // instead.
+                    val config = androidx.compose.ui.platform.LocalConfiguration.current
+                    val isLandscape = config.orientation ==
+                        android.content.res.Configuration.ORIENTATION_LANDSCAPE
+                    if (!isLandscape) {
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(dev.xd.bluetrack.ui.theme.BluetrackTheme.palette.bg0),
+                        )
+                        return@BluetrackTheme
+                    }
                     val frame = rememberFrameCounterState()
                     val gamepadStatus = vm.status.collectAsState().value
                     val hidWaveForPad = vm.hidRateWindow.collectAsState().value
@@ -360,6 +431,8 @@ class MainActivity : ComponentActivity() {
                                 notificationsPermissionGranted = hasNotificationsPermission(),
                                 autoConnectEnabled = autoConnectEnabled,
                                 onAutoConnectChange = { persistAutoConnect(it) },
+                                themeMode = themeMode,
+                                onThemeModeChange = { persistThemeMode(it) },
                                 onOpenNotificationSettings = { openNotificationSettings() },
                                 onOpenAppPermissions = { openAppPermissions() },
                                 onOpenSourceCode = { openSourceCode() },
@@ -523,10 +596,14 @@ class MainActivity : ComponentActivity() {
         (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
 
     /**
-     * Persist the auto-connect toggle. Uses the same conflated
-     * pipeline as the legacy Appearance toggles so a rapid
-     * tap-tap-tap cannot interleave stale writes.
+     * Persist the theme mode (`SYSTEM` / `LIGHT` / `DARK`).
+     * Direct `ds.edit { … }` write — the change is rare enough
+     * that the conflated `pendingTweaks` pipeline is overkill.
      */
+    private fun persistThemeMode(mode: String) {
+        ioScope.launch { tweaksRepo.setThemeMode(mode) }
+    }
+
     private fun persistAutoConnect(enabled: Boolean) {
         val next = TweaksState(
             motionReduced = false,
@@ -619,6 +696,7 @@ private fun AppScreen(
     onShowTrustQR: () -> Unit = {},
 ) {
     val mode by vm.mode.collectAsState()
+    val surfaceMode by vm.surfaceMode.collectAsState()
     val status by vm.status.collectAsState()
     val telemetry by vm.telemetry.collectAsState()
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
@@ -701,20 +779,43 @@ private fun AppScreen(
                 onDisconnect = { vm.disconnectActiveHost() },
             )
             ModeToggle(
-                mode = mode,
-                onToggle = { next -> vm.toggle(next == HidMode.GAMEPAD) },
+                surfaceMode = surfaceMode,
+                onToggle = { next -> vm.setSurfaceMode(next) },
             )
             // Reports + Feedback `MetricTile` row moved to the
             // Diagnostics LiveRateHero (which already shows the
             // lifetime totals next to the peak-rate sparklines).
-            TouchpadPanel(
-                modifier = Modifier.fillMaxWidth().height(260.dp),
-                mode = mode,
-                telemetryX = telemetry.stickX,
-                telemetryY = telemetry.stickY,
-                onTouchStart = { vm.beginTouchGesture() },
-                onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
-            )
+            //
+            // Surface picker. Both branches render at a fixed 260dp
+            // so the Hub layout below the toggle stays put across
+            // the flip (no scroll jump when the user swaps modes).
+            when (surfaceMode) {
+                TouchpadSurfaceMode.TOUCHPAD -> {
+                    TouchpadPanel(
+                        modifier = Modifier.fillMaxWidth().height(260.dp),
+                        mode = mode,
+                        telemetryX = telemetry.stickX,
+                        telemetryY = telemetry.stickY,
+                        onTouchStart = { vm.beginTouchGesture() },
+                        onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
+                        onScroll = { wheelDy -> vm.processScroll(wheelDy) },
+                    )
+                }
+                TouchpadSurfaceMode.MOUSE -> {
+                    MouseMirrorPanel(
+                        modifier = Modifier.fillMaxWidth().height(260.dp),
+                        onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
+                        onScroll = { wheelDy -> vm.processScroll(wheelDy) },
+                        onButton = { mask, pressed -> vm.processMouseButton(mask, pressed) },
+                    )
+                }
+            }
+            // Stat triplet below the touchpad — mirrors the v2.4
+            // reference's `REPORTS · LATENCY · UPTIME` row. Pulls
+            // from the persisted lifetime counters + most-recent
+            // report timestamp; UPTIME ticks from a session-start
+            // anchor captured on first composition.
+            HubStatRow(status = status, now = now)
             // SystemPanel (BT / HID / Pair / BLE) moved to the
             // Diagnostics route alongside Connection.
             GamepadShortcut(onEnter = onEnterGamepad)
@@ -743,6 +844,7 @@ private fun TouchpadPanel(
     telemetryY: Int,
     onTouchStart: () -> Unit,
     onMotion: (Float, Float, String) -> Unit,
+    onScroll: (Float) -> Unit = {},
 ) {
     val isGamepad = mode == HidMode.GAMEPAD
     val stick = stickOverlayState(stickX = telemetryX, stickY = telemetryY)
@@ -761,28 +863,52 @@ private fun TouchpadPanel(
     // trail is capped at 20 points so allocation is bounded.
     val pointer = remember { mutableStateOf<Offset?>(null) }
     val trail = remember { mutableStateListOf<Offset>() }
-    Panel(modifier) {
+    // Mouse mode: clean bordered zone with no center crosshair
+    // and no edge labels. The user wants a hardware-trackpad feel
+    // — gesture hints come from a future onboarding overlay, not
+    // permanent on-surface text.
+    // Gamepad mode: keep the stick well visualization (radial
+    // grid + travel rings + telemetry dot) because that surface
+    // doubles as a virtual analog stick.
+    val touchpadModifier =
+        if (!isGamepad) {
+            modifier.then(
+                Modifier.border(
+                    width = 1.dp,
+                    color = palette.hairline,
+                    shape = RoundedCornerShape(8.dp),
+                ),
+            )
+        } else {
+            modifier
+        }
+    Panel(touchpadModifier) {
         Box(Modifier.fillMaxSize()) {
-            Canvas(Modifier.fillMaxSize().padding(24.dp)) {
-                val cx = size.width / 2f
-                val cy = size.height / 2f
-                val baseRadius = minOf(size.width, size.height) * 0.27f
-                val travelRadius = minOf(size.width, size.height) * 0.42f
-                drawCircle(Color(0x2400E5FF), baseRadius, Offset(cx, cy))
-                drawLine(Color(0xFF00E5FF), Offset(cx - baseRadius * 1.3f, cy), Offset(cx + baseRadius * 1.3f, cy), 2f)
-                drawLine(Color(0xFF00E5FF), Offset(cx, cy - baseRadius * 1.3f), Offset(cx, cy + baseRadius * 1.3f), 2f)
-                if (isGamepad) {
+            if (isGamepad) {
+                Canvas(Modifier.fillMaxSize().padding(24.dp)) {
+                    val cx = size.width / 2f
+                    val cy = size.height / 2f
+                    val baseRadius = minOf(size.width, size.height) * 0.27f
+                    val travelRadius = minOf(size.width, size.height) * 0.42f
+                    drawCircle(Color(0x2400E5FF), baseRadius, Offset(cx, cy))
+                    drawLine(
+                        Color(0xFF00E5FF),
+                        Offset(cx - baseRadius * 1.3f, cy),
+                        Offset(cx + baseRadius * 1.3f, cy),
+                        2f,
+                    )
+                    drawLine(
+                        Color(0xFF00E5FF),
+                        Offset(cx, cy - baseRadius * 1.3f),
+                        Offset(cx, cy + baseRadius * 1.3f),
+                        2f,
+                    )
                     val ringColor = Color.White.copy(alpha = 0.22f)
                     drawCircle(ringColor, travelRadius, Offset(cx, cy), style = Stroke(width = 2f))
                     drawCircle(ringColor, baseRadius * 0.4f, Offset(cx, cy), style = Stroke(width = 1.5f))
+                    val dotOffset = Offset(cx + stick.normalizedX * travelRadius, cy + stick.normalizedY * travelRadius)
+                    drawCircle(dotColor, 14f, dotOffset)
                 }
-                val dotOffset =
-                    if (isGamepad) {
-                        Offset(cx + stick.normalizedX * travelRadius, cy + stick.normalizedY * travelRadius)
-                    } else {
-                        Offset(cx + telemetryX * 1.5f, cy + telemetryY * 1.5f)
-                    }
-                drawCircle(dotColor, if (isGamepad) 14f else 13f, dotOffset)
             }
             // Liquid-drop overlay (mouse mode only). Drawn above
             // the base grid but below the gamepad label + the
@@ -848,6 +974,15 @@ private fun TouchpadPanel(
                     var lastY = 0f
                     var filteredX = 0f
                     var filteredY = 0f
+                    // Two-finger scroll state. `lastScrollY` is
+                    // the average Y of the two pointers on the
+                    // previous frame; `inScrollGesture` latches
+                    // for the lifetime of a gesture so a brief
+                    // 1-finger interlude (the user momentarily
+                    // lifting one finger) does not flip back to
+                    // motion and lurch the cursor.
+                    var lastScrollY = 0f
+                    var inScrollGesture = false
                     isFocusableInTouchMode = true
                     isClickable = true
                     setOnGenericMotionListener { _, ev ->
@@ -865,38 +1000,89 @@ private fun TouchpadPanel(
                     setOnTouchListener { _, ev ->
                         var batchX = 0f
                         var batchY = 0f
-                        // Touchpad surface is portrait-shaped (taller
-                        // than wide) on the Hub route, so the same
-                        // physical finger swipe covers a smaller
-                        // fraction of the X axis than of the Y axis.
-                        // Equal-coefficient scaling (0.42f on both)
-                        // mapped that into asymmetric cursor speed:
-                        // X felt slower than Y. Normalise by the
-                        // longer dimension so a swipe across 100 %
-                        // of either axis emits the same magnitude.
-                        //
-                        // The per-axis clamp (`coerceIn`) ALSO has
-                        // to scale — a uniform `-22..22` cap squashes
-                        // the boosted X axis the moment a fast swipe
-                        // pushes the scaled delta past 22. We lift
-                        // each cap by the same factor so the linear
-                        // response holds end-to-end.
+                        // Axis scaling history:
+                        //   v1: equal `0.42f` on both → X felt slow
+                        //       because portrait card had less X
+                        //       travel.
+                        //   v2: normalise by the longest dimension
+                        //       (sx = longest/w, sy = longest/h).
+                        //       Worked when the touchpad card was
+                        //       portrait; the Hub card is now
+                        //       LANDSCAPE (260dp tall, fillMaxWidth)
+                        //       so the same normalise boosted Y
+                        //       instead, making Y feel too fast.
+                        //   v3 (here): keep gain flat per-axis and
+                        //       rely on the acceleration + edge
+                        //       boost below to deliver reach.
+                        //       Cursor speed per finger-mm is now
+                        //       symmetric regardless of card
+                        //       aspect.
                         val w = width.toFloat()
                         val h = height.toFloat()
-                        val longest = kotlin.math.max(w, h).coerceAtLeast(1f)
-                        val sx = if (w > 0f) longest / w else 1f
-                        val sy = if (h > 0f) longest / h else 1f
-                        val capX = 22f * sx
-                        val capY = 22f * sy
+                        val sx = 1f
+                        val sy = 1f
+                        val capX = 22f
+                        val capY = 22f
+
+                        // Acceleration + edge boost. The
+                        // touchpad surface is bounded by the phone
+                        // screen, so a single finger swipe can only
+                        // cover ~h pixels vertically and ~w pixels
+                        // horizontally. A linear `0.42` gain forces
+                        // the user to re-grip mid-stroke to cross a
+                        // wide host display. Two compensations:
+                        //
+                        //  1. Velocity curve. Slow finger keeps the
+                        //     base gain for precision. Fast flick
+                        //     scales up to ~2.8× so a single throw
+                        //     can carry the cursor a full host
+                        //     screen across.
+                        //  2. Edge zone (~12 % of the shorter side).
+                        //     A finger that runs out of trackpad
+                        //     room gets an extra ×1..2.2 multiplier
+                        //     so the cursor still finishes the
+                        //     gesture instead of stalling at the
+                        //     rim.
+                        //
+                        // Caps lift by the combined max boost so
+                        // accelerated samples are not clipped back
+                        // to the linear ceiling.
+                        val edgeBand = (kotlin.math.min(w, h) * 0.12f).coerceAtLeast(1f)
+                        val accelRefSpeedPx = 28f
+                        val accelMax = 1.8f
+                        val edgeMax = 1.2f
+                        val maxBoost = (1f + accelMax) * (1f + edgeMax)
+                        val capXBoosted = capX * maxBoost
+                        val capYBoosted = capY * maxBoost
 
                         fun processPoint(
                             x: Float,
                             y: Float,
                         ) {
-                            val dx = ((x - lastX) * sx * 0.42f).coerceIn(-capX, capX)
-                            val dy = ((y - lastY) * sy * 0.42f).coerceIn(-capY, capY)
+                            val rawDx = x - lastX
+                            val rawDy = y - lastY
                             lastX = x
                             lastY = y
+                            val speed = kotlin.math.sqrt(rawDx * rawDx + rawDy * rawDy)
+                            val accelT = kotlin.math.min(speed / accelRefSpeedPx, 1f)
+                            val accel = 1f + accelT * accelT * accelMax
+                            val gain = 0.42f * accel
+                            val edgeBoostX =
+                                1f +
+                                    when {
+                                        x < edgeBand -> (1f - (x / edgeBand).coerceIn(0f, 1f)) * edgeMax
+                                        x > w - edgeBand -> (1f - ((w - x) / edgeBand).coerceIn(0f, 1f)) * edgeMax
+                                        else -> 0f
+                                    }
+                            val edgeBoostY =
+                                1f +
+                                    when {
+                                        y < edgeBand -> (1f - (y / edgeBand).coerceIn(0f, 1f)) * edgeMax
+                                        y > h - edgeBand -> (1f - ((h - y) / edgeBand).coerceIn(0f, 1f)) * edgeMax
+                                        else -> 0f
+                                    }
+                            val dx = (rawDx * sx * gain * edgeBoostX).coerceIn(-capXBoosted, capXBoosted)
+                            val dy = (rawDy * sy * gain * edgeBoostY).coerceIn(-capYBoosted, capYBoosted)
                             filteredX = filteredX * 0.18f + dx * 0.82f
                             filteredY = filteredY * 0.18f + dy * 0.82f
                             if (abs(filteredX) > 0.04f || abs(filteredY) > 0.04f) {
@@ -911,6 +1097,24 @@ private fun TouchpadPanel(
                             }
                         }
 
+                        // Pre-compute a "did the finger leave the
+                        // touchpad zone" check. Android keeps
+                        // delivering MOVE events past the View's
+                        // bounds while a gesture is captured
+                        // (`requestDisallowInterceptTouchEvent`),
+                        // which a hardware trackpad does NOT — once
+                        // your finger slides off the trackpad, input
+                        // stops. Mirror that: gate emit on the
+                        // primary pointer being inside the View.
+                        val primaryInside = ev.x in 0f..w && ev.y in 0f..h
+
+                        // Average Y of the first two pointers.
+                        // Used as the scroll-gesture displacement
+                        // reference so a tilt of the hand (one
+                        // finger moves slightly more than the
+                        // other) does not jitter the scroll axis.
+                        fun avgY(): Float = if (ev.pointerCount >= 2) (ev.getY(0) + ev.getY(1)) * 0.5f else ev.y
+
                         when (ev.actionMasked) {
                             MotionEvent.ACTION_DOWN -> {
                                 parent.requestDisallowInterceptTouchEvent(true)
@@ -920,20 +1124,69 @@ private fun TouchpadPanel(
                                 lastY = ev.y
                                 filteredX = 0f
                                 filteredY = 0f
+                                inScrollGesture = false
                                 pointer.value = Offset(ev.x, ev.y)
                                 trail.clear()
                                 trail.add(Offset(ev.x, ev.y))
                                 true
                             }
-                            MotionEvent.ACTION_MOVE -> {
-                                for (i in 0 until ev.historySize) {
-                                    processPoint(ev.getHistoricalX(i), ev.getHistoricalY(i))
+                            MotionEvent.ACTION_POINTER_DOWN -> {
+                                // Second finger landed → switch
+                                // this gesture to scroll mode and
+                                // seed the scroll baseline so the
+                                // first delta is zero (no jump from
+                                // wherever the primary pointer was
+                                // dragging).
+                                if (ev.pointerCount >= 2) {
+                                    inScrollGesture = true
+                                    lastScrollY = avgY()
                                 }
-                                processPoint(ev.x, ev.y)
-                                emitBatch()
+                                true
+                            }
+                            MotionEvent.ACTION_MOVE -> {
+                                if (inScrollGesture) {
+                                    val y = avgY()
+                                    val dyPx = y - lastScrollY
+                                    lastScrollY = y
+                                    // Convert pixel travel to wheel
+                                    // units. ~14 px per click is
+                                    // close to a Mac trackpad's
+                                    // "one notch" feel. Negate so
+                                    // finger UP = scroll UP (HID
+                                    // convention `wheel > 0 ⇒
+                                    // away from user`).
+                                    val wheelUnits = -dyPx / 14f
+                                    if (primaryInside) onScroll(wheelUnits)
+                                } else {
+                                    if (primaryInside) {
+                                        for (i in 0 until ev.historySize) {
+                                            val hx = ev.getHistoricalX(i)
+                                            val hy = ev.getHistoricalY(i)
+                                            if (hx in 0f..w && hy in 0f..h) processPoint(hx, hy)
+                                        }
+                                        processPoint(ev.x, ev.y)
+                                        emitBatch()
+                                    } else {
+                                        // Re-anchor so a finger that
+                                        // wanders back into the zone
+                                        // does not emit a phantom
+                                        // jump-delta from the last
+                                        // in-bounds sample.
+                                        lastX = ev.x
+                                        lastY = ev.y
+                                    }
+                                }
                                 pointer.value = Offset(ev.x, ev.y)
                                 if (trail.size >= 20) trail.removeAt(0)
                                 trail.add(Offset(ev.x, ev.y))
+                                true
+                            }
+                            MotionEvent.ACTION_POINTER_UP -> {
+                                // Drop from 2 → 1 fingers but keep
+                                // `inScrollGesture` latched until
+                                // ACTION_UP so the remaining finger
+                                // does not snap back into a cursor
+                                // drag mid-stroke.
                                 true
                             }
                             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -941,6 +1194,7 @@ private fun TouchpadPanel(
                                 performClick()
                                 pointer.value = null
                                 trail.clear()
+                                inScrollGesture = false
                                 true
                             }
                             else -> false
@@ -952,14 +1206,92 @@ private fun TouchpadPanel(
     }
 }
 
+/**
+ * Hub stat triplet — REPORTS · LATENCY · UPTIME. Lives below
+ * the touchpad as the design reference's at-a-glance footer.
+ * Values flow from `status.lifetimeCounters.reports`, the most
+ * recent HID-report timestamp age, and a session-start anchor
+ * captured the first time this composable runs.
+ */
+@Composable
+private fun HubStatRow(status: GatewayStatus, now: Long) {
+    val sessionStartMs = remember { SystemClock.elapsedRealtime() }
+    val reportsLabel = compactCount(
+        status.lifetimeCounters.reports
+            .toInt()
+            .coerceAtLeast(0),
+    )
+    val uptimeMs = (now - sessionStartMs).coerceAtLeast(0L)
+    val uptimeLabel = formatUptime(uptimeMs)
+    // LATENCY cell removed — it surfaced
+    // `now - status.lastReportAtMs`, which grows without bound
+    // during idle. Reads as "12h 04m latency" on a long quiet
+    // link, which is misleading. Diagnostics already exposes the
+    // precise value as part of `LiveRateHero`.
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 4.dp, start = 6.dp, end = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatTripletCell(label = "REPORTS", value = reportsLabel)
+        StatTripletCell(label = "UPTIME", value = uptimeLabel)
+    }
+}
+
+@Composable
+private fun StatTripletCell(label: String, value: String) {
+    val palette = BluetrackTheme.palette
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = label,
+            color = palette.fg3,
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 1.6.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = value,
+            color = palette.fg0,
+            fontSize = 18.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+private fun formatUptime(ms: Long): String {
+    if (ms <= 0L) return "—"
+    val secs = ms / 1_000L
+    val h = secs / 3600L
+    val m = (secs % 3600L) / 60L
+    val s = secs % 60L
+    return if (h > 0L) {
+        "$h:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}"
+    } else {
+        "$m:${s.toString().padStart(2, '0')}"
+    }
+}
+
 @Composable
 private fun Panel(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // Theme-aware surface. Earlier this hardcoded
+    // `Color.White.copy(alpha = 0.08f)` which read as a lifted
+    // panel on the dark palette but became invisible on light —
+    // the touchpad zone literally vanished into the bg. Pull from
+    // `palette.bg2` so the elevated surface contrast holds across
+    // both themes.
+    val palette = BluetrackTheme.palette
     Column(
         modifier
-            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
+            .background(palette.bg2, RoundedCornerShape(8.dp))
             .padding(14.dp),
         content = content,
     )

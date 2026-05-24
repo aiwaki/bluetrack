@@ -22,6 +22,16 @@ class MainViewModel(
 ) : ViewModel() {
     private val _mode = MutableStateFlow(HidMode.MOUSE)
     val mode: StateFlow<HidMode> = _mode
+
+    /**
+     * UI-only surface selection on the Hub. TOUCHPAD renders the
+     * virtual trackpad; MOUSE renders the mirror passthrough.
+     * Both keep `HidMode = MOUSE` on the gateway — the gamepad
+     * fullscreen flip path is unaffected and still owned by
+     * `MainActivity`'s `gamepadActive` boolean.
+     */
+    private val _surfaceMode = MutableStateFlow(TouchpadSurfaceMode.TOUCHPAD)
+    val surfaceMode: StateFlow<TouchpadSurfaceMode> = _surfaceMode
     val telemetry: StateFlow<Telemetry> = engine.telemetry
     val status = ble.status
 
@@ -30,6 +40,12 @@ class MainViewModel(
     private val hidSenderLock = Any()
     private var pendingDx = 0f
     private var pendingDy = 0f
+
+    // Two-finger touchpad scroll feeds the wheel byte on the
+    // composite mouse report. Lives in its own accumulator (not
+    // pendingDy) so a 1-finger drag and a 2-finger scroll within
+    // the same gesture do not collide on the same delta channel.
+    private var pendingWheelDy = 0f
     private var pendingMode = HidMode.MOUSE
     private var lastQueuedInputAtMs = 0L
     private var lastRecordedInputAtMs = 0L
@@ -105,12 +121,48 @@ class MainViewModel(
         synchronized(inputLock) {
             pendingDx = 0f
             pendingDy = 0f
+            pendingWheelDy = 0f
             pendingMode = mode
         }
         hidOutputBuffer.clear()
         hidTransportGovernor.reset()
         touchMotionPredictor.reset()
         if (started) ble.register(mode)
+    }
+
+    /**
+     * Swap the Hub input surface. Drops pending motion/scroll so a
+     * mid-gesture flip from TOUCHPAD to MOUSE does not flush a
+     * stale finger drag into the mirror path the moment the user's
+     * physical mouse takes over.
+     */
+    fun setSurfaceMode(mode: TouchpadSurfaceMode) {
+        if (_surfaceMode.value == mode) return
+        _surfaceMode.value = mode
+        synchronized(inputLock) {
+            pendingDx = 0f
+            pendingDy = 0f
+            pendingWheelDy = 0f
+        }
+        touchMotionPredictor.reset()
+    }
+
+    /**
+     * Forward a mouse button press / release from the mirror
+     * passthrough surface to the HID engine. [buttonMask] uses
+     * Android's `MotionEvent.BUTTON_PRIMARY/SECONDARY/TERTIARY`
+     * encoding (1 / 2 / 4) which matches HID button bits
+     * directly. Mouse mode only.
+     */
+    fun processMouseButton(
+        buttonMask: Int,
+        pressed: Boolean,
+    ) {
+        if (_mode.value != HidMode.MOUSE) return
+        recordInputThrottled("Mirror mouse", SystemClock.elapsedRealtime())
+        engine.setMouseButton(buttonMask, pressed) { report ->
+            enqueueHidReport(HidMode.MOUSE, report)
+        }
     }
 
     fun beginTouchGesture() {
@@ -155,6 +207,24 @@ class MainViewModel(
         engine.setGamepadHat(hat) { report ->
             enqueueHidReport(HidMode.GAMEPAD, report)
         }
+    }
+
+    /**
+     * Touchpad two-finger scroll → wheel byte. Caller supplies a
+     * pre-scaled wheel delta (typically `−touchDy / pxPerTick`).
+     * Mouse mode only — gamepad mode silently ignores so a stray
+     * 2-finger swipe over the gamepad layout never emits stick
+     * input. Drains alongside motion in the input pacer.
+     */
+    fun processScroll(wheelDy: Float) {
+        if (_mode.value != HidMode.MOUSE) return
+        val now = SystemClock.elapsedRealtime()
+        recordInputThrottled("Touchpad", now)
+        synchronized(inputLock) {
+            pendingWheelDy += wheelDy
+            lastQueuedInputAtMs = now
+        }
+        ensureInputPacer()
     }
 
     fun processMotion(
@@ -308,13 +378,23 @@ class MainViewModel(
                         synchronized(inputLock) {
                             val dx = pendingDx
                             val dy = pendingDy
+                            val wheel = pendingWheelDy
                             val idle = SystemClock.elapsedRealtime() - lastQueuedInputAtMs > INPUT_IDLE_STOP_MS
-                            if (abs(dx) <= INPUT_EPSILON && abs(dy) <= INPUT_EPSILON) {
+                            val motionEmpty = abs(dx) <= INPUT_EPSILON && abs(dy) <= INPUT_EPSILON
+                            val wheelEmpty = abs(wheel) <= INPUT_EPSILON
+                            if (motionEmpty && wheelEmpty) {
                                 if (idle) InputFrame.STOP else null
                             } else {
                                 pendingDx = 0f
                                 pendingDy = 0f
-                                InputFrame(dx = dx, dy = dy, mode = pendingMode, queuedAtMs = lastQueuedInputAtMs)
+                                pendingWheelDy = 0f
+                                InputFrame(
+                                    dx = dx,
+                                    dy = dy,
+                                    wheelDy = wheel,
+                                    mode = pendingMode,
+                                    queuedAtMs = lastQueuedInputAtMs,
+                                )
                             }
                                 ?: predictedInputFrame(tickAtMs, idle)
                         }
@@ -324,15 +404,30 @@ class MainViewModel(
                     }
                     frame ?: continue
                     inputDiagnostics.recordFrame(tickAtMs, frame.queuedAtMs)
-                    engine.processMouseToStick(frame.dx, frame.dy, frame.mode) { report ->
-                        enqueueHidReport(frame.mode, report)
+                    // Emit wheel BEFORE motion so a frame that
+                    // carries both (rare on a real touchpad — the
+                    // touch listener routes a gesture as either
+                    // motion or scroll) does not let the motion
+                    // report's wheel=0 byte clobber an intended
+                    // scroll tick.
+                    if (abs(frame.wheelDy) > INPUT_EPSILON && frame.mode == HidMode.MOUSE) {
+                        engine.processWheel(frame.wheelDy) { report ->
+                            enqueueHidReport(frame.mode, report)
+                        }
+                    }
+                    if (abs(frame.dx) > INPUT_EPSILON || abs(frame.dy) > INPUT_EPSILON) {
+                        engine.processMouseToStick(frame.dx, frame.dy, frame.mode) { report ->
+                            enqueueHidReport(frame.mode, report)
+                        }
                     }
                 }
                 val restart =
                     synchronized(inputLock) {
                         if (inputPacerJob == this@launch.coroutineContext[Job]) {
                             inputPacerJob = null
-                            abs(pendingDx) > INPUT_EPSILON || abs(pendingDy) > INPUT_EPSILON
+                            abs(pendingDx) > INPUT_EPSILON ||
+                                abs(pendingDy) > INPUT_EPSILON ||
+                                abs(pendingWheelDy) > INPUT_EPSILON
                         } else {
                             false
                         }
@@ -399,6 +494,7 @@ class MainViewModel(
         val dy: Float,
         val mode: HidMode,
         val queuedAtMs: Long,
+        val wheelDy: Float = 0f,
     ) {
         companion object {
             val STOP = InputFrame(0f, 0f, HidMode.MOUSE, 0L)
