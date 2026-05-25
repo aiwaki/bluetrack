@@ -156,7 +156,16 @@ class TranslationEngine(
         send: (ByteArray) -> Unit,
     ) {
         val carried = dy + wheelCarryY
-        val whole = carried.roundToInt().coerceIn(-127, 127)
+        // Cap per-emit wheel travel to keep scroll smooth on
+        // hosts that interpret each integer as one wheel notch.
+        // The full HID range is ±127, but anything past ~3 in a
+        // single report triggers macOS's accelerated-scroll
+        // heuristic and the screen lurches. Residual travel
+        // beyond the cap stays in `wheelCarryY` and emits on the
+        // next pacer tick, so total scroll distance is preserved
+        // — just spread out as several small notches instead of
+        // one big jump.
+        val whole = carried.roundToInt().coerceIn(-MAX_WHEEL_PER_EMIT, MAX_WHEEL_PER_EMIT)
         wheelCarryY = carried - whole
         if (whole == 0) return
         mouseReport[0] = (mouseButtons and 0x07).toByte()
@@ -222,6 +231,7 @@ class TranslationEngine(
     private companion object {
         const val NANOS_PER_MS = 1_000_000L
         const val TELEMETRY_INTERVAL_MS = 100L
+        const val MAX_WHEEL_PER_EMIT = 1
     }
 }
 

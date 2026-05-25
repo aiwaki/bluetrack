@@ -49,10 +49,16 @@ fun SettingsSliderRow(
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     hint: String? = null,
+    valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+    valueLabel: (Float) -> String = { v -> "${(v * 100f).toInt()}%" },
 ) {
     val palette = BluetrackTheme.palette
-    val clamped = value.coerceIn(0f, 1f)
-    val pct = (clamped * 100f).toInt()
+    val min = valueRange.start
+    val max = valueRange.endInclusive
+    val span = (max - min).coerceAtLeast(0.0001f)
+    val clamped = value.coerceIn(min, max)
+    val fraction = ((clamped - min) / span).coerceIn(0f, 1f)
+    val display = valueLabel(clamped)
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -74,7 +80,7 @@ fun SettingsSliderRow(
                 hint?.let { Text(text = it, color = palette.fg2, fontSize = 11.sp) }
             }
             Text(
-                text = "$pct%",
+                text = display,
                 color = palette.mintBright,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -85,7 +91,7 @@ fun SettingsSliderRow(
             val density = LocalDensity.current
             val widthPx = with(density) { widthDp.toPx() }
             val thumbDp = 16.dp
-            val thumbX = (widthDp * clamped) - thumbDp / 2
+            val thumbX = (widthDp * fraction) - thumbDp / 2
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -93,16 +99,16 @@ fun SettingsSliderRow(
                     .pointerInput(widthPx) {
                         detectHorizontalDragGestures(
                             onDragStart = { offset ->
-                                onValueChange((offset.x / widthPx).coerceIn(0f, 1f))
+                                onValueChange(min + (offset.x / widthPx).coerceIn(0f, 1f) * span)
                             },
                             onHorizontalDrag = { change, _ ->
                                 change.consume()
-                                onValueChange((change.position.x / widthPx).coerceIn(0f, 1f))
+                                onValueChange(min + (change.position.x / widthPx).coerceIn(0f, 1f) * span)
                             },
                         )
                     }.pointerInput(Unit) {
                         detectTapGestures { offset ->
-                            onValueChange((offset.x / widthPx).coerceIn(0f, 1f))
+                            onValueChange(min + (offset.x / widthPx).coerceIn(0f, 1f) * span)
                         }
                     },
                 contentAlignment = Alignment.CenterStart,
@@ -118,7 +124,7 @@ fun SettingsSliderRow(
                 // Filled portion — proportional via width sized to fraction.
                 Box(
                     modifier = Modifier
-                        .width(widthDp * clamped)
+                        .width(widthDp * fraction)
                         .height(4.dp)
                         .clip(RoundedCornerShape(999.dp))
                         .background(palette.mint),

@@ -65,6 +65,7 @@ import dev.xd.bluetrack.ui.hub.NeonRibbon
 import dev.xd.bluetrack.ui.hub.PinBlock
 import dev.xd.bluetrack.ui.hub.ServiceChip
 import dev.xd.bluetrack.ui.hub.StatusHero
+import dev.xd.bluetrack.ui.hub.TouchpadHintsOverlay
 import dev.xd.bluetrack.ui.hub.TrustCard
 import dev.xd.bluetrack.ui.hub.TrustState
 import dev.xd.bluetrack.ui.hub.toActivityItem
@@ -85,6 +86,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import android.graphics.Color as AndroidColor
@@ -231,12 +233,17 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(autoConnectEnabled) {
                     vm.setAutoConnectEnabled(autoConnectEnabled)
                 }
+                val touchpadSensitivity by tweaksRepo.touchpadSensitivity
+                    .collectAsState(initial = 1f)
+                val touchpadHintsDismissed by tweaksRepo.touchpadHintsDismissed
+                    .collectAsState(initial = true)
                 val tweaks = TweaksState(
                     motionReduced = false,
                     glassEnabled = false,
                     auroraOnLowBattery = false,
                     neonStrength = 1f,
                     autoConnectEnabled = autoConnectEnabled,
+                    touchpadSensitivity = touchpadSensitivity,
                 )
                 // Lock orientation to landscape while the gamepad
                 // surface is up; restore to sensor when we leave.
@@ -394,6 +401,11 @@ class MainActivity : ComponentActivity() {
                         when (route) {
                             Route.Hub -> AppScreen(
                                 vm = vm,
+                                touchpadSensitivity = touchpadSensitivity,
+                                touchpadHintsVisible = !touchpadHintsDismissed,
+                                onDismissTouchpadHints = {
+                                    ioScope.launch { tweaksRepo.setTouchpadHintsDismissed(true) }
+                                },
                                 onNavigate = router::navigate,
                                 onEnterGamepad = {
                                     vm.toggle(true)
@@ -433,6 +445,8 @@ class MainActivity : ComponentActivity() {
                                 onAutoConnectChange = { persistAutoConnect(it) },
                                 themeMode = themeMode,
                                 onThemeModeChange = { persistThemeMode(it) },
+                                touchpadSensitivity = touchpadSensitivity,
+                                onTouchpadSensitivityChange = { persistTouchpadSensitivity(it) },
                                 onOpenNotificationSettings = { openNotificationSettings() },
                                 onOpenAppPermissions = { openAppPermissions() },
                                 onOpenSourceCode = { openSourceCode() },
@@ -604,6 +618,15 @@ class MainActivity : ComponentActivity() {
         ioScope.launch { tweaksRepo.setThemeMode(mode) }
     }
 
+    /**
+     * Direct write — the slider can fire ~30 Hz during drag but
+     * DataStore coalesces in-flight writes and this key is not
+     * coupled to the rest of the TweaksState bundle.
+     */
+    private fun persistTouchpadSensitivity(value: Float) {
+        ioScope.launch { tweaksRepo.setTouchpadSensitivity(value) }
+    }
+
     private fun persistAutoConnect(enabled: Boolean) {
         val next = TweaksState(
             motionReduced = false,
@@ -691,6 +714,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AppScreen(
     vm: MainViewModel,
+    touchpadSensitivity: Float = 1f,
+    touchpadHintsVisible: Boolean = false,
+    onDismissTouchpadHints: () -> Unit = {},
     onNavigate: (Route) -> Unit = {},
     onEnterGamepad: () -> Unit = {},
     onShowTrustQR: () -> Unit = {},
@@ -791,15 +817,26 @@ private fun AppScreen(
             // the flip (no scroll jump when the user swaps modes).
             when (surfaceMode) {
                 TouchpadSurfaceMode.TOUCHPAD -> {
-                    TouchpadPanel(
-                        modifier = Modifier.fillMaxWidth().height(260.dp),
-                        mode = mode,
-                        telemetryX = telemetry.stickX,
-                        telemetryY = telemetry.stickY,
-                        onTouchStart = { vm.beginTouchGesture() },
-                        onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
-                        onScroll = { wheelDy -> vm.processScroll(wheelDy) },
-                    )
+                    Box(modifier = Modifier.fillMaxWidth().height(260.dp)) {
+                        TouchpadPanel(
+                            modifier = Modifier.fillMaxSize(),
+                            mode = mode,
+                            telemetryX = telemetry.stickX,
+                            telemetryY = telemetry.stickY,
+                            sensitivity = touchpadSensitivity,
+                            onTouchStart = { vm.beginTouchGesture() },
+                            onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
+                            onScroll = { wheelDy -> vm.processScroll(wheelDy) },
+                            onClick = { mask -> vm.processMouseClick(mask) },
+                            onHoldStart = { vm.processMouseButton(1, true) },
+                            onHoldEnd = { vm.processMouseButton(1, false) },
+                        )
+                        TouchpadHintsOverlay(
+                            visible = touchpadHintsVisible,
+                            onDismiss = onDismissTouchpadHints,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
                 TouchpadSurfaceMode.MOUSE -> {
                     MouseMirrorPanel(
@@ -845,7 +882,31 @@ private fun TouchpadPanel(
     onTouchStart: () -> Unit,
     onMotion: (Float, Float, String) -> Unit,
     onScroll: (Float) -> Unit = {},
+    /**
+     * Mouse-button click from a tap gesture. `mask` matches HID
+     * button bits (1 = left, 2 = right). The handler fires a
+     * momentary press → release on the gateway; held drags do
+     * NOT come through this callback (motion is enough).
+     */
+    onClick: (Int) -> Unit = {},
+    /**
+     * Long-press hold start. Fires after ~350ms with the finger
+     * stationary on the touchpad — emit a sustained L-press so
+     * subsequent finger motion drags with the button held (text
+     * selection). Released via [onHoldEnd] on finger lift.
+     */
+    onHoldStart: () -> Unit = {},
+    onHoldEnd: () -> Unit = {},
+    sensitivity: Float = 1f,
 ) {
+    val gestureScope = rememberCoroutineScope()
+    val touchpadHaptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // The AndroidView's `setOnTouchListener` is installed once at
+    // factory time, so it captures the Kotlin parameter `sensitivity`
+    // only once. Wrap in `rememberUpdatedState` so the closure
+    // re-reads the latest slider value on every event without
+    // rebuilding the FrameLayout.
+    val sensitivityState = rememberUpdatedState(sensitivity)
     val isGamepad = mode == HidMode.GAMEPAD
     val stick = stickOverlayState(stickX = telemetryX, stickY = telemetryY)
     val palette = BluetrackTheme.palette
@@ -983,6 +1044,67 @@ private fun TouchpadPanel(
                     // motion and lurch the cursor.
                     var lastScrollY = 0f
                     var inScrollGesture = false
+                    // Kinetic scroll (Mac-style fling). Tracked
+                    // during 2-finger drag, replayed on release
+                    // as exponentially-decaying wheel emissions
+                    // so a quick flick keeps the page coasting
+                    // for a second or two and a slow drag stops
+                    // immediately. A new ACTION_DOWN cancels the
+                    // in-flight fling so the user can stop the
+                    // momentum by re-touching the surface — same
+                    // gesture as a hardware Mac trackpad.
+                    var lastMoveTimeMs = 0L
+                    var scrollVelocityPxPerMs = 0f
+                    var scrollFlingJob: kotlinx.coroutines.Job? = null
+                    // Velocity-driven active scroll. The earlier
+                    // per-MOVE direct onScroll(-dyPx/42f) emitted
+                    // wheel deltas at whatever rate Android
+                    // delivered touch events — typically bursty,
+                    // 1-2 events per 8 ms with chunky dyPx
+                    // values. Hosts read that as jerky scroll.
+                    // Replaced by a constant 8 ms tick that
+                    // emits proportional ticks from the EMA-
+                    // smoothed velocity, so finger speed maps
+                    // directly to scroll rate. Identical model
+                    // to the fling job, just driven by live
+                    // MOVE samples instead of decaying.
+                    var scrollActiveTickJob: kotlinx.coroutines.Job? = null
+                    var lastVelocitySampleAtMs = 0L
+                    // Tracks how many fingers were down on the
+                    // previous scroll-MOVE frame. When this
+                    // changes (user lifts or adds a finger
+                    // mid-gesture), `lastScrollY` no longer
+                    // references the same set of pointers as the
+                    // current `avgY()`, so the next dyPx becomes
+                    // a phantom 50-100px jump in whichever
+                    // direction the lifted finger biased the
+                    // average — felt as jittery scroll or a
+                    // wrong-direction fling on release. We
+                    // re-anchor the baseline whenever the count
+                    // changes and skip emit for that frame.
+                    var lastScrollPointerCount = 0
+                    // Tap-to-click state. ACTION_DOWN seeds the
+                    // timer + counters; ACTION_UP commits the
+                    // click iff the gesture stayed short in time
+                    // and travel and never latched scroll. 1
+                    // finger → left, 2+ fingers → right (max
+                    // pointer count during the gesture).
+                    var downAtMs = 0L
+                    var maxPointers = 1
+                    var totalMovementPx = 0f
+                    val tapMaxDurationMs = 250L
+                    val tapMaxTravelPx = 12f
+                    // Long-press hold state. Finger held still
+                    // for `holdDelayMs` triggers the host-side
+                    // L-press latch via `onHoldStart`; subsequent
+                    // motion drags with the button held (text
+                    // select). Released on ACTION_UP via
+                    // `onHoldEnd`. Cancelled if the finger moves
+                    // past the tap-slop or a second finger lands
+                    // (scroll / right-click intent).
+                    var holdActive = false
+                    var holdJob: kotlinx.coroutines.Job? = null
+                    val holdDelayMs = 350L
                     isFocusableInTouchMode = true
                     isClickable = true
                     setOnGenericMotionListener { _, ev ->
@@ -1066,7 +1188,13 @@ private fun TouchpadPanel(
                             val speed = kotlin.math.sqrt(rawDx * rawDx + rawDy * rawDy)
                             val accelT = kotlin.math.min(speed / accelRefSpeedPx, 1f)
                             val accel = 1f + accelT * accelT * accelMax
-                            val gain = 0.42f * accel
+                            // Sensitivity slider scales the
+                            // baseline gain before acceleration.
+                            // Read via the captured State so a
+                            // mid-gesture drag of the slider takes
+                            // effect on the next sample without
+                            // rebuilding the touch listener.
+                            val gain = 0.42f * accel * sensitivityState.value
                             val edgeBoostX =
                                 1f +
                                     when {
@@ -1125,38 +1253,216 @@ private fun TouchpadPanel(
                                 filteredX = 0f
                                 filteredY = 0f
                                 inScrollGesture = false
+                                downAtMs = ev.eventTime
+                                maxPointers = 1
+                                totalMovementPx = 0f
+                                holdActive = false
+                                holdJob?.cancel()
+                                // Touch-to-stop the kinetic
+                                // scroll fling. Putting a finger
+                                // down on a coasting page halts
+                                // the momentum immediately so
+                                // the user can land precisely.
+                                scrollFlingJob?.cancel()
+                                scrollActiveTickJob?.cancel()
+                                scrollVelocityPxPerMs = 0f
+                                lastMoveTimeMs = ev.eventTime
+                                lastScrollPointerCount = 0
+                                holdJob = gestureScope.launch {
+                                    kotlinx.coroutines.delay(holdDelayMs)
+                                    // Only commit hold if the
+                                    // finger has stayed still and
+                                    // a second finger has not
+                                    // landed. The flag is checked
+                                    // again on each subsequent
+                                    // ACTION_MOVE to short-circuit
+                                    // if travel exceeds slop
+                                    // after this fires (rare race
+                                    // — Android usually delivers
+                                    // MOVE events more frequently
+                                    // than 350 ms apart).
+                                    if (totalMovementPx < tapMaxTravelPx && maxPointers == 1) {
+                                        holdActive = true
+                                        touchpadHaptic.performHapticFeedback(
+                                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                                        )
+                                        onHoldStart()
+                                    }
+                                }
                                 pointer.value = Offset(ev.x, ev.y)
                                 trail.clear()
                                 trail.add(Offset(ev.x, ev.y))
                                 true
                             }
                             MotionEvent.ACTION_POINTER_DOWN -> {
-                                // Second finger landed → switch
-                                // this gesture to scroll mode and
-                                // seed the scroll baseline so the
-                                // first delta is zero (no jump from
-                                // wherever the primary pointer was
-                                // dragging).
+                                // Second finger landed → seed
+                                // the scroll baseline so the
+                                // first MOVE delta after the
+                                // pointer-down is zero, but DO
+                                // NOT latch scroll yet. Latching
+                                // here would make a quick 2-
+                                // finger tap (down + up without
+                                // moving) read as scroll and
+                                // never as a right-click. Scroll
+                                // latches on the first 2-finger
+                                // MOVE instead.
+                                if (ev.pointerCount > maxPointers) maxPointers = ev.pointerCount
                                 if (ev.pointerCount >= 2) {
-                                    inScrollGesture = true
                                     lastScrollY = avgY()
+                                    // Reset velocity baseline so
+                                    // the first 2-finger MOVE
+                                    // delta does not pick up a
+                                    // stale instant velocity
+                                    // from before the second
+                                    // finger landed.
+                                    scrollVelocityPxPerMs = 0f
+                                    lastMoveTimeMs = ev.eventTime
+                                    // A second finger means the
+                                    // gesture is heading for
+                                    // scroll or right-click, not
+                                    // a hold. Cancel the pending
+                                    // hold timer.
+                                    if (!holdActive) holdJob?.cancel()
                                 }
                                 true
                             }
                             MotionEvent.ACTION_MOVE -> {
+                                // Track travel for the tap detector
+                                // regardless of which branch we
+                                // take. Use raw move delta from
+                                // the last sample so a long slow
+                                // drag still disqualifies a tap.
+                                val moveDx = ev.x - lastX
+                                val moveDy = ev.y - lastY
+                                totalMovementPx += kotlin.math.sqrt(moveDx * moveDx + moveDy * moveDy)
+                                // If the user starts dragging
+                                // BEFORE the hold timer fires,
+                                // cancel it — they intended a
+                                // motion gesture, not a hold.
+                                // Drag while hold is already
+                                // active is the desired path
+                                // (text select), so do nothing.
+                                if (!holdActive && totalMovementPx > tapMaxTravelPx) {
+                                    holdJob?.cancel()
+                                }
+                                // Lazy scroll latch: only on the
+                                // first 2-finger MOVE, so a quick
+                                // 2-finger down + up without
+                                // motion can still register as a
+                                // right-click tap.
+                                if (!inScrollGesture && ev.pointerCount >= 2 && totalMovementPx > 6f) {
+                                    inScrollGesture = true
+                                    lastScrollY = avgY()
+                                    lastScrollPointerCount = ev.pointerCount
+                                    // Start active-scroll ticker
+                                    // so subsequent ticks emit at
+                                    // constant 8 ms rate from the
+                                    // smoothed velocity. Cancels
+                                    // any leftover ticker first
+                                    // (paranoia — should never be
+                                    // alive at this point because
+                                    // ACTION_DOWN cancels).
+                                    scrollActiveTickJob?.cancel()
+                                    lastVelocitySampleAtMs = ev.eventTime
+                                    scrollActiveTickJob = gestureScope.launch {
+                                        val tickMs = 8L
+                                        while (isActive) {
+                                            kotlinx.coroutines.delay(tickMs)
+                                            val now = SystemClock.elapsedRealtime()
+                                            // Decay velocity when
+                                            // no MOVE arrives for
+                                            // a while — finger
+                                            // sitting still must
+                                            // stop scroll, not
+                                            // coast. 30 ms gap is
+                                            // ~4 ticks; long
+                                            // enough to ride out
+                                            // Android's MOVE
+                                            // jitter, short enough
+                                            // that a paused finger
+                                            // feels responsive.
+                                            if (now - lastVelocitySampleAtMs > 30L) {
+                                                scrollVelocityPxPerMs *= 0.85f
+                                            }
+                                            val v = scrollVelocityPxPerMs
+                                            if (kotlin.math.abs(v) < 0.01f) continue
+                                            val dy = v * tickMs.toFloat()
+                                            onScroll(-dy / 42f)
+                                        }
+                                    }
+                                }
+                                if (inScrollGesture && ev.pointerCount != lastScrollPointerCount) {
+                                    // Pointer config changed
+                                    // (finger lifted or added).
+                                    // Re-anchor without emitting
+                                    // — `avgY()` now references a
+                                    // different set, so the
+                                    // would-be `dyPx` against
+                                    // the old baseline is noise.
+                                    lastScrollY = avgY()
+                                    lastScrollPointerCount = ev.pointerCount
+                                    scrollVelocityPxPerMs = 0f
+                                    lastMoveTimeMs = ev.eventTime
+                                    pointer.value = Offset(ev.x, ev.y)
+                                    return@setOnTouchListener true
+                                }
                                 if (inScrollGesture) {
                                     val y = avgY()
                                     val dyPx = y - lastScrollY
                                     lastScrollY = y
-                                    // Convert pixel travel to wheel
-                                    // units. ~14 px per click is
-                                    // close to a Mac trackpad's
-                                    // "one notch" feel. Negate so
-                                    // finger UP = scroll UP (HID
-                                    // convention `wheel > 0 ⇒
-                                    // away from user`).
-                                    val wheelUnits = -dyPx / 14f
-                                    if (primaryInside) onScroll(wheelUnits)
+                                    // Track signed instantaneous
+                                    // finger velocity in px/ms
+                                    // with EMA smoothing. The
+                                    // smoothing weight (0.4 new,
+                                    // 0.6 old) tames jitter from
+                                    // single-sample noise but
+                                    // still responds inside one
+                                    // gesture so a flick is read
+                                    // as fast, not averaged
+                                    // down. Carried into the
+                                    // fling job on release.
+                                    val nowMs = ev.eventTime
+                                    val dtMs = (nowMs - lastMoveTimeMs).coerceAtLeast(1L)
+                                    val instantV = dyPx / dtMs.toFloat()
+                                    // Direction-aware velocity
+                                    // tracker. If the user
+                                    // reverses scroll direction
+                                    // mid-gesture (sign flip in
+                                    // instantV), discard the EMA
+                                    // history and start fresh —
+                                    // otherwise the smoothing
+                                    // weight keeps the old
+                                    // direction long enough that
+                                    // the release-time fling
+                                    // launches against the
+                                    // user's last intent. New
+                                    // weights favour the latest
+                                    // sample (0.7 new, 0.3 old)
+                                    // so even unidirectional
+                                    // drags converge on real
+                                    // velocity faster.
+                                    scrollVelocityPxPerMs = when {
+                                        instantV != 0f &&
+                                            scrollVelocityPxPerMs != 0f &&
+                                            instantV * scrollVelocityPxPerMs < 0f -> instantV
+                                        else -> scrollVelocityPxPerMs * 0.3f + instantV * 0.7f
+                                    }
+                                    lastMoveTimeMs = nowMs
+                                    lastVelocitySampleAtMs = SystemClock.elapsedRealtime()
+                                    // Active-scroll ticker emits
+                                    // wheel deltas based on this
+                                    // updated velocity on its own
+                                    // 8 ms cadence. No direct
+                                    // onScroll call from MOVE so
+                                    // bursty Android touch
+                                    // delivery does not translate
+                                    // into bursty wheel output.
+                                    // Keep lastX/lastY current so
+                                    // the tap-travel accumulator
+                                    // doesn't fire on every frame
+                                    // with stale anchors.
+                                    lastX = ev.x
+                                    lastY = ev.y
                                 } else {
                                     if (primaryInside) {
                                         for (i in 0 until ev.historySize) {
@@ -1192,6 +1498,100 @@ private fun TouchpadPanel(
                             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                                 parent.requestDisallowInterceptTouchEvent(false)
                                 performClick()
+                                // Hold-to-drag release. If the
+                                // 350 ms long-press latched the
+                                // L-button via `onHoldStart`,
+                                // release it now so the host sees
+                                // a clean drag boundary (button
+                                // up, motion stops with whatever
+                                // text selection / window drag
+                                // the user built). Skip the tap
+                                // detector — the gesture was a
+                                // hold, not a tap.
+                                holdJob?.cancel()
+                                if (holdActive) {
+                                    onHoldEnd()
+                                    holdActive = false
+                                } else if (
+                                    ev.actionMasked == MotionEvent.ACTION_UP &&
+                                    !inScrollGesture &&
+                                    totalMovementPx < tapMaxTravelPx &&
+                                    (ev.eventTime - downAtMs) < tapMaxDurationMs
+                                ) {
+                                    // Tap detector. Commits a
+                                    // click iff the gesture
+                                    // stayed short in time and
+                                    // travel, never latched
+                                    // scroll, and ended cleanly
+                                    // (not cancelled). 1 finger →
+                                    // left button (mask 1), 2+
+                                    // fingers → right button
+                                    // (mask 2). Held drags exit
+                                    // through the motion path
+                                    // and never reach this
+                                    // branch.
+                                    val mask = if (maxPointers >= 2) 2 else 1
+                                    onClick(mask)
+                                }
+                                // Kinetic fling. If the gesture
+                                // ended in scroll mode with
+                                // enough finger velocity, launch
+                                // a coroutine that keeps emitting
+                                // scroll wheel deltas with an
+                                // exponential decay so the page
+                                // coasts. 0.94^n per 16ms tick
+                                // gives ~1-1.5s of perceivable
+                                // motion for a hard flick, and
+                                // dies inside ~250ms for a slow
+                                // drag — same feel as a Mac
+                                // trackpad. ACTION_DOWN cancels
+                                // the job (touch-to-stop).
+                                // Stop the active-scroll ticker
+                                // BEFORE evaluating fling so the
+                                // ticker does not double-emit
+                                // against the fling.
+                                scrollActiveTickJob?.cancel()
+                                if (inScrollGesture &&
+                                    kotlin.math.abs(scrollVelocityPxPerMs) > FLING_MIN_VELOCITY
+                                ) {
+                                    val initialV = scrollVelocityPxPerMs
+                                    scrollFlingJob?.cancel()
+                                    scrollFlingJob = gestureScope.launch {
+                                        // Damp the initial fling
+                                        // velocity (60% of the
+                                        // raw finger velocity) so
+                                        // a casual flick does not
+                                        // overshoot. Pair with a
+                                        // tighter decay (0.92 per
+                                        // 16ms) so total coast is
+                                        // ~700ms — still feels
+                                        // alive but the page
+                                        // lands where the user
+                                        // expects instead of
+                                        // running on.
+                                        var v = initialV * 0.6f
+                                        // 8 ms tick at sqrt(0.92)
+                                        // decay ≈ same total
+                                        // energy curve as the
+                                        // previous 16 ms / 0.92
+                                        // version but each
+                                        // emission is half the
+                                        // magnitude and fires
+                                        // twice as often. Host
+                                        // sees a finer-grained
+                                        // wheel stream that
+                                        // reads visually as
+                                        // smoother coast.
+                                        val tickMs = 8L
+                                        while (kotlin.math.abs(v) > FLING_STOP_VELOCITY) {
+                                            kotlinx.coroutines.delay(tickMs)
+                                            val flingDy = v * tickMs.toFloat()
+                                            onScroll(-flingDy / 42f)
+                                            v *= 0.959f
+                                        }
+                                    }
+                                }
+                                scrollVelocityPxPerMs = 0f
                                 pointer.value = null
                                 trail.clear()
                                 inScrollGesture = false
@@ -1309,6 +1709,17 @@ private fun Panel(
  * truth for the host field — trust it.
  */
 private fun isConnected(status: GatewayStatus): Boolean = status.host != null
+
+/**
+ * Kinetic-scroll fling tunables. `FLING_MIN_VELOCITY` is the
+ * px/ms threshold finger velocity must exceed for a fling to
+ * even start (slow drags die immediately, quick flicks coast).
+ * `FLING_STOP_VELOCITY` is the lower bound the decay loop
+ * exits at — set high enough that the final wheel tick is
+ * still emitting visible motion, not a wasted micro-tick.
+ */
+private const val FLING_MIN_VELOCITY: Float = 0.35f
+private const val FLING_STOP_VELOCITY: Float = 0.04f
 
 private fun isInputLive(
     status: GatewayStatus,

@@ -62,6 +62,8 @@ fun SettingsScreen(
     onAutoConnectChange: (Boolean) -> Unit = {},
     themeMode: String = "SYSTEM",
     onThemeModeChange: (String) -> Unit = {},
+    touchpadSensitivity: Float = 1f,
+    onTouchpadSensitivityChange: (Float) -> Unit = {},
     onOpenNotificationSettings: () -> Unit = {},
     onOpenAppPermissions: () -> Unit = {},
     onOpenSourceCode: () -> Unit = {},
@@ -135,6 +137,24 @@ fun SettingsScreen(
                 options = listOf("SYSTEM", "LIGHT", "DARK"),
                 selected = themeMode,
                 onSelect = onThemeModeChange,
+            )
+        }
+        SettingsGroup(title = "INPUT") {
+            // Touchpad sensitivity multiplier. The Hub touchpad
+            // pipeline applies a fixed `0.42` baseline gain plus
+            // velocity acceleration + edge boost; this slider
+            // scales the baseline `×0.5..×2.0` so users with
+            // small phones or a preference for a snappier cursor
+            // can shift the whole curve without tweaking
+            // acceleration directly. Mirror surface + external
+            // mice are unaffected.
+            SettingsSliderRow(
+                label = "Touchpad sensitivity",
+                hint = "Acceleration + edge boost still apply on top.",
+                value = touchpadSensitivity,
+                valueRange = 0.5f..2.0f,
+                valueLabel = { v -> "%.2fx".format(v) },
+                onValueChange = onTouchpadSensitivityChange,
             )
         }
         SettingsGroup(title = "MAINTENANCE") {
