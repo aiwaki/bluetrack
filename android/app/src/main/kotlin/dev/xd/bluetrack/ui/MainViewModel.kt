@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.abs
 
 class MainViewModel(
@@ -162,6 +164,54 @@ class MainViewModel(
         recordInputThrottled("Mirror mouse", SystemClock.elapsedRealtime())
         engine.setMouseButton(buttonMask, pressed) { report ->
             enqueueHidReport(HidMode.MOUSE, report)
+        }
+    }
+
+    /**
+     * Synthesise a momentary click from a touchpad tap. Fires
+     * `press` → `delay(CLICK_HOLD_MS)` → `release` on a coroutine
+     * so the host sees a proper hold-and-release event instead of
+     * a microsecond pulse — macOS and Windows both gate
+     * double-click detection on a real interval between the two
+     * sides, and back-to-back press+release at HID-wire speed
+     * can get filtered as input noise. 40 ms matches the lower
+     * bound of a real human button-down on a desktop mouse.
+     *
+     * Two rapid taps from the user therefore land on the host as
+     *   P  R     P  R
+     *   |--|----|--|
+     *   0  40   ~80 120ms
+     * which any standard double-click detector accepts as a
+     * legitimate text-select.
+     */
+    private val clickMutex = Mutex()
+
+    fun processMouseClick(buttonMask: Int) {
+        if (_mode.value != HidMode.MOUSE) return
+        val now = SystemClock.elapsedRealtime()
+        recordInputThrottled("Touchpad", now)
+        viewModelScope.launch(Dispatchers.Default) {
+            // Serialise click sequences so a second tap that
+            // lands during the in-flight press → release of the
+            // first does not collide on the shared `mouseButtons`
+            // bit. Without the mutex two rapid 1-finger taps
+            // collapse into a single press + release because the
+            // bit is already set when the second coroutine
+            // emits its `press`. The host then sees one click,
+            // never two, so double-click text-select never
+            // triggers. With the mutex each tap runs a clean
+            // P → hold → R → small gap so concurrent taps queue
+            // up as proper sequential clicks on the wire.
+            clickMutex.withLock {
+                engine.setMouseButton(buttonMask, true) { report ->
+                    enqueueHidReport(HidMode.MOUSE, report)
+                }
+                delay(CLICK_HOLD_MS)
+                engine.setMouseButton(buttonMask, false) { report ->
+                    enqueueHidReport(HidMode.MOUSE, report)
+                }
+                delay(CLICK_GAP_MS)
+            }
         }
     }
 
@@ -507,6 +557,8 @@ class MainViewModel(
         const val INPUT_GESTURE_RESET_MS = 1000L
         const val INPUT_STATUS_INTERVAL_MS = 250L
         const val INPUT_EPSILON = 0.005f
+        const val CLICK_HOLD_MS = 40L
+        const val CLICK_GAP_MS = 20L
         const val NANOS_PER_MS = 1_000_000L
         const val TOUCHPAD_SOURCE = "Touchpad"
     }
