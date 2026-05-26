@@ -1,5 +1,8 @@
 package dev.xd.bluetrack.ui.hub
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,9 +18,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,9 +73,31 @@ fun TrustCard(
 ) {
     val palette = BluetrackTheme.palette
     val shape = RoundedCornerShape(BluetrackTokens.RadiusLg)
+    // Scale burst on trust-state transition. Pairs with the
+    // Crossfade between EmptyBody / PinnedBody / RejectionBody so
+    // the card pops slightly when a new host is pinned (Empty →
+    // Pinned), the trust resets (Pinned → Empty), or a foreign
+    // host trips the warn frame (Pinned → Rejection). Initial
+    // compose does not burst — only real state changes.
+    val burst = remember { Animatable(1f) }
+    var prevState by remember { mutableStateOf<TrustState?>(null) }
+    LaunchedEffect(state) {
+        if (prevState != null && prevState != state) {
+            burst.snapTo(1.03f)
+            burst.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+            )
+        }
+        prevState = state
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .scale(burst.value)
             .clip(shape)
             .btGlass(strong = false, shape = shape)
             .padding(BluetrackTokens.Sp5),
