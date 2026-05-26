@@ -78,7 +78,8 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
     ) {
         HubHeader(title = "Settings")
-        SettingsGroup(title = "CONNECTION") {
+        Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 0)) {
+            SettingsGroup(title = "CONNECTION") {
             SettingsRow(
                 label = "Visible as",
                 value = compat.adapterName ?: "—",
@@ -104,8 +105,10 @@ fun SettingsScreen(
                 label = "Multi advertisement",
                 value = compat.multipleAdvertisementSupported.availabilityLabel(),
             )
+            }
         }
-        SettingsGroup(title = "PERMISSIONS") {
+        Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 1)) {
+            SettingsGroup(title = "PERMISSIONS") {
             // Drive directly from runtime grant state — adapter
             // power is independent (a user can grant the
             // permission and still toggle BT off; that should
@@ -129,8 +132,10 @@ fun SettingsScreen(
                 kind = SettingsRowKind.Chev,
                 onClick = onOpenAppPermissions,
             )
+            }
         }
-        SettingsGroup(title = "APPEARANCE") {
+        Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 2)) {
+            SettingsGroup(title = "APPEARANCE") {
             SettingsSegmentedRow(
                 label = "Theme",
                 hint = "System follows your phone's dark / light setting.",
@@ -138,8 +143,10 @@ fun SettingsScreen(
                 selected = themeMode,
                 onSelect = onThemeModeChange,
             )
+            }
         }
-        SettingsGroup(title = "INPUT") {
+        Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 3)) {
+            SettingsGroup(title = "INPUT") {
             // Touchpad sensitivity multiplier. The Hub touchpad
             // pipeline applies a fixed `0.42` baseline gain plus
             // velocity acceleration + edge boost; this slider
@@ -156,8 +163,10 @@ fun SettingsScreen(
                 valueLabel = { v -> "%.2fx".format(v) },
                 onValueChange = onTouchpadSensitivityChange,
             )
+            }
         }
-        SettingsGroup(title = "MAINTENANCE") {
+        Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 4)) {
+            SettingsGroup(title = "MAINTENANCE") {
             // The only mutating action on the route. Lifetime
             // counters survive process kill (see
             // `LifetimeCountersAccumulator`); a manual reset is
@@ -169,8 +178,10 @@ fun SettingsScreen(
                 onClick = onResetLifetimeCounters,
                 hint = "Clears report / feedback / rejection totals",
             )
+            }
         }
-        SettingsGroup(title = "ABOUT") {
+        Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 5)) {
+            SettingsGroup(title = "ABOUT") {
             SettingsRow(
                 label = "Version",
                 value = "$versionName (build $versionCode)",
@@ -184,6 +195,7 @@ fun SettingsScreen(
                 kind = SettingsRowKind.Ext,
                 onClick = onOpenSourceCode,
             )
+            }
         }
         // Bottom breathing room so the dock never overlaps the last row.
         Box(modifier = Modifier.padding(bottom = 24.dp))

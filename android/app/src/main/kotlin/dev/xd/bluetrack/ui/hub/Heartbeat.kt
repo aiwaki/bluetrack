@@ -1,8 +1,10 @@
 package dev.xd.bluetrack.ui.hub
 
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -49,7 +51,26 @@ fun Heartbeat(
     intensity: Float = 0f,
 ) {
     val palette = BluetrackTheme.palette
-    val clampedIntensity = intensity.coerceIn(0f, 1f)
+    val rawIntensity = intensity.coerceIn(0f, 1f)
+    // Smooth intensity transitions so a sudden burst of HID
+    // activity ramps amplitude up over 320ms instead of
+    // snapping. Same on the way back down — the spike calms
+    // gently rather than collapsing the instant activity
+    // stops. Reads as live rather than mechanically clamped.
+    val clampedIntensity by animateFloatAsState(
+        targetValue = rawIntensity,
+        animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+        label = "heartbeat-intensity",
+    )
+    // Active state fade. `active=false` collapses the trace
+    // to a flat dashed hairline; tween the trace alpha 0..1
+    // so the spike polyline melts away on disconnect instead
+    // of vanishing in a single frame.
+    val traceAlpha by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+        label = "heartbeat-trace-alpha",
+    )
     val transition = rememberInfiniteTransition(label = "heartbeat")
     // Period shortens with intensity. Calm idle ~3.6 s, full
     // activity ~1.4 s — the eye reads that as "fast pulse".
@@ -72,15 +93,20 @@ fun Heartbeat(
         val w = size.width
         val h = size.height
         val baseY = h * 0.5f
-        // Hairline base.
+        // Hairline base. Solid when the trace is fully alive,
+        // dashed when collapsed — interpolation between is
+        // unnecessary, the eye reads the dash style instantly.
         drawLine(
             color = palette.hairline,
             start = Offset(0f, h - 0.5f),
             end = Offset(w, h - 0.5f),
             strokeWidth = 1f,
-            pathEffect = if (active) null else PathEffect.dashPathEffect(floatArrayOf(4f, 4f)),
+            pathEffect = if (traceAlpha > 0.05f) null else PathEffect.dashPathEffect(floatArrayOf(4f, 4f)),
         )
-        if (!active) return@Canvas
+        // Skip the polyline build once the fade-out finishes.
+        // While active, draw on every frame so the running
+        // spike continues to advance.
+        if (traceAlpha <= 0.001f) return@Canvas
 
         // Build the heartbeat polyline. Mirrors the canvas
         // sampling loop: noise sine baseline + a spike every
@@ -120,12 +146,12 @@ fun Heartbeat(
         // the line still reads on the dark surface.
         drawPath(
             path = path,
-            color = palette.crit.copy(alpha = 0.30f),
+            color = palette.crit.copy(alpha = 0.30f * traceAlpha),
             style = Stroke(width = 4f),
         )
         drawPath(
             path = path,
-            color = palette.crit,
+            color = palette.crit.copy(alpha = traceAlpha),
             style = Stroke(width = 1.4f),
         )
     }

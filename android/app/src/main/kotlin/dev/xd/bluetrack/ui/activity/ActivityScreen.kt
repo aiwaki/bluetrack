@@ -127,17 +127,42 @@ fun ActivityScreen(
             modifier = Modifier.padding(horizontal = BluetrackTokens.Sp6),
             verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
         ) {
-            SessionSummary(
-                events = classified.size,
-                warnings = warnings,
-                length = sessionLength,
-            )
-            FilterRow(active = filter, onChange = { filter = it })
+            Box(
+                modifier = dev.xd.bluetrack.ui
+                    .rememberStaggerModifier(index = 0),
+            ) {
+                SessionSummary(
+                    events = classified.size,
+                    warnings = warnings,
+                    length = sessionLength,
+                )
+            }
+            Box(
+                modifier = dev.xd.bluetrack.ui
+                    .rememberStaggerModifier(index = 1),
+            ) {
+                FilterRow(active = filter, onChange = { filter = it })
+            }
             if (classified.isEmpty()) {
-                EmptyState()
+                Box(
+                    modifier = dev.xd.bluetrack.ui
+                        .rememberStaggerModifier(index = 2),
+                ) {
+                    EmptyState()
+                }
             } else {
-                Timeline(visible = visible, now = now)
-                RetainNote(visible = visible.size, total = classified.size, palette = palette)
+                Box(
+                    modifier = dev.xd.bluetrack.ui
+                        .rememberStaggerModifier(index = 2),
+                ) {
+                    Timeline(visible = visible, now = now)
+                }
+                Box(
+                    modifier = dev.xd.bluetrack.ui
+                        .rememberStaggerModifier(index = 3),
+                ) {
+                    RetainNote(visible = visible.size, total = classified.size, palette = palette)
+                }
             }
         }
     }
@@ -151,6 +176,26 @@ private fun SessionSummary(
 ) {
     val palette = BluetrackTheme.palette
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
+    // Tween the headline counts so a fresh event nudges the
+    // number visibly across 240ms instead of snapping. Same
+    // FastOutSlowInEasing curve as the Diag route — keeps the
+    // app's numeric pulse consistent.
+    val animatedEvents by androidx.compose.animation.core.animateIntAsState(
+        targetValue = events,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = 240,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing,
+        ),
+        label = "activity-events",
+    )
+    val animatedWarnings by androidx.compose.animation.core.animateIntAsState(
+        targetValue = warnings,
+        animationSpec = androidx.compose.animation.core.tween(
+            durationMillis = 240,
+            easing = androidx.compose.animation.core.FastOutSlowInEasing,
+        ),
+        label = "activity-warnings",
+    )
     // HOSTS cell removed — its value (count of unique host names
     // referenced in the event ring) was confusing on a single-host
     // workflow and the user flagged it as noise. The remaining
@@ -163,10 +208,10 @@ private fun SessionSummary(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        SummaryCell(label = "EVENTS", value = events.toString())
+        SummaryCell(label = "EVENTS", value = animatedEvents.toString())
         SummaryCell(
             label = "WARNINGS",
-            value = warnings.toString(),
+            value = animatedWarnings.toString(),
             accent = if (warnings > 0) palette.warn else palette.fg0,
         )
         SummaryCell(label = "LENGTH", value = length)
@@ -204,26 +249,49 @@ private fun SummaryCell(
 @Composable
 private fun FilterRow(active: FilterKey, onChange: (FilterKey) -> Unit) {
     val palette = BluetrackTheme.palette
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterKey.entries.forEach { key ->
             val selected = key == active
+            // Crossfade chip bg + border + label color over
+            // 180ms so the selection state slides between
+            // chips instead of snapping. Subtle but reads as
+            // alive — same idiom as the dock active indicator.
+            val bgColor by androidx.compose.animation.animateColorAsState(
+                targetValue = if (selected) palette.mint else Color.Transparent,
+                animationSpec = androidx.compose.animation.core
+                    .tween(180),
+                label = "filter-chip-bg-${key.name}",
+            )
+            val borderColor by androidx.compose.animation.animateColorAsState(
+                targetValue = if (selected) Color.Transparent else palette.hairline,
+                animationSpec = androidx.compose.animation.core
+                    .tween(180),
+                label = "filter-chip-border-${key.name}",
+            )
+            val labelColor by androidx.compose.animation.animateColorAsState(
+                targetValue = if (selected) Color.White else palette.fg1,
+                animationSpec = androidx.compose.animation.core
+                    .tween(180),
+                label = "filter-chip-label-${key.name}",
+            )
             Box(
                 modifier = Modifier
                     .height(28.dp)
                     .clip(RoundedCornerShape(999.dp))
-                    .background(
-                        if (selected) palette.mint else Color.Transparent,
-                    ).border(
-                        1.dp,
-                        if (selected) Color.Transparent else palette.hairline,
-                        RoundedCornerShape(999.dp),
-                    ).clickable { onChange(key) }
-                    .padding(horizontal = 12.dp),
+                    .background(bgColor)
+                    .border(1.dp, borderColor, RoundedCornerShape(999.dp))
+                    .clickable {
+                        haptic.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                        )
+                        onChange(key)
+                    }.padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = key.label.uppercase(),
-                    color = if (selected) Color.White else palette.fg1,
+                    color = labelColor,
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
                     letterSpacing = 0.8.sp,
