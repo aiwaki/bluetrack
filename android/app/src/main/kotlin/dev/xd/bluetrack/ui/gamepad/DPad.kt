@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -45,6 +46,7 @@ fun DPad(
     modifier: Modifier = Modifier,
 ) {
     val palette = BluetrackTheme.palette
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var active by remember { mutableStateOf<Int?>(null) }
 
     // DualSense-style cross: each arm is a tall pill oriented
@@ -71,32 +73,44 @@ fun DPad(
     ) {
         dirs.forEach { arm ->
             val isActive = active == arm.hat
+            // Press feedback spring — same idiom as FaceButtons.
+            // Inner visual snaps to 0.9 on press, springs back
+            // to 1.0 with a LowBouncy / StiffnessLow profile so
+            // the rebound reads as a tactile cap rather than a
+            // hard snap.
+            val pressScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (isActive) 0.9f else 1f,
+                animationSpec = if (isActive) {
+                    androidx.compose.animation.core.spring(
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessMedium,
+                    )
+                } else {
+                    androidx.compose.animation.core.spring(
+                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessLow,
+                    )
+                },
+                label = "dpad-press-${arm.hat}",
+            )
+            // Outer hit zone is 4 dp wider/taller on each side than
+            // the visual pill so taps just outside the arm still
+            // register. Stops short of the perpendicular arm's
+            // hit zone because adjacent arms have centres 30 dp
+            // apart and visual half-thickness only 14 dp.
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .size(
-                        width = if (arm.vertical) 28.dp else 40.dp,
-                        height = if (arm.vertical) 40.dp else 28.dp,
+                        width = if (arm.vertical) 40.dp else 54.dp,
+                        height = if (arm.vertical) 54.dp else 40.dp,
                     ).offset(x = (arm.dx * 30).dp, y = (arm.dy * 30).dp)
-                    .clip(RoundedCornerShape(BluetrackTokens.RadiusXs))
-                    .background(
-                        if (isActive) {
-                            Brush.verticalGradient(
-                                colors = listOf(palette.mintBright, palette.mintDeep),
-                            )
-                        } else {
-                            Brush.verticalGradient(
-                                colors = listOf(Color(0xFF2A2C2E), Color(0xFF15171A)),
-                            )
-                        },
-                    ).border(
-                        1.dp,
-                        if (isActive) Color.Transparent else palette.glassBorder,
-                        RoundedCornerShape(BluetrackTokens.RadiusXs),
-                    ).pointerInput(Unit) {
+                    .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = {
                                 active = arm.hat
+                                haptic.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                                )
                                 onHat(arm.hat)
                                 val released = tryAwaitRelease()
                                 active = null
@@ -108,12 +122,40 @@ fun DPad(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = arm.glyph,
-                    color = if (isActive) Color.White else palette.fg1,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+                Box(
+                    modifier = Modifier
+                        .size(
+                            width = if (arm.vertical) 28.dp else 40.dp,
+                            height = if (arm.vertical) 40.dp else 28.dp,
+                        ).scale(pressScale)
+                        .clip(RoundedCornerShape(BluetrackTokens.RadiusXs))
+                        .background(
+                            if (isActive) {
+                                Brush.verticalGradient(
+                                    colors = listOf(palette.crit, palette.crit.copy(alpha = 0.7f)),
+                                )
+                            } else {
+                                // Theme-aware idle fill — earlier hard
+                                // grey 0xFF2A2C2E / 0xFF15171A made the
+                                // arms invisible on the light palette.
+                                Brush.verticalGradient(
+                                    colors = listOf(palette.bg2, palette.bg3),
+                                )
+                            },
+                        ).border(
+                            1.dp,
+                            if (isActive) Color.Transparent else palette.glassBorder,
+                            RoundedCornerShape(BluetrackTokens.RadiusXs),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = arm.glyph,
+                        color = if (isActive) Color.White else palette.fg1,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }

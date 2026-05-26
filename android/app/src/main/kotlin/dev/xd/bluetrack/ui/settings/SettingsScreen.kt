@@ -60,6 +60,10 @@ fun SettingsScreen(
     commitShort: String? = null,
     autoConnectEnabled: Boolean = true,
     onAutoConnectChange: (Boolean) -> Unit = {},
+    themeMode: String = "SYSTEM",
+    onThemeModeChange: (String) -> Unit = {},
+    touchpadSensitivity: Float = 1f,
+    onTouchpadSensitivityChange: (Float) -> Unit = {},
     onOpenNotificationSettings: () -> Unit = {},
     onOpenAppPermissions: () -> Unit = {},
     onOpenSourceCode: () -> Unit = {},
@@ -74,85 +78,142 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
     ) {
         HubHeader(title = "Settings")
-        SettingsGroup(title = "CONNECTION") {
-            SettingsRow(
-                label = "Visible as",
-                value = compat.adapterName ?: "—",
-                mono = true,
-                hint = "Search for this name in macOS · Windows BT settings",
-            )
-            SettingsRow(
-                label = "Foreground service",
-                value = if (compat.bluetoothEnabled) "Running" else "Off",
-                accent = compat.bluetoothEnabled,
-            )
-            SettingsToggleRow(
-                label = "Auto-connect to bonded host",
-                hint = "Computer-class hosts only · audio + accessories are skipped",
-                checked = autoConnectEnabled,
-                onCheckedChange = onAutoConnectChange,
-            )
-            SettingsRow(
-                label = "BLE advertiser",
-                value = compat.bleAdvertiserAvailable.availabilityLabel(),
-            )
-            SettingsRow(
-                label = "Multi advertisement",
-                value = compat.multipleAdvertisementSupported.availabilityLabel(),
-            )
-        }
-        SettingsGroup(title = "PERMISSIONS") {
-            // Drive directly from runtime grant state — adapter
-            // power is independent (a user can grant the
-            // permission and still toggle BT off; that should
-            // not say "Required" here).
-            SettingsRow(
-                label = "Bluetooth nearby",
-                value = nearbyPermissionGranted.grantLabel(),
-                accent = nearbyPermissionGranted == true,
-                kind = SettingsRowKind.Chev,
-                onClick = onOpenAppPermissions,
-            )
-            SettingsRow(
-                label = "Notifications",
-                value = notificationsPermissionGranted.grantLabel(),
-                accent = notificationsPermissionGranted == true,
-                kind = SettingsRowKind.Chev,
-                onClick = onOpenNotificationSettings,
-            )
-            SettingsRow(
-                label = "Manage all permissions",
-                kind = SettingsRowKind.Chev,
-                onClick = onOpenAppPermissions,
-            )
-        }
-        SettingsGroup(title = "MAINTENANCE") {
-            // The only mutating action on the route. Lifetime
-            // counters survive process kill (see
-            // `LifetimeCountersAccumulator`); a manual reset is
-            // useful when re-testing a fresh pairing or before
-            // capturing a clean diagnostic snapshot.
-            SettingsRow(
-                label = "Reset lifetime counters",
-                kind = SettingsRowKind.Chev,
-                onClick = onResetLifetimeCounters,
-                hint = "Clears report / feedback / rejection totals",
-            )
-        }
-        SettingsGroup(title = "ABOUT") {
-            SettingsRow(
-                label = "Version",
-                value = "$versionName (build $versionCode)",
-                mono = true,
-            )
-            commitShort?.let {
-                SettingsRow(label = "Commit", value = it, mono = true)
+        Box(
+            modifier = dev.xd.bluetrack.ui
+                .rememberStaggerModifier(index = 0),
+        ) {
+            SettingsGroup(title = "CONNECTION") {
+                SettingsRow(
+                    label = "Visible as",
+                    value = compat.adapterName ?: "—",
+                    mono = true,
+                    hint = "Search for this name in macOS · Windows BT settings",
+                )
+                SettingsRow(
+                    label = "Foreground service",
+                    value = if (compat.bluetoothEnabled) "Running" else "Off",
+                    accent = compat.bluetoothEnabled,
+                )
+                SettingsToggleRow(
+                    label = "Auto-connect to bonded host",
+                    hint = "Computer-class hosts only · audio + accessories are skipped",
+                    checked = autoConnectEnabled,
+                    onCheckedChange = onAutoConnectChange,
+                )
+                SettingsRow(
+                    label = "BLE advertiser",
+                    value = compat.bleAdvertiserAvailable.availabilityLabel(),
+                )
+                SettingsRow(
+                    label = "Multi advertisement",
+                    value = compat.multipleAdvertisementSupported.availabilityLabel(),
+                )
             }
-            SettingsRow(
-                label = "Source code",
-                kind = SettingsRowKind.Ext,
-                onClick = onOpenSourceCode,
-            )
+        }
+        Box(
+            modifier = dev.xd.bluetrack.ui
+                .rememberStaggerModifier(index = 1),
+        ) {
+            SettingsGroup(title = "PERMISSIONS") {
+                // Drive directly from runtime grant state — adapter
+                // power is independent (a user can grant the
+                // permission and still toggle BT off; that should
+                // not say "Required" here).
+                SettingsRow(
+                    label = "Bluetooth nearby",
+                    value = nearbyPermissionGranted.grantLabel(),
+                    accent = nearbyPermissionGranted == true,
+                    kind = SettingsRowKind.Chev,
+                    onClick = onOpenAppPermissions,
+                )
+                SettingsRow(
+                    label = "Notifications",
+                    value = notificationsPermissionGranted.grantLabel(),
+                    accent = notificationsPermissionGranted == true,
+                    kind = SettingsRowKind.Chev,
+                    onClick = onOpenNotificationSettings,
+                )
+                SettingsRow(
+                    label = "Manage all permissions",
+                    kind = SettingsRowKind.Chev,
+                    onClick = onOpenAppPermissions,
+                )
+            }
+        }
+        Box(
+            modifier = dev.xd.bluetrack.ui
+                .rememberStaggerModifier(index = 2),
+        ) {
+            SettingsGroup(title = "APPEARANCE") {
+                SettingsSegmentedRow(
+                    label = "Theme",
+                    hint = "System follows your phone's dark / light setting.",
+                    options = listOf("SYSTEM", "LIGHT", "DARK"),
+                    selected = themeMode,
+                    onSelect = onThemeModeChange,
+                )
+            }
+        }
+        Box(
+            modifier = dev.xd.bluetrack.ui
+                .rememberStaggerModifier(index = 3),
+        ) {
+            SettingsGroup(title = "INPUT") {
+                // Touchpad sensitivity multiplier. The Hub touchpad
+                // pipeline applies a fixed `0.42` baseline gain plus
+                // velocity acceleration + edge boost; this slider
+                // scales the baseline `×0.5..×2.0` so users with
+                // small phones or a preference for a snappier cursor
+                // can shift the whole curve without tweaking
+                // acceleration directly. Mirror surface + external
+                // mice are unaffected.
+                SettingsSliderRow(
+                    label = "Touchpad sensitivity",
+                    hint = "Acceleration + edge boost still apply on top.",
+                    value = touchpadSensitivity,
+                    valueRange = 0.5f..2.0f,
+                    valueLabel = { v -> "%.2fx".format(v) },
+                    onValueChange = onTouchpadSensitivityChange,
+                )
+            }
+        }
+        Box(
+            modifier = dev.xd.bluetrack.ui
+                .rememberStaggerModifier(index = 4),
+        ) {
+            SettingsGroup(title = "MAINTENANCE") {
+                // The only mutating action on the route. Lifetime
+                // counters survive process kill (see
+                // `LifetimeCountersAccumulator`); a manual reset is
+                // useful when re-testing a fresh pairing or before
+                // capturing a clean diagnostic snapshot.
+                SettingsRow(
+                    label = "Reset lifetime counters",
+                    kind = SettingsRowKind.Chev,
+                    onClick = onResetLifetimeCounters,
+                    hint = "Clears report / feedback / rejection totals",
+                )
+            }
+        }
+        Box(
+            modifier = dev.xd.bluetrack.ui
+                .rememberStaggerModifier(index = 5),
+        ) {
+            SettingsGroup(title = "ABOUT") {
+                SettingsRow(
+                    label = "Version",
+                    value = "$versionName (build $versionCode)",
+                    mono = true,
+                )
+                commitShort?.let {
+                    SettingsRow(label = "Commit", value = it, mono = true)
+                }
+                SettingsRow(
+                    label = "Source code",
+                    kind = SettingsRowKind.Ext,
+                    onClick = onOpenSourceCode,
+                )
+            }
         }
         // Bottom breathing room so the dock never overlaps the last row.
         Box(modifier = Modifier.padding(bottom = 24.dp))

@@ -19,9 +19,23 @@ class TranslationEngine(
     val telemetry: StateFlow<Telemetry> = _telemetry
     private var deadmanJob: Job? = null
     private val gamepadReport = GamepadReportFormat.neutralReport()
+
+    // Mouse report layout matches the descriptor in BleHidGateway:
+    //   [0] buttons (low 3 bits + 5 padding)
+    //   [1] X delta (signed 8-bit)
+    //   [2] Y delta (signed 8-bit)
+    //   [3] Wheel (signed 8-bit) — Usage 0x38 is already declared
+    //       in the descriptor, no re-pair needed to start writing
+    //       to it.
     private val mouseReport = byteArrayOf(0, 0, 0, 0)
     private var mouseCarryX = 0f
     private var mouseCarryY = 0f
+    private var wheelCarryY = 0f
+
+    // Latched mouse button bits (L=1, R=2, M=4) mirrored into
+    // `mouseReport[0]` on every emit so motion / wheel frames
+    // never accidentally release a held button.
+    @Volatile private var mouseButtons: Int = 0
     private var lastTelemetryAtMs = -1L
 
     @Volatile var sensitivity: Float = 2.0f
@@ -68,8 +82,13 @@ class TranslationEngine(
         } else {
             val mouseX = quantizeMouseDelta(dx + cx, isX = true)
             val mouseY = quantizeMouseDelta(dy + cy, isX = false)
+            mouseReport[0] = (mouseButtons and 0x07).toByte()
             mouseReport[1] = mouseX.toByte()
             mouseReport[2] = mouseY.toByte()
+            // Wheel byte is reset on every motion frame so a stale
+            // value from the last 2-finger scroll never lingers
+            // into a 1-finger drag.
+            mouseReport[3] = 0
             send(mouseReport)
         }
         publishTelemetry(Telemetry(rx, ry, sx, sy))
@@ -119,6 +138,73 @@ class TranslationEngine(
         send(gamepadReport)
     }
 
+    /**
+     * Emit a wheel-only mouse report. Used by the touchpad
+     * two-finger scroll gesture: positive `dy` scrolls up (matches
+     * the Windows HID convention `wheel > 0 ⇒ away from user`).
+     * Caller passes a pre-scaled delta in wheel units (typically
+     * `-touchDy / WHEEL_PIXELS_PER_TICK`); fractional residue is
+     * carried across calls so slow drags still emit clean unit
+     * ticks instead of dropping below the integer floor.
+     *
+     * Mouse-mode only — invoked from the input pacer alongside
+     * `processMouseToStick`. The X/Y bytes are zeroed so the host
+     * sees a pure scroll event with no cursor displacement.
+     */
+    fun processWheel(
+        dy: Float,
+        send: (ByteArray) -> Unit,
+    ) {
+        val carried = dy + wheelCarryY
+        // Cap per-emit wheel travel to keep scroll smooth on
+        // hosts that interpret each integer as one wheel notch.
+        // The full HID range is ±127, but anything past ~3 in a
+        // single report triggers macOS's accelerated-scroll
+        // heuristic and the screen lurches. Residual travel
+        // beyond the cap stays in `wheelCarryY` and emits on the
+        // next pacer tick, so total scroll distance is preserved
+        // — just spread out as several small notches instead of
+        // one big jump.
+        val whole = carried.roundToInt().coerceIn(-MAX_WHEEL_PER_EMIT, MAX_WHEEL_PER_EMIT)
+        wheelCarryY = carried - whole
+        if (whole == 0) return
+        mouseReport[0] = (mouseButtons and 0x07).toByte()
+        mouseReport[1] = 0
+        mouseReport[2] = 0
+        mouseReport[3] = whole.toByte()
+        send(mouseReport)
+    }
+
+    /**
+     * Set or clear a mouse button. [buttonMask] uses HID button
+     * bit values: `1 = left`, `2 = right`, `4 = middle` (matches
+     * Android's `MotionEvent.BUTTON_PRIMARY/SECONDARY/TERTIARY`,
+     * so the mirror surface can pass the value through unchanged).
+     * Emits a fresh report immediately with zero X/Y/Wheel so the
+     * host sees a clean button event without a phantom cursor
+     * step. Subsequent motion/wheel frames keep the latched bits
+     * via `mouseReport[0] = mouseButtons` so a held drag works.
+     */
+    fun setMouseButton(
+        buttonMask: Int,
+        pressed: Boolean,
+        send: (ByteArray) -> Unit,
+    ) {
+        val mask = buttonMask and 0x07
+        if (mask == 0) return
+        mouseButtons =
+            if (pressed) {
+                mouseButtons or mask
+            } else {
+                mouseButtons and mask.inv()
+            }
+        mouseReport[0] = (mouseButtons and 0x07).toByte()
+        mouseReport[1] = 0
+        mouseReport[2] = 0
+        mouseReport[3] = 0
+        send(mouseReport)
+    }
+
     private fun quantizeMouseDelta(
         delta: Float,
         isX: Boolean,
@@ -145,6 +231,7 @@ class TranslationEngine(
     private companion object {
         const val NANOS_PER_MS = 1_000_000L
         const val TELEMETRY_INTERVAL_MS = 100L
+        const val MAX_WHEEL_PER_EMIT = 1
     }
 }
 

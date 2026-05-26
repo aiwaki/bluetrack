@@ -53,11 +53,16 @@ fun SettingsToggleRow(
     hint: String? = null,
 ) {
     val palette = BluetrackTheme.palette
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 14.dp, vertical = 13.dp),
+            .clickable {
+                haptic.performHapticFeedback(
+                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                )
+                onCheckedChange(!checked)
+            }.padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

@@ -26,37 +26,40 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.xd.bluetrack.engine.HidMode
+import dev.xd.bluetrack.ui.TouchpadSurfaceMode
 import dev.xd.bluetrack.ui.shell.btGlass
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
 import dev.xd.bluetrack.ui.theme.BluetrackTokens
 
 /**
- * Mouse ⇄ Gamepad mode toggle with a 3-D card flip.
+ * Touchpad ⇄ Mouse Mirror surface toggle with a 3-D card flip.
  *
- * Canvas equivalent: the 2-card row in `Hub` that selects the
- * HID mode. The flip is a `graphicsLayer { rotationY }`
- * animation across 380 ms — half the duration shows the front
- * face (Mouse), the other half shows the back (Gamepad) via a
- * camera-distance trick so the perspective reads as a real card
- * spin rather than a 2-D crossfade.
+ * Replaces the earlier MOUSE/GAMEPAD toggle. Gamepad now lives on
+ * its own fullscreen flip route (`GamepadShortcut` + `gamepadActive`)
+ * so this card is dedicated to the two pointer-class surfaces:
  *
- * Tapping anywhere on the card swaps the mode through the
- * provided [onToggle] callback (calls into
- * `MainViewModel.toggle(...)`).
+ *  - `TOUCHPAD` — on-screen virtual trackpad (finger drives cursor).
+ *  - `MOUSE`    — passthrough surface that waits for a real
+ *                  USB-OTG or Bluetooth mouse connected to the
+ *                  phone, captures its pointer, and forwards every
+ *                  motion / scroll / button event as HID reports.
+ *
+ * Animation matches the original: `graphicsLayer { rotationY }`
+ * sweep, 380 ms, camera-distance trick for a real card spin.
  */
 @Composable
 fun ModeToggle(
-    mode: HidMode,
-    onToggle: (HidMode) -> Unit,
+    surfaceMode: TouchpadSurfaceMode,
+    onToggle: (TouchpadSurfaceMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val palette = BluetrackTheme.palette
-    val target = if (mode == HidMode.GAMEPAD) 180f else 0f
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val target = if (surfaceMode == TouchpadSurfaceMode.MOUSE) 180f else 0f
     val rotation by animateFloatAsState(
         targetValue = target,
         animationSpec = tween(durationMillis = BluetrackTokens.SETTLE_DURATION_MS),
-        label = "mode-toggle-rotation",
+        label = "surface-toggle-rotation",
     )
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
     Box(
@@ -65,7 +68,16 @@ fun ModeToggle(
             .height(80.dp)
             .clip(shape)
             .clickable {
-                onToggle(if (mode == HidMode.GAMEPAD) HidMode.MOUSE else HidMode.GAMEPAD)
+                haptic.performHapticFeedback(
+                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                )
+                onToggle(
+                    if (surfaceMode == TouchpadSurfaceMode.MOUSE) {
+                        TouchpadSurfaceMode.TOUCHPAD
+                    } else {
+                        TouchpadSurfaceMode.MOUSE
+                    },
+                )
             }.graphicsLayer {
                 rotationY = rotation
                 cameraDistance = 12f * density
@@ -73,11 +85,11 @@ fun ModeToggle(
     ) {
         if (rotation <= 90f) {
             ModeFace(
-                title = "Mouse",
-                subtitle = "Pointer · clicks · scroll",
+                title = "Touchpad",
+                subtitle = "Finger pointer · 2-finger scroll",
                 accent = palette.mintBright,
                 background = palette.mintGlowSoft,
-                glyph = "↗",
+                glyph = "⊟",
                 shape = shape,
             )
         } else {
@@ -85,11 +97,11 @@ fun ModeToggle(
             // passes 90° it reads upright instead of mirrored.
             Box(modifier = Modifier.graphicsLayer { rotationY = 180f }) {
                 ModeFace(
-                    title = "Gamepad",
-                    subtitle = "Sticks · D-pad · 16 buttons",
+                    title = "Mouse",
+                    subtitle = "Mirror a real USB / BT mouse",
                     accent = palette.cool,
                     background = palette.cool.copy(alpha = 0.14f),
-                    glyph = "▦",
+                    glyph = "◯",
                     shape = shape,
                 )
             }

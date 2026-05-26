@@ -92,7 +92,7 @@ fun HostRow(
     // clip exactly.
     val leftRail: Pair<Color, Float>? =
         when {
-            isActive -> palette.mint to 3.dp.value
+            isActive -> palette.crit to 3.dp.value
             isIncompatible -> palette.warn.copy(alpha = 0.55f) to 2.dp.value
             else -> null
         }
@@ -221,12 +221,18 @@ fun HostRow(
 @Composable
 private fun DisconnectButton(onDisconnect: () -> Unit) {
     val palette = BluetrackTheme.palette
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     Box(
         modifier = Modifier
             .size(32.dp)
             .clip(RoundedCornerShape(999.dp))
             .border(1.dp, palette.hairline, RoundedCornerShape(999.dp))
-            .clickable(onClick = onDisconnect),
+            .clickable {
+                haptic.performHapticFeedback(
+                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                )
+                onDisconnect()
+            },
         contentAlignment = Alignment.Center,
     ) {
         Text(text = "✕", color = palette.fg2, fontSize = 14.sp)

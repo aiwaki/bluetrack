@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/branding/banner-1280x320-slim.png" alt="Bluetrack — Phone as Wireless Input" width="100%">
+</p>
+
 # Bluetrack Pro Engine
 
 ![Android CI](https://github.com/aiwaki/bluetrack/actions/workflows/android-ci.yml/badge.svg)

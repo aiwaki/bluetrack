@@ -1,5 +1,8 @@
 package dev.xd.bluetrack.ui.gamepad
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -16,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -56,6 +60,7 @@ fun FaceButtons(
     modifier: Modifier = Modifier,
 ) {
     val palette = BluetrackTheme.palette
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var active by remember { mutableStateOf<String?>(null) }
     // Container 108 dp + buttons offset 30 dp from centre. With
     // 36 dp circles the previous 22 dp offset gave centre-to-
@@ -72,37 +77,38 @@ fun FaceButtons(
     Box(modifier = modifier.size(108.dp)) {
         buttons.forEach { btn ->
             val pressed = active == btn.label
+            // Press feedback: spring scale 1.0 → 0.88 → 1.0. Down
+            // is faster (StiffnessMedium) for a snappy "hit", up
+            // settles slower (StiffnessLow + LowBouncy) for a
+            // tactile rebound. Reads like a real button cap.
+            val pressScale by animateFloatAsState(
+                targetValue = if (pressed) 0.88f else 1f,
+                animationSpec = if (pressed) {
+                    spring(stiffness = Spring.StiffnessMedium)
+                } else {
+                    spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessLow,
+                    )
+                },
+                label = "face-button-press-${btn.label}",
+            )
+            // Outer hit-area box (42 dp) wraps the visual 36 dp
+            // circle so taps just outside the disc still register.
+            // 42 dp leaves a few dp gap before the next button's
+            // hit zone at the 30 dp offset diagonal distance.
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .offset(x = btn.dx.dp, y = btn.dy.dp)
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (pressed) {
-                            Brush.radialGradient(
-                                colorStops = arrayOf(
-                                    0f to Color.White,
-                                    0.6f to btn.accent,
-                                    1f to Color.Black,
-                                ),
-                            )
-                        } else {
-                            Brush.radialGradient(
-                                colorStops = arrayOf(
-                                    0f to Color.White.copy(alpha = 0.18f),
-                                    0.7f to Color.Black.copy(alpha = 0.35f),
-                                ),
-                            )
-                        },
-                    ).border(
-                        if (pressed) 2.dp else 1.5.dp,
-                        if (pressed) btn.accent else palette.glassBorder,
-                        CircleShape,
-                    ).pointerInput(Unit) {
+                    .size(48.dp)
+                    .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = {
                                 active = btn.label
+                                haptic.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                                )
                                 onChange(btn.label, true)
                                 val released = tryAwaitRelease()
                                 active = null
@@ -114,12 +120,46 @@ fun FaceButtons(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = btn.label,
-                    color = if (pressed) Color.White else btn.accent,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                )
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .scale(pressScale)
+                        .clip(CircleShape)
+                        .background(
+                            if (pressed) {
+                                Brush.radialGradient(
+                                    colorStops = arrayOf(
+                                        0f to palette.fg0,
+                                        0.6f to btn.accent,
+                                        1f to btn.accent.copy(alpha = 0.55f),
+                                    ),
+                                )
+                            } else {
+                                // Theme-aware idle fill — earlier
+                                // Color.White / Color.Black radial
+                                // washed out on the light palette and
+                                // the buttons read as dark blobs.
+                                Brush.radialGradient(
+                                    colorStops = arrayOf(
+                                        0f to palette.bg2,
+                                        1f to palette.bg3,
+                                    ),
+                                )
+                            },
+                        ).border(
+                            if (pressed) 2.dp else 1.5.dp,
+                            if (pressed) btn.accent else palette.glassBorder,
+                            CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = btn.label,
+                        color = if (pressed) Color.White else btn.accent,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
             }
         }
     }

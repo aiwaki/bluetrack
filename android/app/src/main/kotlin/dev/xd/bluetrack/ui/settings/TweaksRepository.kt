@@ -51,6 +51,26 @@ class TweaksRepository(
     val neonStrength: Flow<Float> = ds.data.map { it[KEY_NEON_STRENGTH] ?: 1f }
 
     /**
+     * Multiplier on the touchpad gesture's baseline gain. The
+     * touchpad gesture math applies acceleration + edge boost on
+     * top of a fixed `0.42` baseline; this slider scales that
+     * baseline so users with small phones (less finger travel) or
+     * a preference for snappy cursors can shift the whole curve.
+     * Range `0.5..2.0`, default `1.0` (no change).
+     */
+    val touchpadSensitivity: Flow<Float> = ds.data.map { it[KEY_TOUCHPAD_SENSITIVITY] ?: 1f }
+
+    /**
+     * Whether the user has dismissed the first-time touchpad
+     * gesture hint overlay. The overlay covers the Hub touchpad
+     * the first time it is opened and explains the four gestures
+     * (1-finger move, 1-tap click, 2-tap right click, 2-finger
+     * scroll). Persisted so reinstalls / "Clear data" re-trigger
+     * the flow naturally.
+     */
+    val touchpadHintsDismissed: Flow<Boolean> = ds.data.map { it[KEY_TOUCHPAD_HINTS_DISMISSED] ?: false }
+
+    /**
      * Whether the gateway auto-connects bonded computer-class
      * hosts. Default `true` matches the original "calm autopilot"
      * design — the user just needs the phone paired and the
@@ -69,6 +89,16 @@ class TweaksRepository(
      */
     val onboarded: Flow<Boolean> = ds.data.map { it[KEY_ONBOARDED] ?: false }
 
+    /**
+     * Theme mode preference. One of `SYSTEM` / `LIGHT` / `DARK`.
+     * `SYSTEM` resolves at composition time via
+     * `isSystemInDarkTheme()` so the app follows the OS toggle.
+     * Default `SYSTEM` matches the platform expectation — the
+     * very first launch picks up whatever the user already runs
+     * the rest of their phone in.
+     */
+    val themeMode: Flow<String> = ds.data.map { it[KEY_THEME_MODE] ?: "SYSTEM" }
+
     suspend fun setMotionReduced(value: Boolean) {
         ds.edit { it[KEY_MOTION_REDUCED] = value }
     }
@@ -85,12 +115,24 @@ class TweaksRepository(
         ds.edit { it[KEY_NEON_STRENGTH] = value.coerceIn(0f, 1f) }
     }
 
+    suspend fun setTouchpadSensitivity(value: Float) {
+        ds.edit { it[KEY_TOUCHPAD_SENSITIVITY] = value.coerceIn(0.5f, 2.0f) }
+    }
+
+    suspend fun setTouchpadHintsDismissed(value: Boolean) {
+        ds.edit { it[KEY_TOUCHPAD_HINTS_DISMISSED] = value }
+    }
+
     suspend fun setAutoConnectEnabled(value: Boolean) {
         ds.edit { it[KEY_AUTO_CONNECT] = value }
     }
 
     suspend fun setOnboarded(value: Boolean) {
         ds.edit { it[KEY_ONBOARDED] = value }
+    }
+
+    suspend fun setThemeMode(value: String) {
+        ds.edit { it[KEY_THEME_MODE] = value }
     }
 
     /**
@@ -108,6 +150,7 @@ class TweaksRepository(
             it[KEY_AURORA_LOW_BAT] = state.auroraOnLowBattery
             it[KEY_NEON_STRENGTH] = state.neonStrength.coerceIn(0f, 1f)
             it[KEY_AUTO_CONNECT] = state.autoConnectEnabled
+            it[KEY_TOUCHPAD_SENSITIVITY] = state.touchpadSensitivity.coerceIn(0.5f, 2.0f)
         }
     }
 
@@ -117,7 +160,11 @@ class TweaksRepository(
         val KEY_AURORA_LOW_BAT = booleanPreferencesKey("aurora_on_low_battery")
         val KEY_NEON_STRENGTH = floatPreferencesKey("neon_strength")
         val KEY_AUTO_CONNECT = booleanPreferencesKey("auto_connect_enabled")
+        val KEY_TOUCHPAD_SENSITIVITY = floatPreferencesKey("touchpad_sensitivity")
+        val KEY_TOUCHPAD_HINTS_DISMISSED = booleanPreferencesKey("touchpad_hints_dismissed")
         val KEY_ONBOARDED = booleanPreferencesKey("onboarded")
+        val KEY_THEME_MODE = androidx.datastore.preferences.core
+            .stringPreferencesKey("theme_mode")
     }
 }
 
@@ -134,6 +181,7 @@ data class TweaksState(
     val auroraOnLowBattery: Boolean = false,
     val neonStrength: Float = 1f,
     val autoConnectEnabled: Boolean = true,
+    val touchpadSensitivity: Float = 1f,
 ) {
     companion object {
         val Default = TweaksState()

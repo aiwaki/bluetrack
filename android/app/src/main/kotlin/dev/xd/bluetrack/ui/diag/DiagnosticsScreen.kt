@@ -124,10 +124,20 @@ fun DiagnosticsScreen(
             // Diagnostics (2026-05-20). Hub keeps the at-a-glance
             // StatusHero and TrustCard; raw transport state is a
             // Diag concern.
-            SectionLabel(label = "Connection")
-            ConnectionCard(status = status, now = nowMs)
-            SectionLabel(label = "System")
-            SystemCard(status = status)
+            Column(
+                modifier = rememberStaggerModifier(index = 0),
+                verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
+            ) {
+                SectionLabel(label = "Connection")
+                ConnectionCard(status = status, now = nowMs)
+            }
+            Column(
+                modifier = rememberStaggerModifier(index = 1),
+                verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
+            ) {
+                SectionLabel(label = "System")
+                SystemCard(status = status)
+            }
             val empty =
                 status.lifetimeCounters.reports == 0L &&
                     status.lifetimeCounters.feedback == 0L &&
@@ -148,23 +158,25 @@ fun DiagnosticsScreen(
                 )
                 return@Column
             }
-            LiveRateHero(
-                hidRate = hidRate.toLong(),
-                fbRate = fbRate.toLong(),
-                // Show lifetime totals from the persisted counters
-                // rather than the per-session `reportsSent` /
-                // `feedbackPackets` fields. Lifetime values survive
-                // a process kill and reflect the cumulative work the
-                // engine has done — what a user opening Diagnostics
-                // actually wants to see.
-                hidTotal = status.lifetimeCounters.reports,
-                fbTotal = status.lifetimeCounters.feedback,
-                hidWave = hidWave,
-                fbWave = fbWave,
-                hidLastAtMs = status.lastReportAtMs,
-                fbLastAtMs = status.lastFeedbackAtMs,
-                now = nowMs,
-            )
+            Box(modifier = rememberStaggerModifier(index = 2)) {
+                LiveRateHero(
+                    hidRate = hidRate.toLong(),
+                    fbRate = fbRate.toLong(),
+                    // Show lifetime totals from the persisted counters
+                    // rather than the per-session `reportsSent` /
+                    // `feedbackPackets` fields. Lifetime values survive
+                    // a process kill and reflect the cumulative work the
+                    // engine has done — what a user opening Diagnostics
+                    // actually wants to see.
+                    hidTotal = status.lifetimeCounters.reports,
+                    fbTotal = status.lifetimeCounters.feedback,
+                    hidWave = hidWave,
+                    fbWave = fbWave,
+                    hidLastAtMs = status.lastReportAtMs,
+                    fbLastAtMs = status.lastFeedbackAtMs,
+                    now = nowMs,
+                )
+            }
             // The three blocks below (Replay window / PIN lifecycle
             // / Feedback rejections) only carry signal once the
             // encrypted BLE feedback channel is actually in use. A
@@ -180,35 +192,50 @@ fun DiagnosticsScreen(
             if (!feedbackChannelEverUsed) {
                 FeedbackChannelDormantHint(palette)
             }
-            SectionLabel(label = "Replay window")
-            ReplayWindowCard(
-                // Replay window's "last counter" is the per-frame
-                // counter the gateway acked, not the count of
-                // accepted packets. Display the accepted-feedback
-                // count anyway until the gateway exposes the real
-                // counter value; clearer label below makes that
-                // explicit.
-                lastCounter = status.feedbackPackets.toLong(),
-                drops = (status.lifetimeCounters.rejectionsByCause[RejectionCause.Replay] ?: 0L).toInt(),
-            )
-            SectionLabel(label = "PIN lifecycle")
-            PinLifecycleCard(
-                pinPresent = status.feedbackPin != null,
-                rolls = if (status.feedbackPin != null) 1 else 0,
-            )
-            SectionLabel(
-                label = "Feedback rejections",
-                action = {
-                    Text(
-                        text = "SESSION · ${status.rejectedFeedbackPackets} REJ",
-                        color = palette.fg3,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 0.8.sp,
-                    )
-                },
-            )
-            RejectionsCard(byCause = status.lifetimeCounters.rejectionsByCause)
+            Column(
+                modifier = rememberStaggerModifier(index = 3),
+                verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
+            ) {
+                SectionLabel(label = "Replay window")
+                ReplayWindowCard(
+                    // Replay window's "last counter" is the per-frame
+                    // counter the gateway acked, not the count of
+                    // accepted packets. Display the accepted-feedback
+                    // count anyway until the gateway exposes the real
+                    // counter value; clearer label below makes that
+                    // explicit.
+                    lastCounter = status.feedbackPackets.toLong(),
+                    drops = (status.lifetimeCounters.rejectionsByCause[RejectionCause.Replay] ?: 0L).toInt(),
+                )
+            }
+            Column(
+                modifier = rememberStaggerModifier(index = 4),
+                verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
+            ) {
+                SectionLabel(label = "PIN lifecycle")
+                PinLifecycleCard(
+                    pinPresent = status.feedbackPin != null,
+                    rolls = if (status.feedbackPin != null) 1 else 0,
+                )
+            }
+            Column(
+                modifier = rememberStaggerModifier(index = 5),
+                verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
+            ) {
+                SectionLabel(
+                    label = "Feedback rejections",
+                    action = {
+                        Text(
+                            text = "SESSION · ${status.rejectedFeedbackPackets} REJ",
+                            color = palette.fg3,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 0.8.sp,
+                        )
+                    },
+                )
+                RejectionsCard(byCause = status.lifetimeCounters.rejectionsByCause)
+            }
             // Bottom breathing room so the last card never sits
             // flush against the dock. Matches the trailing
             // `Modifier.padding(bottom = 24.dp)` on the Settings,
@@ -263,6 +290,27 @@ private fun LiveRateHero(
                 modifier = Modifier.weight(1f),
             )
         }
+        // Tween the lifetime totals so a fresh report bumps the
+        // number visibly instead of jumping. Each total caps at
+        // Int.MAX_VALUE worth of reports (~2.1 billion) which the
+        // gateway will never reach in any realistic session, so
+        // the `toInt()` truncation is safe.
+        val animatedHidTotal by androidx.compose.animation.core.animateIntAsState(
+            targetValue = hidTotal.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            animationSpec = androidx.compose.animation.core.tween(
+                durationMillis = 240,
+                easing = androidx.compose.animation.core.FastOutSlowInEasing,
+            ),
+            label = "rate-total-hid",
+        )
+        val animatedFbTotal by androidx.compose.animation.core.animateIntAsState(
+            targetValue = fbTotal.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+            animationSpec = androidx.compose.animation.core.tween(
+                durationMillis = 240,
+                easing = androidx.compose.animation.core.FastOutSlowInEasing,
+            ),
+            label = "rate-total-fb",
+        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -270,13 +318,13 @@ private fun LiveRateHero(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = "HID total · $hidTotal",
+                text = "HID total · $animatedHidTotal",
                 color = palette.fg2,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
             )
             Text(
-                text = "fb total · $fbTotal",
+                text = "fb total · $animatedFbTotal",
                 color = palette.fg2,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -318,9 +366,22 @@ private fun RateColumn(
                 letterSpacing = 1.2.sp,
             )
         }
+        // Animate the peak-rate readout between samples so the
+        // headline number tweens up / down over 240ms instead of
+        // snapping to the new 60s rolling peak. Reads as a live
+        // gauge, not a flickering counter — same trick as the
+        // host name / hero stat triplet on the Hub.
+        val animatedRate by androidx.compose.animation.core.animateIntAsState(
+            targetValue = value.toInt(),
+            animationSpec = androidx.compose.animation.core.tween(
+                durationMillis = 240,
+                easing = androidx.compose.animation.core.FastOutSlowInEasing,
+            ),
+            label = "rate-value-$label",
+        )
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                text = value.toString(),
+                text = animatedRate.toString(),
                 color = color,
                 fontSize = 30.sp,
                 fontWeight = FontWeight.Bold,
@@ -427,9 +488,21 @@ private fun ReplayWindowCard(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
+            val animatedDrops by androidx.compose.animation.core.animateIntAsState(
+                targetValue = drops,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = 240,
+                    easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                ),
+                label = "replay-drops",
+            )
             StatCell(label = "LAST", value = "0x${lastCounter.toString(16).padStart(4, '0')}", color = palette.fg0)
             StatCell(label = "WINDOW", value = "64", color = palette.fg0)
-            StatCell(label = "DROPS", value = drops.toString(), color = if (drops > 0) palette.warn else palette.fg0)
+            StatCell(
+                label = "DROPS",
+                value = animatedDrops.toString(),
+                color = if (drops > 0) palette.warn else palette.fg0,
+            )
         }
         // 64-bucket viz: head at last index, drop markers placed
         // arithmetically. With no per-counter drop log in the
@@ -495,7 +568,15 @@ private fun PinLifecycleCard(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            StatCell(label = "ROLLS", value = rolls.toString(), color = palette.fg0)
+            val animatedRolls by androidx.compose.animation.core.animateIntAsState(
+                targetValue = rolls,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = 240,
+                    easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                ),
+                label = "pin-rolls",
+            )
+            StatCell(label = "ROLLS", value = animatedRolls.toString(), color = palette.fg0)
             StatCell(label = "AGE", value = if (pinPresent) "live" else "—", color = palette.fg0)
             StatCell(
                 label = "CURRENT",
@@ -619,8 +700,16 @@ private fun RejectionsCard(byCause: Map<RejectionCause, Long>) {
                         fontFamily = FontFamily.Monospace,
                     )
                 }
+                val animatedCount by androidx.compose.animation.core.animateIntAsState(
+                    targetValue = row.count,
+                    animationSpec = androidx.compose.animation.core.tween(
+                        durationMillis = 240,
+                        easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                    ),
+                    label = "rejection-count-${row.label}",
+                )
                 Text(
-                    text = row.count.toString(),
+                    text = animatedCount.toString(),
                     color = if (row.count > 0) row.color else palette.fg3,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,

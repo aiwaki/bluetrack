@@ -49,11 +49,22 @@ fun SettingsRow(
     modifier: Modifier = Modifier,
 ) {
     val palette = BluetrackTheme.palette
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val stacked = kind == SettingsRowKind.Text && value != null && (mono || value.length > 14)
     val base = modifier
         .fillMaxWidth()
-        .let { m -> if (onClick != null) m.clickable(onClick = onClick) else m }
-        .padding(horizontal = 14.dp, vertical = 13.dp)
+        .let { m ->
+            if (onClick != null) {
+                m.clickable {
+                    haptic.performHapticFeedback(
+                        androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                    )
+                    onClick()
+                }
+            } else {
+                m
+            }
+        }.padding(horizontal = 14.dp, vertical = 13.dp)
     if (stacked) {
         Column(
             modifier = base,

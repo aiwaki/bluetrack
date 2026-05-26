@@ -1,10 +1,17 @@
 package dev.xd.bluetrack.ui.diag
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -32,7 +39,19 @@ fun Sparkline(
     height: Dp = 30.dp,
     fill: Boolean = false,
 ) {
-    Canvas(modifier = modifier.fillMaxWidth().height(height)) {
+    // First-render fade-in. Sparkline lives inside the Diag
+    // route; opening Diag should reveal the chart with a soft
+    // 320ms ramp instead of a hard cut to a fully-drawn polyline.
+    // Subsequent recompositions reuse the already-1f Animatable
+    // so the live wave keeps updating without re-flashing.
+    val fadeIn = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        fadeIn.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+        )
+    }
+    Canvas(modifier = modifier.fillMaxWidth().height(height).alpha(fadeIn.value)) {
         val w = size.width
         val h = size.height
         // Empty + all-zero both render as a faint dashed baseline

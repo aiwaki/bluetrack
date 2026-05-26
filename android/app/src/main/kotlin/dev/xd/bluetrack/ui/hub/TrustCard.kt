@@ -92,10 +92,22 @@ fun TrustCard(
                     )
                 }
             }
-            when (state) {
-                TrustState.Empty -> EmptyBody(palette)
-                TrustState.Pinned -> PinnedBody(palette, fingerprint, onForget)
-                TrustState.Rejection -> RejectionBody(palette)
+            // Crossfade between trust states so Empty → Pinned
+            // (first successful handshake) and Pinned → Rejection
+            // (replay / forgery attempt) read as a transition,
+            // not an instant swap. 280ms matches the host name
+            // settle in `StatusHero`.
+            androidx.compose.animation.Crossfade(
+                targetState = state,
+                animationSpec = androidx.compose.animation.core
+                    .tween(durationMillis = 280),
+                label = "trust-state-crossfade",
+            ) { current ->
+                when (current) {
+                    TrustState.Empty -> EmptyBody(palette)
+                    TrustState.Pinned -> PinnedBody(palette, fingerprint, onForget)
+                    TrustState.Rejection -> RejectionBody(palette)
+                }
             }
             if (recommendedHosts.isNotEmpty()) {
                 RecommendedHostsSection(
@@ -169,6 +181,7 @@ private fun RecommendedHostsSection(
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
 ) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     Column(verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2)) {
         Text(
             text = "RECOMMENDED",
@@ -183,9 +196,12 @@ private fun RecommendedHostsSection(
                     .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
                     .border(
                         1.dp,
-                        if (isActive) palette.mintBright.copy(alpha = 0.4f) else palette.hairline,
+                        if (isActive) palette.crit.copy(alpha = 0.4f) else palette.hairline,
                         RoundedCornerShape(BluetrackTokens.RadiusSm),
                     ).clickable {
+                        haptic.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                        )
                         if (isActive) onDisconnect() else onConnect(name)
                     }.padding(horizontal = BluetrackTokens.Sp3, vertical = BluetrackTokens.Sp3),
                 verticalAlignment = Alignment.CenterVertically,
@@ -201,13 +217,13 @@ private fun RecommendedHostsSection(
                             .size(28.dp)
                             .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
                             .background(
-                                if (isActive) palette.mintGlowSoft else palette.hairline.copy(alpha = 0.5f),
+                                if (isActive) palette.crit.copy(alpha = 0.18f) else palette.hairline.copy(alpha = 0.5f),
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             text = "▭",
-                            color = if (isActive) palette.mintBright else palette.fg2,
+                            color = if (isActive) palette.crit else palette.fg2,
                             fontSize = 14.sp,
                         )
                     }
@@ -294,10 +310,10 @@ private fun PinnedBody(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
-                    .background(palette.mintGlowSoft),
+                    .background(palette.crit.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(text = "✓", color = palette.mintBright, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(text = "✓", color = palette.crit, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(

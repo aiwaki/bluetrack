@@ -57,7 +57,16 @@ internal class HidOutputBuffer(
         val dx = report.getOrElse(1) { 0 }.toInt()
         val dy = report.getOrElse(2) { 0 }.toInt()
         val wheel = report.getOrElse(3) { 0 }.toInt()
-        if (buttons == 0 && dx == 0 && dy == 0 && wheel == 0) return
+        // Suppress idle noise but ALWAYS accept a button state
+        // change — including the trailing release report
+        // `[0,0,0,0]` after the user holds the touchpad button
+        // and lifts. The earlier all-zero guard dropped that
+        // release, so `mouseButtons` here stayed at 1 from the
+        // press, the host never saw the up edge, and the
+        // selection drag kept running once the user moved to
+        // their real trackpad.
+        val buttonsChanged = buttons != mouseButtons
+        if (!buttonsChanged && dx == 0 && dy == 0 && wheel == 0) return
 
         mode = HidMode.MOUSE
         if (!hasMouseReport) {
@@ -68,6 +77,11 @@ internal class HidOutputBuffer(
         mouseDx += dx
         mouseDy += dy
         mouseWheel += wheel
+        // Cap accumulated wheel travel so a sender stall does
+        // not let several pacer drains stack into a single
+        // burst report — macOS reads big wheel values as
+        // accelerated scroll and lurches the page.
+        mouseWheel = mouseWheel.coerceIn(-MAX_WHEEL_PER_POLL, MAX_WHEEL_PER_POLL)
     }
 
     private fun enqueueGamepad(
@@ -102,7 +116,16 @@ internal class HidOutputBuffer(
             )
         if (mouseDx == 0 && mouseDy == 0 && mouseWheel == 0) {
             hasMouseReport = false
-            mouseButtons = 0
+            // Do NOT reset `mouseButtons` here. The field tracks
+            // the LAST button state the buffer emitted to the
+            // host, and the `enqueueMouse` change-detector
+            // compares incoming reports against it. Resetting to
+            // 0 every drain made the trailing release report
+            // `[0,0,0,0]` look like a no-op (because the buffer
+            // believed it had already cleared the bit), so the
+            // host never saw the up edge after a tap or hold.
+            // The bit only legitimately clears via a release
+            // report — or `clearLocked()` on mode switch.
             mode = null
         }
         return output
@@ -136,5 +159,6 @@ internal class HidOutputBuffer(
     private companion object {
         const val HID_MIN_DELTA = -127
         const val HID_MAX_DELTA = 127
+        const val MAX_WHEEL_PER_POLL = 2
     }
 }

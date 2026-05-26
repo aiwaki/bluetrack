@@ -2,9 +2,12 @@ package dev.xd.bluetrack.ui.gamepad
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -41,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -313,6 +317,7 @@ private fun LeftThumbStack(
                 label = "L",
                 onChange = { x, y -> onStickMotion("L", x, y) },
                 modifier = Modifier.size(124.dp),
+                onPress = { pressed -> onButton("L3", pressed) },
             )
             DPad(onHat = { hat -> onButton("HAT_$hat", hat != 8) })
         }
@@ -348,6 +353,7 @@ private fun RightThumbStack(
                 label = "R",
                 onChange = { x, y -> onStickMotion("R", x, y) },
                 modifier = Modifier.size(124.dp),
+                onPress = { pressed -> onButton("R3", pressed) },
             )
         }
         VerticalTriggerBar(
@@ -398,23 +404,37 @@ private fun CenterPillButton(
     onChange: (Boolean) -> Unit,
 ) {
     val palette = BluetrackTheme.palette
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.93f else 1f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
+        },
+        label = "center-pill-press",
+    )
     val shape = RoundedCornerShape(999.dp)
     Box(
         modifier = Modifier
             .height(34.dp)
+            .scale(pressScale)
             .clip(shape)
             .background(
-                if (pressed) palette.mintGlowSoft else Color.White.copy(alpha = 0.04f),
+                if (pressed) palette.crit.copy(alpha = 0.18f) else palette.bg2,
             ).border(
                 1.dp,
-                if (pressed) palette.mintBright else palette.glassBorder,
+                if (pressed) palette.crit else palette.glassBorder,
                 shape,
             ).padding(horizontal = 16.dp)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
                         pressed = true
+                        haptic.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                        )
                         onChange(true)
                         tryAwaitRelease()
                         pressed = false
@@ -425,7 +445,7 @@ private fun CenterPillButton(
     ) {
         Text(
             text = label,
-            color = if (pressed) palette.mintBright else palette.fg1,
+            color = if (pressed) palette.crit else palette.fg1,
             fontSize = 11.sp,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
@@ -442,10 +462,25 @@ private fun CenterPillButton(
 @Composable
 private fun HomeButton(onChange: (Boolean) -> Unit) {
     val palette = BluetrackTheme.palette
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var pressed by remember { mutableStateOf(false) }
+    // Spring the 58dp ↔ 64dp size shift instead of snapping
+    // so the home button breathes when pressed. Press uses a
+    // medium-stiff spring (snappy hit), release uses a
+    // low-stiff bouncy spring for the rebound cap feel.
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 1f else 58f / 64f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
+        },
+        label = "home-press",
+    )
     Box(
         modifier = Modifier
-            .size(if (pressed) 64.dp else 58.dp)
+            .size(64.dp)
+            .scale(pressScale)
             .clip(CircleShape)
             .background(
                 Brush.radialGradient(
@@ -463,6 +498,9 @@ private fun HomeButton(onChange: (Boolean) -> Unit) {
                 detectTapGestures(
                     onPress = {
                         pressed = true
+                        haptic.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                        )
                         onChange(true)
                         tryAwaitRelease()
                         pressed = false
@@ -492,7 +530,7 @@ private fun FrameBadge(
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
-            .background(Color.White.copy(alpha = 0.03f))
+            .background(palette.bg2)
             .border(1.dp, palette.hairline, RoundedCornerShape(999.dp))
             .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -502,7 +540,7 @@ private fun FrameBadge(
             modifier = Modifier
                 .size(5.dp)
                 .clip(CircleShape)
-                .background(if (pulse) palette.mintBright else palette.fg3),
+                .background(if (pulse) palette.crit else palette.fg3),
         )
         Text(
             text = "FRAME · #$seq",
@@ -527,23 +565,29 @@ private fun HorizontalShoulderPill(
     onChange: (Boolean) -> Unit,
 ) {
     val palette = BluetrackTheme.palette
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.93f else 1f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
+        },
+        label = "shoulder-pill-press-$label",
+    )
     val shape = RoundedCornerShape(999.dp)
     Box(
         modifier = Modifier
             .width(110.dp)
             .height(28.dp)
+            .scale(pressScale)
             .clip(shape)
             .background(
                 if (pressed) {
-                    Brush.verticalGradient(listOf(palette.mintBright, palette.mintDeep))
+                    Brush.verticalGradient(listOf(palette.crit, palette.crit.copy(alpha = 0.7f)))
                 } else {
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.05f),
-                            Color.Black.copy(alpha = 0.3f),
-                        ),
-                    )
+                    Brush.verticalGradient(listOf(palette.bg2, palette.bg3))
                 },
             ).border(
                 1.dp,
@@ -553,6 +597,9 @@ private fun HorizontalShoulderPill(
                 detectTapGestures(
                     onPress = {
                         pressed = true
+                        haptic.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                        )
                         onChange(true)
                         tryAwaitRelease()
                         pressed = false
@@ -584,22 +631,28 @@ private fun VerticalTriggerBar(
     modifier: Modifier = Modifier,
 ) {
     val palette = BluetrackTheme.palette
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.93f else 1f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
+        },
+        label = "trigger-bar-press-$label",
+    )
     val shape = RoundedCornerShape(8.dp)
     Box(
         modifier = modifier
             .width(28.dp)
+            .scale(pressScale)
             .clip(shape)
             .background(
                 if (pressed) {
-                    Brush.verticalGradient(listOf(palette.mintDeep, palette.mintBright))
+                    Brush.verticalGradient(listOf(palette.crit.copy(alpha = 0.7f), palette.crit))
                 } else {
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.Black.copy(alpha = 0.4f),
-                            Color.White.copy(alpha = 0.04f),
-                        ),
-                    )
+                    Brush.verticalGradient(listOf(palette.bg3, palette.bg2))
                 },
             ).border(
                 1.dp,
@@ -609,6 +662,9 @@ private fun VerticalTriggerBar(
                 detectTapGestures(
                     onPress = {
                         pressed = true
+                        haptic.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                        )
                         onChange(true)
                         tryAwaitRelease()
                         pressed = false

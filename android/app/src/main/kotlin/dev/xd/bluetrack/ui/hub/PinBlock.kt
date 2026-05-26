@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -66,6 +67,7 @@ fun PinBlock(
 ) {
     val palette = BluetrackTheme.palette
     val context = LocalContext.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val shape = RoundedCornerShape(BluetrackTokens.RadiusLg)
     var copied by remember(pin) { mutableStateOf(false) }
     var secs by remember { mutableIntStateOf(0) }
@@ -86,9 +88,33 @@ fun PinBlock(
         }
     }
 
+    // New-PIN burst. When a fresh `pin` arrives (null → value
+    // or session rolls), snap the card to scale 1.03 and
+    // spring back. Reads as a tactile "PIN issued" beat —
+    // pairs with the existing `NeonRibbon` flash on the route
+    // above. Disappearing PIN (value → null) does not burst.
+    var prevPin by remember { mutableStateOf<String?>(pin) }
+    val burst = remember {
+        androidx.compose.animation.core
+            .Animatable(1f)
+    }
+    LaunchedEffect(pin) {
+        if (pin != null && pin != prevPin) {
+            burst.snapTo(1.03f)
+            burst.animateTo(
+                targetValue = 1f,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+                ),
+            )
+        }
+        prevPin = pin
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .scale(burst.value)
             .clip(shape)
             .btGlass(strong = true, shape = shape)
             .padding(horizontal = BluetrackTokens.Sp5, vertical = BluetrackTokens.Sp4),
@@ -138,6 +164,9 @@ fun PinBlock(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
                         .clickable {
+                            haptic.performHapticFeedback(
+                                androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                            )
                             copyToClipboard(context, pin)
                             copied = true
                         }.padding(vertical = BluetrackTokens.Sp2),
