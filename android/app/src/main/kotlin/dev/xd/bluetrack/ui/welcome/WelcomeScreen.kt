@@ -1,9 +1,15 @@
 package dev.xd.bluetrack.ui.welcome
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,14 +27,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -332,6 +342,24 @@ private fun PermissionRow(
     granted: Boolean,
 ) {
     val shape = RoundedCornerShape(14.dp)
+    // Scale burst when the permission flips false → true. Snap to
+    // 1.18 then springs back; reads as a small "granted!" pop that
+    // confirms the user's action without sound or an extra label.
+    val iconBurst = remember { Animatable(1f) }
+    var prevGranted by remember { mutableStateOf(granted) }
+    LaunchedEffect(granted) {
+        if (granted && !prevGranted) {
+            iconBurst.snapTo(1.18f)
+            iconBurst.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+            )
+        }
+        prevGranted = granted
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -345,6 +373,7 @@ private fun PermissionRow(
         Box(
             modifier = Modifier
                 .size(32.dp)
+                .scale(iconBurst.value)
                 .clip(RoundedCornerShape(10.dp))
                 .background(
                     if (granted) palette.crit.copy(alpha = 0.85f) else palette.bg2,
@@ -455,10 +484,22 @@ private fun PageDots(current: Int, total: Int, palette: BluetrackPalette) {
     ) {
         repeat(total) { i ->
             val active = i == current
+            // Tween the dot's width on page change so the active
+            // indicator slides between dots instead of jumping. 280ms
+            // FastOutSlowInEasing mirrors the AnimatedContent page
+            // swap so both finish around the same time.
+            val width by animateDpAsState(
+                targetValue = if (active) 24.dp else 8.dp,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = 280,
+                    easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                ),
+                label = "welcome-dot-$i-width",
+            )
             Box(
                 modifier = Modifier
                     .padding(horizontal = 4.dp)
-                    .size(width = if (active) 24.dp else 8.dp, height = 8.dp)
+                    .size(width = width, height = 8.dp)
                     .clip(RoundedCornerShape(999.dp))
                     .background(if (active) palette.crit else palette.fg3.copy(alpha = 0.35f)),
             )
@@ -475,16 +516,42 @@ private fun CtaPill(
     onClick: () -> Unit,
 ) {
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // Press-scale spring matches the gamepad / face-button polish —
+    // 0.96 on press, springy LowBouncy / StiffnessLow release so the
+    // pill feels like a tactile cap instead of a flat click target.
+    // Haptic dropped from LongPress to TextHandleMove because the
+    // earlier strong feedback read as "alert" in onboarding flow.
+    var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.96f else 1f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessLow,
+            )
+        },
+        label = "welcome-cta-press",
+    )
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .scale(pressScale)
             .clip(RoundedCornerShape(999.dp))
             .background(palette.crit)
-            .clickable {
-                haptic.performHapticFeedback(
-                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        haptic.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                        )
+                        val released = tryAwaitRelease()
+                        pressed = false
+                        if (released) onClick()
+                    },
                 )
-                onClick()
             }.padding(vertical = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
