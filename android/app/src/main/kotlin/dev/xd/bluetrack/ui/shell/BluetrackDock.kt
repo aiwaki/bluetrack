@@ -5,7 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -17,11 +17,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
@@ -114,18 +118,43 @@ private fun DockSlot(
         animationSpec = springSpec,
         label = "dock-slot-scale",
     )
+    // Press-scale spring independent of active state. The user's
+    // finger gets a visual response on the very slot it touches,
+    // not just the new slot that becomes active. 0.9 dip on press,
+    // springy release. Multiplies with slotScale so an active slot
+    // press still feels tactile (1.06 × 0.9 ≈ 0.95 dip from rest).
+    var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.9f else 1f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessLow,
+            )
+        },
+        label = "dock-slot-press",
+    )
     Box(
         modifier = Modifier
             .size(36.dp)
-            .scale(slotScale)
+            .scale(slotScale * pressScale)
             .clip(CircleShape)
             .background(bgColor)
-            .clickable(onClick = {
-                haptic.performHapticFeedback(
-                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        haptic.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                        )
+                        val released = tryAwaitRelease()
+                        pressed = false
+                        if (released) onClick()
+                    },
                 )
-                onClick()
-            }),
+            },
         contentAlignment = Alignment.Center,
     ) {
         Icon(
