@@ -54,6 +54,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.xd.bluetrack.ui.rememberStaggerModifier
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
 import kotlinx.coroutines.delay
 
@@ -146,10 +147,17 @@ fun GamepadSurface(
                 .padding(horizontal = 24.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            TopStatusRail(
-                hostName = hostName,
-                onExit = onExit,
-            )
+            // Cascading entry on flip — same shared stagger helper
+            // the Hub / Diagnostics / Settings / Hosts / Activity
+            // routes use. Five zones fade-and-lift in sequence (top
+            // rail → L stick → center → R stick → bottom stats) so
+            // the gamepad feels like it boots up rather than pops.
+            Box(modifier = rememberStaggerModifier(index = 0)) {
+                TopStatusRail(
+                    hostName = hostName,
+                    onExit = onExit,
+                )
+            }
 
             // Body row: 5 zones from left to right.
             Row(
@@ -162,27 +170,35 @@ fun GamepadSurface(
                 LeftThumbStack(
                     onStickMotion = onStickMotion,
                     onButton = onButton,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(rememberStaggerModifier(index = 1)),
                 )
                 CenterStack(
                     seq = seq,
                     pulse = pulse,
                     onButton = onButton,
-                    modifier = Modifier.weight(1.2f),
+                    modifier = Modifier
+                        .weight(1.2f)
+                        .then(rememberStaggerModifier(index = 2)),
                 )
                 RightThumbStack(
                     onStickMotion = onStickMotion,
                     onButton = onButton,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(rememberStaggerModifier(index = 3)),
                 )
             }
 
-            BottomStatsRail(
-                pollHz = pollHz,
-                latencyMs = latencyMs,
-                reportsTotal = reportsTotal,
-                uptimeMs = uptimeMs,
-            )
+            Box(modifier = rememberStaggerModifier(index = 4)) {
+                BottomStatsRail(
+                    pollHz = pollHz,
+                    latencyMs = latencyMs,
+                    reportsTotal = reportsTotal,
+                    uptimeMs = uptimeMs,
+                )
+            }
         }
     }
 }
