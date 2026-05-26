@@ -23,8 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -94,7 +94,10 @@ fun PinBlock(
     // pairs with the existing `NeonRibbon` flash on the route
     // above. Disappearing PIN (value → null) does not burst.
     var prevPin by remember { mutableStateOf<String?>(pin) }
-    val burst = remember { androidx.compose.animation.core.Animatable(1f) }
+    val burst = remember {
+        androidx.compose.animation.core
+            .Animatable(1f)
+    }
     LaunchedEffect(pin) {
         if (pin != null && pin != prevPin) {
             burst.snapTo(1.03f)
