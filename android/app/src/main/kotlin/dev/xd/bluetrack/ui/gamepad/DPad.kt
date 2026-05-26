@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -72,6 +73,25 @@ fun DPad(
     ) {
         dirs.forEach { arm ->
             val isActive = active == arm.hat
+            // Press feedback spring — same idiom as FaceButtons.
+            // Inner visual snaps to 0.9 on press, springs back
+            // to 1.0 with a LowBouncy / StiffnessLow profile so
+            // the rebound reads as a tactile cap rather than a
+            // hard snap.
+            val pressScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (isActive) 0.9f else 1f,
+                animationSpec = if (isActive) {
+                    androidx.compose.animation.core.spring(
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessMedium,
+                    )
+                } else {
+                    androidx.compose.animation.core.spring(
+                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
+                        stiffness = androidx.compose.animation.core.Spring.StiffnessLow,
+                    )
+                },
+                label = "dpad-press-${arm.hat}",
+            )
             // Outer hit zone is 4 dp wider/taller on each side than
             // the visual pill so taps just outside the arm still
             // register. Stops short of the perpendicular arm's
@@ -107,7 +127,8 @@ fun DPad(
                         .size(
                             width = if (arm.vertical) 28.dp else 40.dp,
                             height = if (arm.vertical) 40.dp else 28.dp,
-                        ).clip(RoundedCornerShape(BluetrackTokens.RadiusXs))
+                        ).scale(pressScale)
+                        .clip(RoundedCornerShape(BluetrackTokens.RadiusXs))
                         .background(
                             if (isActive) {
                                 Brush.verticalGradient(

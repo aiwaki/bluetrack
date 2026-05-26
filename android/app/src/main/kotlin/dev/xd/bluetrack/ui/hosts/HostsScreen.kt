@@ -67,10 +67,14 @@ fun HostsScreen(
         ) {
             HubHeader(title = "Hosts")
             if (entries.isEmpty()) {
-                EmptyState()
+                Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 0)) {
+                    EmptyState()
+                }
             } else {
                 Column(
-                    modifier = Modifier.padding(horizontal = BluetrackTokens.Sp6),
+                    modifier = Modifier
+                        .padding(horizontal = BluetrackTokens.Sp6)
+                        .then(dev.xd.bluetrack.ui.rememberStaggerModifier(index = 0)),
                     verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
                 ) {
                     SectionLabel(label = "Computers · ${computers.size}")
@@ -86,7 +90,9 @@ fun HostsScreen(
                 }
                 if (accessories.isNotEmpty()) {
                     Column(
-                        modifier = Modifier.padding(horizontal = BluetrackTokens.Sp6),
+                        modifier = Modifier
+                            .padding(horizontal = BluetrackTokens.Sp6)
+                            .then(dev.xd.bluetrack.ui.rememberStaggerModifier(index = 1)),
                         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp2),
                     ) {
                         SectionLabel(
@@ -113,10 +119,12 @@ fun HostsScreen(
                     }
                 }
                 CompatibilityNote(
-                    modifier = Modifier.padding(
-                        horizontal = BluetrackTokens.Sp6,
-                        vertical = BluetrackTokens.Sp2,
-                    ),
+                    modifier = Modifier
+                        .padding(
+                            horizontal = BluetrackTokens.Sp6,
+                            vertical = BluetrackTokens.Sp2,
+                        )
+                        .then(dev.xd.bluetrack.ui.rememberStaggerModifier(index = 2)),
                 )
             }
         }

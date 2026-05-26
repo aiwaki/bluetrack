@@ -769,45 +769,53 @@ private fun AppScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            StatusHero(
-                connected = isConnected(status),
-                hostName = status.host,
-                metric = if (isConnected(status)) {
-                    "HID · ${compactCount(status.reportsSent)} reports · ${status.rejectedFeedbackPackets} dropped"
-                } else {
-                    null
-                },
-            )
+            Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 0)) {
+                StatusHero(
+                    connected = isConnected(status),
+                    hostName = status.host,
+                    metric = if (isConnected(status)) {
+                        "HID · ${compactCount(status.reportsSent)} reports · ${status.rejectedFeedbackPackets} dropped"
+                    } else {
+                        null
+                    },
+                )
+            }
             // ConnectionPanel (State / Host / Input / Flow + error)
             // moved to the Diagnostics route. Hub keeps the at-a-
             // glance hero + TrustCard; raw transport rows belong
             // with the rest of the diagnostic plumbing.
-            PinBlock(
-                pin = status.feedbackPin,
-                session = sessionCount,
-                gattOpen = status.feedbackPin != null,
-            )
-            TrustCard(
-                state = trustState,
-                fingerprint = status.trustedHostFingerprint,
-                onForget = { vm.forgetTrustedHost() },
-                onShowQR = onShowTrustQR,
-                // Show bonded computer-class hosts as tappable
-                // "recommended" rows so the user can wake the
-                // Mac/PC from sleep without waiting for the
-                // auto-connect tick.
-                recommendedHosts = status.compatibility.hostKinds
-                    .filterValues { it == BluetoothHostKind.Computer }
-                    .keys
-                    .sorted(),
-                activeHost = status.host,
-                onConnect = { name -> vm.connectHost(name) },
-                onDisconnect = { vm.disconnectActiveHost() },
-            )
-            ModeToggle(
-                surfaceMode = surfaceMode,
-                onToggle = { next -> vm.setSurfaceMode(next) },
-            )
+            Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 1)) {
+                PinBlock(
+                    pin = status.feedbackPin,
+                    session = sessionCount,
+                    gattOpen = status.feedbackPin != null,
+                )
+            }
+            Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 2)) {
+                TrustCard(
+                    state = trustState,
+                    fingerprint = status.trustedHostFingerprint,
+                    onForget = { vm.forgetTrustedHost() },
+                    onShowQR = onShowTrustQR,
+                    // Show bonded computer-class hosts as tappable
+                    // "recommended" rows so the user can wake the
+                    // Mac/PC from sleep without waiting for the
+                    // auto-connect tick.
+                    recommendedHosts = status.compatibility.hostKinds
+                        .filterValues { it == BluetoothHostKind.Computer }
+                        .keys
+                        .sorted(),
+                    activeHost = status.host,
+                    onConnect = { name -> vm.connectHost(name) },
+                    onDisconnect = { vm.disconnectActiveHost() },
+                )
+            }
+            Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 3)) {
+                ModeToggle(
+                    surfaceMode = surfaceMode,
+                    onToggle = { next -> vm.setSurfaceMode(next) },
+                )
+            }
             // Reports + Feedback `MetricTile` row moved to the
             // Diagnostics LiveRateHero (which already shows the
             // lifetime totals next to the peak-rate sparklines).
@@ -817,7 +825,12 @@ private fun AppScreen(
             // the flip (no scroll jump when the user swaps modes).
             when (surfaceMode) {
                 TouchpadSurfaceMode.TOUCHPAD -> {
-                    Box(modifier = Modifier.fillMaxWidth().height(260.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp)
+                            .then(dev.xd.bluetrack.ui.rememberStaggerModifier(index = 4)),
+                    ) {
                         TouchpadPanel(
                             modifier = Modifier.fillMaxSize(),
                             mode = mode,
@@ -839,12 +852,14 @@ private fun AppScreen(
                     }
                 }
                 TouchpadSurfaceMode.MOUSE -> {
-                    MouseMirrorPanel(
-                        modifier = Modifier.fillMaxWidth().height(260.dp),
-                        onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
-                        onScroll = { wheelDy -> vm.processScroll(wheelDy) },
-                        onButton = { mask, pressed -> vm.processMouseButton(mask, pressed) },
-                    )
+                    Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 4)) {
+                        MouseMirrorPanel(
+                            modifier = Modifier.fillMaxWidth().height(260.dp),
+                            onMotion = { dx, dy, source -> vm.processMotion(dx, dy, source) },
+                            onScroll = { wheelDy -> vm.processScroll(wheelDy) },
+                            onButton = { mask, pressed -> vm.processMouseButton(mask, pressed) },
+                        )
+                    }
                 }
             }
             // Stat triplet below the touchpad — mirrors the v2.4
@@ -852,23 +867,31 @@ private fun AppScreen(
             // from the persisted lifetime counters + most-recent
             // report timestamp; UPTIME ticks from a session-start
             // anchor captured on first composition.
-            HubStatRow(status = status, now = now)
+            Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 5)) {
+                HubStatRow(status = status, now = now)
+            }
             // SystemPanel (BT / HID / Pair / BLE) moved to the
             // Diagnostics route alongside Connection.
-            GamepadShortcut(onEnter = onEnterGamepad)
-            ActivityStrip(
-                items = status.events.take(4).map { it.toActivityItem(relativeAgeLabel(now, it.timestampMs)) },
-                onOpen = { onNavigate(Route.Activity) },
-            )
-            Heartbeat(
-                active = isConnected(status),
-                // Real activity feed: how recently the last HID
-                // report or input event landed. Full intensity for
-                // the first 500 ms, linear decay to 0 over the next
-                // 3 s — matches the eye's "is this still alive?"
-                // window without flapping on individual frames.
-                intensity = heartbeatIntensity(status, now),
-            )
+            Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 6)) {
+                GamepadShortcut(onEnter = onEnterGamepad)
+            }
+            Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 7)) {
+                ActivityStrip(
+                    items = status.events.take(4).map { it.toActivityItem(relativeAgeLabel(now, it.timestampMs)) },
+                    onOpen = { onNavigate(Route.Activity) },
+                )
+            }
+            Box(modifier = dev.xd.bluetrack.ui.rememberStaggerModifier(index = 8)) {
+                Heartbeat(
+                    active = isConnected(status),
+                    // Real activity feed: how recently the last HID
+                    // report or input event landed. Full intensity for
+                    // the first 500 ms, linear decay to 0 over the next
+                    // 3 s — matches the eye's "is this still alive?"
+                    // window without flapping on individual frames.
+                    intensity = heartbeatIntensity(status, now),
+                )
+            }
         }
     }
 }

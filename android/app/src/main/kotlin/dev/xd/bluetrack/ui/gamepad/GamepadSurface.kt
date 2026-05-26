@@ -2,9 +2,12 @@ package dev.xd.bluetrack.ui.gamepad
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -41,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -402,10 +406,20 @@ private fun CenterPillButton(
     val palette = BluetrackTheme.palette
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.93f else 1f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
+        },
+        label = "center-pill-press",
+    )
     val shape = RoundedCornerShape(999.dp)
     Box(
         modifier = Modifier
             .height(34.dp)
+            .scale(pressScale)
             .clip(shape)
             .background(
                 if (pressed) palette.crit.copy(alpha = 0.18f) else palette.bg2,
@@ -450,9 +464,23 @@ private fun HomeButton(onChange: (Boolean) -> Unit) {
     val palette = BluetrackTheme.palette
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var pressed by remember { mutableStateOf(false) }
+    // Spring the 58dp ↔ 64dp size shift instead of snapping
+    // so the home button breathes when pressed. Press uses a
+    // medium-stiff spring (snappy hit), release uses a
+    // low-stiff bouncy spring for the rebound cap feel.
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 1f else 58f / 64f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
+        },
+        label = "home-press",
+    )
     Box(
         modifier = Modifier
-            .size(if (pressed) 64.dp else 58.dp)
+            .size(64.dp)
+            .scale(pressScale)
             .clip(CircleShape)
             .background(
                 Brush.radialGradient(
@@ -539,11 +567,21 @@ private fun HorizontalShoulderPill(
     val palette = BluetrackTheme.palette
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.93f else 1f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
+        },
+        label = "shoulder-pill-press-$label",
+    )
     val shape = RoundedCornerShape(999.dp)
     Box(
         modifier = Modifier
             .width(110.dp)
             .height(28.dp)
+            .scale(pressScale)
             .clip(shape)
             .background(
                 if (pressed) {
@@ -595,10 +633,20 @@ private fun VerticalTriggerBar(
     val palette = BluetrackTheme.palette
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.93f else 1f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
+        },
+        label = "trigger-bar-press-$label",
+    )
     val shape = RoundedCornerShape(8.dp)
     Box(
         modifier = modifier
             .width(28.dp)
+            .scale(pressScale)
             .clip(shape)
             .background(
                 if (pressed) {

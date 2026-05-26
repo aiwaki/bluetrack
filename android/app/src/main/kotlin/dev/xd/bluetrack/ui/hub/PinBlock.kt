@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -87,9 +88,30 @@ fun PinBlock(
         }
     }
 
+    // New-PIN burst. When a fresh `pin` arrives (null → value
+    // or session rolls), snap the card to scale 1.03 and
+    // spring back. Reads as a tactile "PIN issued" beat —
+    // pairs with the existing `NeonRibbon` flash on the route
+    // above. Disappearing PIN (value → null) does not burst.
+    var prevPin by remember { mutableStateOf<String?>(pin) }
+    val burst = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(pin) {
+        if (pin != null && pin != prevPin) {
+            burst.snapTo(1.03f)
+            burst.animateTo(
+                targetValue = 1f,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+                ),
+            )
+        }
+        prevPin = pin
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .scale(burst.value)
             .clip(shape)
             .btGlass(strong = true, shape = shape)
             .padding(horizontal = BluetrackTokens.Sp5, vertical = BluetrackTokens.Sp4),
