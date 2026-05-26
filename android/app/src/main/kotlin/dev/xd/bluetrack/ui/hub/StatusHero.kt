@@ -111,11 +111,22 @@ fun StatusHero(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
-                    text = if (connected) "ACTIVE LINK" else "SEARCHING",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (connected) palette.fg2 else palette.cool,
-                )
+                // Crossfade the caption between SEARCHING ↔ ACTIVE
+                // LINK instead of an instant text swap. 220ms tween
+                // pairs with the connect-burst on the parent card —
+                // both finish around the same time so the card
+                // settles in one beat.
+                androidx.compose.animation.Crossfade(
+                    targetState = connected,
+                    animationSpec = tween(durationMillis = 220),
+                    label = "hero-caption",
+                ) { isConnected ->
+                    Text(
+                        text = if (isConnected) "ACTIVE LINK" else "SEARCHING",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isConnected) palette.fg2 else palette.cool,
+                    )
+                }
                 Text(
                     // Host name is now the dominant typography on
                     // the Hub — matches the v2.4 design reference
@@ -211,23 +222,33 @@ private fun AvatarBlock(connected: Boolean) {
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            if (connected) {
-                Box(
-                    modifier = Modifier
-                        .size(14.dp)
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(palette.crit),
-                )
-            } else {
-                // Three-dot searching glyph — reads as "looking"
-                // rather than "error" / "rejected" the old `✕`
-                // conveyed.
-                Text(
-                    text = "···",
-                    color = palette.cool,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+            // Crossfade the inner glyph so the dot ↔ "···" swap
+            // dissolves over 280ms instead of popping in. Matches
+            // the caption crossfade above so both halves of the
+            // hero transition together.
+            androidx.compose.animation.Crossfade(
+                targetState = connected,
+                animationSpec = tween(durationMillis = 280),
+                label = "hero-avatar-glyph",
+            ) { isConnected ->
+                if (isConnected) {
+                    Box(
+                        modifier = Modifier
+                            .size(14.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(palette.crit),
+                    )
+                } else {
+                    // Three-dot searching glyph — reads as "looking"
+                    // rather than "error" / "rejected" the old `✕`
+                    // conveyed.
+                    Text(
+                        text = "···",
+                        color = palette.cool,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }
