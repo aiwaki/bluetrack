@@ -13,7 +13,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -92,20 +91,32 @@ fun TouchpadHintsOverlay(
                 modifier = Modifier
                     .fillMaxSize()
                     .align(Alignment.Center),
-                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+                verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = "TOUCHPAD GESTURES",
+                    text = "WELCOME",
                     color = palette.fg2,
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
                     letterSpacing = 1.6.sp,
                     fontWeight = FontWeight.Bold,
                 )
-                HintRow(palette, glyph = "↕", title = "Move", body = "1 finger drag")
-                HintRow(palette, glyph = "·", title = "Click", body = "1 finger tap")
-                HintRow(palette, glyph = "··", title = "Right-click", body = "2 finger tap")
-                HintRow(palette, glyph = "≡", title = "Scroll", body = "2 finger drag")
+                Text(
+                    text = "Use it like a MacBook trackpad.",
+                    color = palette.fg0,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+                Text(
+                    text = "Yes, it's that simple.",
+                    color = palette.crit,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
                 var dismissPressed by remember { mutableStateOf(false) }
                 val dismissPressScale by animateFloatAsState(
                     targetValue = if (dismissPressed) 0.96f else 1f,
@@ -149,49 +160,6 @@ fun TouchpadHintsOverlay(
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun HintRow(
-    palette: dev.xd.bluetrack.ui.theme.BluetrackPalette,
-    glyph: String,
-    title: String,
-    body: String,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(palette.bg2)
-                .border(1.dp, palette.hairline, RoundedCornerShape(6.dp))
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-        ) {
-            Text(
-                text = glyph,
-                color = palette.crit,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = palette.fg0,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = body,
-                color = palette.fg2,
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-            )
         }
     }
 }
