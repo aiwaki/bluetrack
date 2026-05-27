@@ -1,8 +1,12 @@
 package dev.xd.bluetrack.ui.hosts
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,14 +17,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -222,16 +232,41 @@ fun HostRow(
 private fun DisconnectButton(onDisconnect: () -> Unit) {
     val palette = BluetrackTheme.palette
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // Press-scale spring matches the rest of the polished surfaces.
+    // 0.9 dip on a 32 dp pill reads as a clear "I pressed it" beat
+    // and gives the user a moment to abort by sliding off before
+    // the disconnect actually fires (tryAwaitRelease semantics).
+    var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.9f else 1f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessLow,
+            )
+        },
+        label = "host-row-disconnect-press",
+    )
     Box(
         modifier = Modifier
             .size(32.dp)
+            .scale(pressScale)
             .clip(RoundedCornerShape(999.dp))
             .border(1.dp, palette.hairline, RoundedCornerShape(999.dp))
-            .clickable {
-                haptic.performHapticFeedback(
-                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        haptic.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                        )
+                        val released = tryAwaitRelease()
+                        pressed = false
+                        if (released) onDisconnect()
+                    },
                 )
-                onDisconnect()
             },
         contentAlignment = Alignment.Center,
     ) {
