@@ -3,8 +3,11 @@ package dev.xd.bluetrack.ui.hub
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -159,16 +163,39 @@ fun PinBlock(
             if (gattOpen && pin != null) {
                 // 6 mono digits, tap to copy.
                 val digits = pin.padEnd(6, '·').take(6).toCharArray()
+                var digitsPressed by remember { mutableStateOf(false) }
+                val digitsPressScale by animateFloatAsState(
+                    targetValue = if (digitsPressed) 0.97f else 1f,
+                    animationSpec = if (digitsPressed) {
+                        spring(stiffness = Spring.StiffnessMedium)
+                    } else {
+                        spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessLow,
+                        )
+                    },
+                    label = "pin-digits-press",
+                )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .scale(digitsPressScale)
                         .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
-                        .clickable {
-                            haptic.performHapticFeedback(
-                                androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                        .pointerInput(pin) {
+                            detectTapGestures(
+                                onPress = {
+                                    digitsPressed = true
+                                    haptic.performHapticFeedback(
+                                        androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                                    )
+                                    val released = tryAwaitRelease()
+                                    digitsPressed = false
+                                    if (released) {
+                                        copyToClipboard(context, pin)
+                                        copied = true
+                                    }
+                                },
                             )
-                            copyToClipboard(context, pin)
-                            copied = true
                         }.padding(vertical = BluetrackTokens.Sp2),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {

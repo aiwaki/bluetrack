@@ -1,10 +1,12 @@
 package dev.xd.bluetrack.ui.hub
 
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,11 +19,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,20 +69,47 @@ fun ModeToggle(
         label = "surface-toggle-rotation",
     )
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
+    // Press-scale separate from the flip rotation. Card dips 0.97
+    // on touch then springs back even when the press releases mid
+    // flip animation. Lets the user feel the tap before the flip
+    // has actually finished swapping faces.
+    var pressed by remember { mutableStateOf(false) }
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = if (pressed) {
+            spring(stiffness = Spring.StiffnessMedium)
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessLow,
+            )
+        },
+        label = "mode-toggle-press",
+    )
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(80.dp)
+            .scale(pressScale)
             .clip(shape)
-            .clickable {
-                haptic.performHapticFeedback(
-                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
-                )
-                onToggle(
-                    if (surfaceMode == TouchpadSurfaceMode.MOUSE) {
-                        TouchpadSurfaceMode.TOUCHPAD
-                    } else {
-                        TouchpadSurfaceMode.MOUSE
+            .pointerInput(surfaceMode) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        haptic.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                        )
+                        val released = tryAwaitRelease()
+                        pressed = false
+                        if (released) {
+                            onToggle(
+                                if (surfaceMode == TouchpadSurfaceMode.MOUSE) {
+                                    TouchpadSurfaceMode.TOUCHPAD
+                                } else {
+                                    TouchpadSurfaceMode.MOUSE
+                                },
+                            )
+                        }
                     },
                 )
             }.graphicsLayer {
