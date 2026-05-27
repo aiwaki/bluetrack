@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -167,6 +168,30 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
+        // Ask Android to keep the window at the panel's highest
+        // supported refresh rate. Without this hint the compositor
+        // is free to downclock to 60 Hz when it decides the frame
+        // budget allows it — animations and the cursor preview
+        // visibly halve their cadence on 90/120/144 Hz devices.
+        // `preferredDisplayModeId` is stronger than
+        // `preferredRefreshRate` because it pins the actual mode
+        // instead of asking the compositor to "try" honour the rate.
+        // Picks the supported mode with the highest refresh rate at
+        // the current resolution so we never force a resolution change.
+        val targetDisplay = if (android.os.Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay
+        targetDisplay?.let { d ->
+            val activeMode = d.mode
+            val best = d.supportedModes
+                .filter {
+                    it.physicalWidth == activeMode.physicalWidth &&
+                        it.physicalHeight == activeMode.physicalHeight
+                }.maxByOrNull { it.refreshRate }
+            if (best != null && best.modeId != activeMode.modeId) {
+                window.attributes = window.attributes.apply {
+                    preferredDisplayModeId = best.modeId
+                }
+            }
+        }
         val container = (application as BluetrackApplication).container
         vm = MainViewModel(container.bleGateway, container.translationEngine)
         tweaksRepo = TweaksRepository(applicationContext)
@@ -970,13 +995,15 @@ private fun TouchpadPanel(
             stick.deflection == StickDeflection.LIGHT -> Color(0xFF00E5FF)
             else -> Color(0xFF00F5A0)
         }
-    // Step 4 liquid-drop visual state. The AndroidView below still
-    // owns the actual HID emission pipeline; this Compose-side
-    // state only feeds the on-screen radial gradient + trail so
-    // touch reads as a glowing drop following the finger. The
-    // trail is capped at 20 points so allocation is bounded.
+    // Step 4 liquid-drop visual state — kept only the radial drop
+    // at the current finger; the polyline trail was removed in
+    // 2026-05-27 because it drifted past the touchpad's rounded
+    // bounds (Panel does not clip its children) and the trail
+    // itself read as decorative debt — a real trackpad shows
+    // nothing under the finger, the on-screen cursor is the
+    // feedback. Drop stays as a calm "finger present" hint for
+    // first-time users.
     val pointer = remember { mutableStateOf<Offset?>(null) }
-    val trail = remember { mutableStateListOf<Offset>() }
     // Mouse mode: clean bordered zone with no center crosshair
     // and no edge labels. The user wants a hardware-trackpad feel
     // — gesture hints come from a future onboarding overlay, not
@@ -1024,26 +1051,18 @@ private fun TouchpadPanel(
                     drawCircle(dotColor, 14f, dotOffset)
                 }
             }
-            // Liquid-drop overlay (mouse mode only). Drawn above
-            // the base grid but below the gamepad label + the
-            // touch-capture AndroidView (which sits transparent on
-            // top). Trail polyline first, then the radial drop at
-            // the current pointer.
-            if (!isGamepad && (trail.isNotEmpty() || pointer.value != null)) {
-                Canvas(Modifier.fillMaxSize()) {
-                    if (trail.size > 1) {
-                        for (i in 1 until trail.size) {
-                            val a = trail[i - 1]
-                            val b = trail[i]
-                            val alpha = i.toFloat() / trail.size
-                            drawLine(
-                                color = palette.mintBright.copy(alpha = alpha * 0.85f),
-                                start = a,
-                                end = b,
-                                strokeWidth = 3f,
-                            )
-                        }
-                    }
+            // Radial-drop overlay (mouse mode only). The trail
+            // polyline was removed; only the current finger drop
+            // remains. Clipped to a rounded shape so a finger
+            // glide near the edge does not paint past the
+            // touchpad's visible bounds — Panel's column is not
+            // clip-by-default.
+            if (!isGamepad && pointer.value != null) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(8.dp)),
+                ) {
                     pointer.value?.let { p ->
                         drawCircle(
                             brush = Brush.radialGradient(
@@ -1343,8 +1362,6 @@ private fun TouchpadPanel(
                                     }
                                 }
                                 pointer.value = Offset(ev.x, ev.y)
-                                trail.clear()
-                                trail.add(Offset(ev.x, ev.y))
                                 true
                             }
                             MotionEvent.ACTION_POINTER_DOWN -> {
@@ -1536,8 +1553,6 @@ private fun TouchpadPanel(
                                     }
                                 }
                                 pointer.value = Offset(ev.x, ev.y)
-                                if (trail.size >= 20) trail.removeAt(0)
-                                trail.add(Offset(ev.x, ev.y))
                                 true
                             }
                             MotionEvent.ACTION_POINTER_UP -> {
@@ -1646,7 +1661,6 @@ private fun TouchpadPanel(
                                 }
                                 scrollVelocityPxPerMs = 0f
                                 pointer.value = null
-                                trail.clear()
                                 inScrollGesture = false
                                 true
                             }

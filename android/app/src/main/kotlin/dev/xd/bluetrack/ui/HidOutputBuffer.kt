@@ -77,10 +77,20 @@ internal class HidOutputBuffer(
         mouseDx += dx
         mouseDy += dy
         mouseWheel += wheel
-        // Cap accumulated wheel travel so a sender stall does
-        // not let several pacer drains stack into a single
-        // burst report — macOS reads big wheel values as
-        // accelerated scroll and lurches the page.
+        // Buffer cap separates from PER-EMIT cap. Per-emit stays
+        // at ±1 wheel notch (TranslationEngine.MAX_WHEEL_PER_EMIT)
+        // so macOS's accelerated-scroll heuristic never trips.
+        // The buffer cap here only bounds how many notches can
+        // sit pending between pacer drains so a fast finger
+        // flick keeps its momentum in the queue and the next
+        // few 8 ms drains can flush them as a clean stream
+        // instead of dropping remainder above the cap. ±2 was
+        // too tight — at 8 ms drain × 1 emit/drain it capped
+        // throughput at 125 wheel/sec, well below a brisk Mac
+        // trackpad flick (~250-400 wheel/sec equiv). ±8 gives
+        // 32 ms of headroom — long enough to ride out a sender
+        // stall but short enough that a long held-press doesn't
+        // queue absurd amounts of pending scroll.
         mouseWheel = mouseWheel.coerceIn(-MAX_WHEEL_PER_POLL, MAX_WHEEL_PER_POLL)
     }
 
@@ -159,6 +169,6 @@ internal class HidOutputBuffer(
     private companion object {
         const val HID_MIN_DELTA = -127
         const val HID_MAX_DELTA = 127
-        const val MAX_WHEEL_PER_POLL = 2
+        const val MAX_WHEEL_PER_POLL = 8
     }
 }
