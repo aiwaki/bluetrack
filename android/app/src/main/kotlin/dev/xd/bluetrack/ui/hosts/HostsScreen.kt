@@ -1,7 +1,10 @@
 package dev.xd.bluetrack.ui.hosts
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +24,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -227,14 +232,40 @@ private fun CaveatSheet(
         ) {
             Text(text = info.title, color = palette.fg0, fontSize = 18.sp)
             Text(text = info.body, color = palette.fg1, fontSize = 13.sp)
+            val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+            var pressed by remember { mutableStateOf(false) }
+            val pressScale by animateFloatAsState(
+                targetValue = if (pressed) 0.96f else 1f,
+                animationSpec = if (pressed) {
+                    spring(stiffness = Spring.StiffnessMedium)
+                } else {
+                    spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessLow,
+                    )
+                },
+                label = "caveat-dismiss-press",
+            )
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = BluetrackTokens.Sp3)
+                    .scale(pressScale)
                     .clip(RoundedCornerShape(999.dp))
                     .background(palette.mint)
-                    .clickable(onClick = onDismiss)
-                    .padding(vertical = 10.dp),
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                pressed = true
+                                haptic.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                                )
+                                val released = tryAwaitRelease()
+                                pressed = false
+                                if (released) onDismiss()
+                            },
+                        )
+                    }.padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(

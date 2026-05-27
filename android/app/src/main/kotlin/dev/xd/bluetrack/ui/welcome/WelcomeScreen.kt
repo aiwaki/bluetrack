@@ -8,7 +8,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -163,15 +162,36 @@ fun WelcomeScreen(
         )
         if (page == totalPages - 1) {
             Spacer(modifier = Modifier.height(8.dp))
+            var skipPressed by remember { mutableStateOf(false) }
+            val skipPressScale by animateFloatAsState(
+                targetValue = if (skipPressed) 0.97f else 1f,
+                animationSpec = if (skipPressed) {
+                    spring(stiffness = Spring.StiffnessMedium)
+                } else {
+                    spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessLow,
+                    )
+                },
+                label = "welcome-skip-press",
+            )
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .scale(skipPressScale)
                     .clip(RoundedCornerShape(999.dp))
-                    .clickable {
-                        haptic.performHapticFeedback(
-                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                skipPressed = true
+                                haptic.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                                )
+                                val released = tryAwaitRelease()
+                                skipPressed = false
+                                if (released) onFinish()
+                            },
                         )
-                        onFinish()
                     }.padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -199,16 +219,37 @@ private fun TopRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (page > 0) {
+            var backPressed by remember { mutableStateOf(false) }
+            val backPressScale by animateFloatAsState(
+                targetValue = if (backPressed) 0.9f else 1f,
+                animationSpec = if (backPressed) {
+                    spring(stiffness = Spring.StiffnessMedium)
+                } else {
+                    spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessLow,
+                    )
+                },
+                label = "welcome-back-press",
+            )
             Box(
                 modifier = Modifier
                     .size(36.dp)
+                    .scale(backPressScale)
                     .clip(CircleShape)
                     .border(1.dp, palette.hairline, CircleShape)
-                    .clickable {
-                        haptic.performHapticFeedback(
-                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                backPressed = true
+                                haptic.performHapticFeedback(
+                                    androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                                )
+                                val released = tryAwaitRelease()
+                                backPressed = false
+                                if (released) onBack()
+                            },
                         )
-                        onBack()
                     },
                 contentAlignment = Alignment.Center,
             ) {
