@@ -11,7 +11,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -217,13 +216,39 @@ private fun TopStatusRail(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // Exit pill — leading.
+        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+        var exitPressed by remember { mutableStateOf(false) }
+        val exitPressScale by animateFloatAsState(
+            targetValue = if (exitPressed) 0.93f else 1f,
+            animationSpec = if (exitPressed) {
+                spring(stiffness = Spring.StiffnessMedium)
+            } else {
+                spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessLow,
+                )
+            },
+            label = "gamepad-exit-press",
+        )
         Row(
             modifier = Modifier
                 .height(32.dp)
+                .scale(exitPressScale)
                 .clip(RoundedCornerShape(999.dp))
                 .border(1.dp, palette.glassBorder, RoundedCornerShape(999.dp))
-                .clickable(onClick = onExit)
-                .padding(horizontal = 14.dp),
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = {
+                            exitPressed = true
+                            haptic.performHapticFeedback(
+                                androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
+                            )
+                            val released = tryAwaitRelease()
+                            exitPressed = false
+                            if (released) onExit()
+                        },
+                    )
+                }.padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {

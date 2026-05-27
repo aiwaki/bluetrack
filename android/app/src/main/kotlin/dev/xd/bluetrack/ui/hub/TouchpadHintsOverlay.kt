@@ -1,12 +1,15 @@
 package dev.xd.bluetrack.ui.hub
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,9 +20,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -98,15 +106,36 @@ fun TouchpadHintsOverlay(
                 HintRow(palette, glyph = "·", title = "Click", body = "1 finger tap")
                 HintRow(palette, glyph = "··", title = "Right-click", body = "2 finger tap")
                 HintRow(palette, glyph = "≡", title = "Scroll", body = "2 finger drag")
+                var dismissPressed by remember { mutableStateOf(false) }
+                val dismissPressScale by animateFloatAsState(
+                    targetValue = if (dismissPressed) 0.96f else 1f,
+                    animationSpec = if (dismissPressed) {
+                        spring(stiffness = Spring.StiffnessMedium)
+                    } else {
+                        spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessLow,
+                        )
+                    },
+                    label = "hints-dismiss-press",
+                )
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 6.dp)
+                        .scale(dismissPressScale)
                         .clip(RoundedCornerShape(999.dp))
                         .background(palette.crit)
-                        .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onDismiss()
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onPress = {
+                                    dismissPressed = true
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    val released = tryAwaitRelease()
+                                    dismissPressed = false
+                                    if (released) onDismiss()
+                                },
+                            )
                         }.padding(vertical = 10.dp),
                     contentAlignment = Alignment.Center,
                 ) {
