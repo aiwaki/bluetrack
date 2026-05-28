@@ -9,6 +9,7 @@ import dev.xd.bluetrack.engine.Telemetry
 import dev.xd.bluetrack.engine.TranslationEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +17,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.Executors
 import kotlin.math.abs
 
 class MainViewModel(
@@ -40,6 +42,23 @@ class MainViewModel(
     @Volatile private var started = false
     private val inputLock = Any()
     private val hidSenderLock = Any()
+
+    // Dedicated single-thread executors for the pacer and the HID
+    // sender. Pinning each coroutine to a single OS thread means
+    // `Process.setThreadPriority(THREAD_PRIORITY_URGENT_AUDIO)`
+    // sticks across the coroutine's lifetime (vs. `Dispatchers.IO`
+    // / `Default` which migrate coroutines across pool threads on
+    // every suspension and lose the priority hint). The named
+    // threads also surface cleanly in `adb shell top` / Studio's
+    // CPU profiler when investigating future stalls.
+    private val pacerExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "bluetrack-pacer").apply { priority = Thread.MAX_PRIORITY }
+    }
+    private val pacerDispatcher = pacerExecutor.asCoroutineDispatcher()
+    private val senderExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "bluetrack-hid-sender").apply { priority = Thread.MAX_PRIORITY }
+    }
+    private val senderDispatcher = senderExecutor.asCoroutineDispatcher()
     private var pendingDx = 0f
     private var pendingDy = 0f
 
@@ -416,10 +435,29 @@ class MainViewModel(
         inputDiagnostics.resetTouchClock()
     }
 
+    override fun onCleared() {
+        super.onCleared()
+        // Coroutine cancellation in `detach()` only stops the
+        // current loops; the executor pools live longer (one per VM
+        // instance), so explicitly shut them down here so their
+        // single threads don't leak past VM destruction.
+        pacerExecutor.shutdown()
+        senderExecutor.shutdown()
+    }
+
     private fun ensureInputPacer() {
         if (inputPacerJob?.isActive == true) return
         inputPacerJob =
-            viewModelScope.launch(Dispatchers.Default) {
+            viewModelScope.launch(pacerDispatcher) {
+                // Bump scheduling priority so the pacer's 8 ms
+                // delay loop doesn't lose ticks to a Compose
+                // recomposition burst or background indexing.
+                // URGENT_AUDIO matches what AudioTrack uses — same
+                // real-time-input contract here: a missed tick is
+                // perceived as cursor stutter.
+                android.os.Process.setThreadPriority(
+                    android.os.Process.THREAD_PRIORITY_URGENT_AUDIO,
+                )
                 while (isActive) {
                     delay(INPUT_TICK_MS)
                     val tickAtMs = SystemClock.elapsedRealtime()
@@ -499,7 +537,16 @@ class MainViewModel(
         synchronized(hidSenderLock) {
             if (hidSenderJob?.isActive == true) return
             hidSenderJob =
-                viewModelScope.launch(Dispatchers.IO) {
+                viewModelScope.launch(senderDispatcher) {
+                    // Match the pacer's priority — sender thread
+                    // owns the BluetoothHidDevice.sendReport call
+                    // which is the actual latency bottleneck. If
+                    // it loses CPU to a background pool task the
+                    // entire output queue stalls and the cursor
+                    // stutters when the drain finally happens.
+                    android.os.Process.setThreadPriority(
+                        android.os.Process.THREAD_PRIORITY_URGENT_AUDIO,
+                    )
                     while (isActive) {
                         val transportDelayMs = hidTransportGovernor.delayBeforeSend(SystemClock.elapsedRealtime())
                         if (transportDelayMs > 0L) delay(transportDelayMs)
