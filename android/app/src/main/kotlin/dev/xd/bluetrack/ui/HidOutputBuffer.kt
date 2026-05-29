@@ -4,6 +4,7 @@ import dev.xd.bluetrack.engine.HidMode
 
 internal class HidOutputBuffer(
     private val maxGamepadReports: Int = 8,
+    private val nowMsProvider: () -> Long = { android.os.SystemClock.elapsedRealtime() },
 ) {
     private val lock = Any()
     private val gamepadReports = ArrayDeque<OutputFrame>()
@@ -69,7 +70,24 @@ internal class HidOutputBuffer(
         if (!buttonsChanged && dx == 0 && dy == 0 && wheel == 0) return
 
         mode = HidMode.MOUSE
+        // Drop accumulated motion if the buffered frame is older
+        // than STALE_MOTION_MS — happens when the Bluetooth radio
+        // stalled for hundreds of ms (sendReport blocked) and the
+        // input pacer kept adding deltas. Stale deltas no longer
+        // reflect the user's current finger position, so flushing
+        // them as a burst when the radio recovers makes the cursor
+        // lurch. Reset to fresh deltas; button state survives.
+        if (hasMouseReport && nowMsProvider() - mouseQueuedAtMs > STALE_MOTION_MS) {
+            mouseDx = 0
+            mouseDy = 0
+            mouseWheel = 0
+        }
         if (!hasMouseReport) {
+            mouseQueuedAtMs = queuedAtMs
+        } else if (nowMsProvider() - mouseQueuedAtMs > STALE_MOTION_MS) {
+            // After drop above, re-anchor the queued-at timestamp
+            // so the staleness window restarts from the incoming
+            // delta.
             mouseQueuedAtMs = queuedAtMs
         }
         hasMouseReport = true
@@ -77,6 +95,15 @@ internal class HidOutputBuffer(
         mouseDx += dx
         mouseDy += dy
         mouseWheel += wheel
+        // Cap accumulated cursor backlog so a sender stall does
+        // not let dozens of pacer drains stack into a single
+        // burst when the link recovers — the user's intent for
+        // motion >24 ms old is already irrelevant. ±48 px covers
+        // ~24 ms of brisk swipe motion at typical Bluetrack
+        // sensitivity; anything beyond that is "queued lurch"
+        // territory.
+        mouseDx = mouseDx.coerceIn(-MAX_MOTION_PER_POLL, MAX_MOTION_PER_POLL)
+        mouseDy = mouseDy.coerceIn(-MAX_MOTION_PER_POLL, MAX_MOTION_PER_POLL)
         // Buffer cap separates from PER-EMIT cap. Per-emit stays
         // at ±1 wheel notch (TranslationEngine.MAX_WHEEL_PER_EMIT)
         // so macOS's accelerated-scroll heuristic never trips.
@@ -170,5 +197,7 @@ internal class HidOutputBuffer(
         const val HID_MIN_DELTA = -127
         const val HID_MAX_DELTA = 127
         const val MAX_WHEEL_PER_POLL = 8
+        const val MAX_MOTION_PER_POLL = 48
+        const val STALE_MOTION_MS = 100L
     }
 }

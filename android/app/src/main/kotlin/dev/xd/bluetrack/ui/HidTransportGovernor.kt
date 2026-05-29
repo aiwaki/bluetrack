@@ -6,11 +6,11 @@ internal class HidTransportGovernor(
     private val baseIntervalMs: Long = 6L,
     private val moderateBackoffIntervalMs: Long = 10L,
     private val severeBackoffIntervalMs: Long = 16L,
-    private val moderateSendMs: Long = 12L,
-    private val severeSendMs: Long = 48L,
-    private val moderateBackoffWindowMs: Long = 500L,
-    private val severeBackoffWindowMs: Long = 900L,
-    private val fastRecoveryReports: Int = 12,
+    private val moderateSendMs: Long = 24L,
+    private val severeSendMs: Long = 80L,
+    private val moderateBackoffWindowMs: Long = 250L,
+    private val severeBackoffWindowMs: Long = 400L,
+    private val fastRecoveryReports: Int = 6,
 ) {
     private var lastSendFinishedAtMs = -1L
     private var backoffUntilMs = -1L

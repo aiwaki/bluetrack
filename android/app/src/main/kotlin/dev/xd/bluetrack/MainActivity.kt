@@ -34,9 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
@@ -995,15 +993,15 @@ private fun TouchpadPanel(
             stick.deflection == StickDeflection.LIGHT -> Color(0xFF00E5FF)
             else -> Color(0xFF00F5A0)
         }
-    // Step 4 liquid-drop visual state — kept only the radial drop
-    // at the current finger; the polyline trail was removed in
-    // 2026-05-27 because it drifted past the touchpad's rounded
-    // bounds (Panel does not clip its children) and the trail
-    // itself read as decorative debt — a real trackpad shows
-    // nothing under the finger, the on-screen cursor is the
-    // feedback. Drop stays as a calm "finger present" hint for
-    // first-time users.
-    val pointer = remember { mutableStateOf<Offset?>(null) }
+    // Touchpad surface intentionally renders NOTHING under the
+    // finger in mouse mode. A real Mac trackpad shows nothing on
+    // the pad itself — the cursor on the host is the only
+    // feedback. The earlier radial-drop indicator (and before
+    // that, the polyline trail) read as decorative debt and let
+    // the surface compete visually with the host cursor.
+    // Gamepad mode keeps its stick-well overlay because the
+    // surface IS the virtual stick there; the absence here is
+    // mode-specific.
     // Mouse mode: clean bordered zone with no center crosshair
     // and no edge labels. The user wants a hardware-trackpad feel
     // — gesture hints come from a future onboarding overlay, not
@@ -1049,36 +1047,6 @@ private fun TouchpadPanel(
                     drawCircle(ringColor, baseRadius * 0.4f, Offset(cx, cy), style = Stroke(width = 1.5f))
                     val dotOffset = Offset(cx + stick.normalizedX * travelRadius, cy + stick.normalizedY * travelRadius)
                     drawCircle(dotColor, 14f, dotOffset)
-                }
-            }
-            // Radial-drop overlay (mouse mode only). The trail
-            // polyline was removed; only the current finger drop
-            // remains. Clipped to a rounded shape so a finger
-            // glide near the edge does not paint past the
-            // touchpad's visible bounds — Panel's column is not
-            // clip-by-default.
-            if (!isGamepad && pointer.value != null) {
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(8.dp)),
-                ) {
-                    pointer.value?.let { p ->
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colorStops = arrayOf(
-                                    0f to palette.mintBright,
-                                    0.5f to palette.mint,
-                                    0.75f to palette.mintGlow,
-                                    1f to Color.Transparent,
-                                ),
-                                center = p,
-                                radius = 36f,
-                            ),
-                            radius = 36f,
-                            center = p,
-                        )
-                    }
                 }
             }
             if (isGamepad) {
@@ -1361,7 +1329,6 @@ private fun TouchpadPanel(
                                         onHoldStart()
                                     }
                                 }
-                                pointer.value = Offset(ev.x, ev.y)
                                 true
                             }
                             MotionEvent.ACTION_POINTER_DOWN -> {
@@ -1473,7 +1440,6 @@ private fun TouchpadPanel(
                                     lastScrollPointerCount = ev.pointerCount
                                     scrollVelocityPxPerMs = 0f
                                     lastMoveTimeMs = ev.eventTime
-                                    pointer.value = Offset(ev.x, ev.y)
                                     return@setOnTouchListener true
                                 }
                                 if (inScrollGesture) {
@@ -1552,7 +1518,6 @@ private fun TouchpadPanel(
                                         lastY = ev.y
                                     }
                                 }
-                                pointer.value = Offset(ev.x, ev.y)
                                 true
                             }
                             MotionEvent.ACTION_POINTER_UP -> {
@@ -1660,7 +1625,6 @@ private fun TouchpadPanel(
                                     }
                                 }
                                 scrollVelocityPxPerMs = 0f
-                                pointer.value = null
                                 inScrollGesture = false
                                 true
                             }

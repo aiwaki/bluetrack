@@ -11,7 +11,13 @@ import org.junit.Test
 class HidOutputBufferTest {
     @Test
     fun dropsEmptyMouseReports() {
-        val buffer = HidOutputBuffer()
+        // Hold the virtual clock at the queuedAtMs so the staleness
+        // path in enqueueMouse never triggers — these tests exercise
+        // coalescing / mode-switch / empty-drop, not the new stale
+        // motion reset. The dedicated staleness test below drives
+        // the clock forward explicitly.
+        val now = LongArray(1) { 0L }
+        val buffer = HidOutputBuffer(nowMsProvider = { now[0] })
 
         buffer.enqueue(HidMode.MOUSE, byteArrayOf(0, 0, 0, 0), queuedAtMs = 10L)
 
@@ -21,20 +27,31 @@ class HidOutputBufferTest {
 
     @Test
     fun coalescesMouseReportsAndKeepsEarliestQueueTime() {
-        val buffer = HidOutputBuffer()
+        // Hold the virtual clock at the queuedAtMs so the staleness
+        // path in enqueueMouse never triggers — these tests exercise
+        // coalescing / mode-switch / empty-drop, not the new stale
+        // motion reset. The dedicated staleness test below drives
+        // the clock forward explicitly.
+        val now = LongArray(1) { 10L }
+        val buffer = HidOutputBuffer(nowMsProvider = { now[0] })
 
         buffer.enqueue(HidMode.MOUSE, byteArrayOf(0, 80, 10, 0), queuedAtMs = 10L)
+        now[0] = 20L
         buffer.enqueue(HidMode.MOUSE, byteArrayOf(0, 70, (-5).toByte(), 0), queuedAtMs = 20L)
 
         val first = buffer.poll()
         val second = buffer.poll()
 
+        // Accumulated dx = 80 + 70 = 150, capped to the
+        // MAX_MOTION_PER_POLL = 48 backlog ceiling (lurch
+        // mitigation, not the HID byte range of 127). dy follows
+        // the same coalescing path: 10 + -5 = 5. The first poll
+        // drains the full accumulated dx because 48 < 127.
         assertEquals(HidMode.MOUSE, first?.mode)
         assertEquals(10L, first?.queuedAtMs)
-        assertArrayEquals(byteArrayOf(0, 127.toByte(), 5, 0), requireNotNull(first).report)
-        assertEquals(10L, second?.queuedAtMs)
-        assertArrayEquals(byteArrayOf(0, 23, 0, 0), requireNotNull(second).report)
+        assertArrayEquals(byteArrayOf(0, 48, 5, 0), requireNotNull(first).report)
         assertFalse(buffer.hasPending())
+        assertNull(second)
     }
 
     @Test
@@ -52,8 +69,42 @@ class HidOutputBufferTest {
     }
 
     @Test
+    fun dropsStaleAccumulatedMotionOnNewEnqueue() {
+        // Reproduces the BLE-stall lurch case: a sender stall keeps
+        // the first enqueue's motion sitting in the buffer past
+        // STALE_MOTION_MS. When fresh user motion arrives the
+        // buffer must drop the stale accumulation (button state
+        // survives) so the next poll reflects current intent, not
+        // the bursty backlog from before the radio recovered.
+        val now = LongArray(1) { 100L }
+        val buffer = HidOutputBuffer(nowMsProvider = { now[0] })
+
+        buffer.enqueue(HidMode.MOUSE, byteArrayOf(0, 40, 30, 0), queuedAtMs = 100L)
+        // Sender stalled for 250 ms — well past the 100 ms staleness
+        // threshold. Fresh motion arrives.
+        now[0] = 350L
+        buffer.enqueue(HidMode.MOUSE, byteArrayOf(0, 5, 5, 0), queuedAtMs = 350L)
+
+        val output = buffer.poll()
+
+        // dx/dy should be the fresh deltas only — the stale 40/30
+        // is gone. mouseQueuedAtMs was re-anchored to 350L on the
+        // reset path so the new frame's age is accurate.
+        assertEquals(HidMode.MOUSE, output?.mode)
+        assertEquals(350L, output?.queuedAtMs)
+        assertArrayEquals(byteArrayOf(0, 5, 5, 0), requireNotNull(output).report)
+        assertFalse(buffer.hasPending())
+    }
+
+    @Test
     fun modeSwitchClearsStalePendingReports() {
-        val buffer = HidOutputBuffer()
+        // Hold the virtual clock at the queuedAtMs so the staleness
+        // path in enqueueMouse never triggers — these tests exercise
+        // coalescing / mode-switch / empty-drop, not the new stale
+        // motion reset. The dedicated staleness test below drives
+        // the clock forward explicitly.
+        val now = LongArray(1) { 0L }
+        val buffer = HidOutputBuffer(nowMsProvider = { now[0] })
 
         buffer.enqueue(HidMode.MOUSE, byteArrayOf(0, 50, 0, 0), queuedAtMs = 10L)
         buffer.enqueue(HidMode.GAMEPAD, byteArrayOf(0, 0, 4, 0, 0, 0), queuedAtMs = 20L)
