@@ -1351,6 +1351,27 @@ class BleHidGateway(
                             }
                         }
 
+                        override fun onConnectionStateChange(
+                            device: BluetoothDevice,
+                            status: Int,
+                            newState: Int,
+                        ) {
+                            // A BLE feedback client (the host's
+                            // companion tool) connected or dropped. Stop
+                            // advertising once connected so the LE radio
+                            // stops broadcasting during an active
+                            // session — that airtime contends with the
+                            // BR/EDR HID interrupt channel and surfaces
+                            // as cursor jitter. Resume on disconnect so
+                            // the next session can rediscover us.
+                            // Idempotent: start/stop both no-op when the
+                            // advertiser is already in the target state.
+                            when (newState) {
+                                BluetoothProfile.STATE_CONNECTED -> stopFeedbackAdvertising()
+                                BluetoothProfile.STATE_DISCONNECTED -> startFeedbackAdvertising()
+                            }
+                        }
+
                         override fun onCharacteristicReadRequest(
                             device: BluetoothDevice,
                             requestId: Int,
@@ -1762,7 +1783,14 @@ class BleHidGateway(
         val settings =
             AdvertiseSettings
                 .Builder()
-                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                // BALANCED (~250 ms), not LOW_LATENCY (~100 ms). The
+                // feedback channel is discovered once per session, so
+                // aggressive LE advertising buys nothing — but its high
+                // duty cycle steals shared-antenna airtime from the
+                // BR/EDR HID interrupt channel, showing up as recurring
+                // `HID send` spikes during active touchpad use. BALANCED
+                // keeps discovery snappy while freeing radio time.
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
                 .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
                 .setConnectable(true)
                 .build()
