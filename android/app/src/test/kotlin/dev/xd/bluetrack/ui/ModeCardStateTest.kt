@@ -66,7 +66,9 @@ class ModeCardStateTest {
     @Test
     fun exactlyOneCardIsSelectedAcrossAllCombinations() {
         listOf(true, false).forEach { connected ->
-            HidMode.values().forEach { mode ->
+            // KEYBOARD is an orthogonal HID report path, never a
+            // selectable surface card — only MOUSE / GAMEPAD map to cards.
+            listOf(HidMode.MOUSE, HidMode.GAMEPAD).forEach { mode ->
                 val states = modeCardStates(currentMode = mode, hostConnected = connected)
                 assertEquals(
                     "currentMode=$mode hostConnected=$connected",
