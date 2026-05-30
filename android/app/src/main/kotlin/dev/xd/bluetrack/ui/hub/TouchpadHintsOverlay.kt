@@ -52,7 +52,15 @@ import dev.xd.bluetrack.ui.theme.BluetrackTheme
  *  - 1-finger drag → cursor motion.
  *  - 1-finger tap → left click.
  *  - 2-finger tap → right click (Mac trackpad convention).
- *  - 2-finger drag → scroll wheel.
+ *  - 2-finger drag → scroll wheel (vertical + horizontal AC Pan).
+ *  - 2-finger pinch → zoom (Cmd+= / Cmd+-).
+ *  - 3-finger swipe → desktop / Mission Control.
+ *  - 4-finger pinch / spread → Launchpad / Show Desktop.
+ *
+ * The copy deliberately stays a one-line Mac analogy rather than a
+ * gesture table (release plan §8): every gesture maps to the user's
+ * existing trackpad muscle memory, so a single reinforcing subline
+ * is the whole teaching surface.
  */
 @Composable
 fun TouchpadHintsOverlay(
@@ -116,6 +124,17 @@ fun TouchpadHintsOverlay(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                // One muted reinforcing line — the gestures are the
+                // same as macOS, so this nudges muscle memory without
+                // becoming a manual (release plan §8: no gesture table).
+                Text(
+                    text = "Pinch to zoom · swipe with 3 or 4 fingers · scroll any direction.",
+                    color = palette.fg3,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 12.dp),
                 )
                 var dismissPressed by remember { mutableStateOf(false) }
                 val dismissPressScale by animateFloatAsState(
