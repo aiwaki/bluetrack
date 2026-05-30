@@ -10,13 +10,14 @@ on:
         description: 'Tag to build (e.g. v3.0.0). Must already exist.'
         required: true
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   build-release:
     name: Build signed APK + AAB
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
