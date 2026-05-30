@@ -10,6 +10,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.BatteryManager
 import android.os.ParcelUuid
 import android.os.SystemClock
 import android.util.Log
@@ -127,6 +128,17 @@ class BleHidGateway(
         val FEEDBACK_SERVICE_UUID: UUID = UUID.fromString("0d03f2a3-b9b2-43f6-90ca-6c4ff67c2263")
         val FEEDBACK_CHARACTERISTIC_UUID: UUID = UUID.fromString("4846ff87-f2d4-4df2-9500-9bf8ed23f9e6")
         val HANDSHAKE_CHARACTERISTIC_UUID: UUID = UUID.fromString("4846ff88-f2d4-4df2-9500-9bf8ed23f9e6")
+
+        // Standard 16-bit Bluetooth SIG UUIDs expanded into the 128-bit
+        // base. 0x180F Battery Service, 0x2A19 Battery Level, 0x2902
+        // Client Characteristic Configuration (CCCD) for NOTIFY.
+        val BATTERY_SERVICE_UUID: UUID = UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb")
+        val BATTERY_LEVEL_CHARACTERISTIC_UUID: UUID = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb")
+        val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+
+        // Battery is notified at most this often when nothing changed;
+        // a level move or charging-state flip notifies immediately.
+        const val BATTERY_NOTIFY_MIN_INTERVAL_MS = 60_000L
     }
 
     private val trustedHosts = TrustedHostStore(context)
@@ -137,11 +149,25 @@ class BleHidGateway(
             .also { it.load() }
     private val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val adapter = btManager.adapter
+    private val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
     private var hid: BluetoothHidDevice? = null
     private var host: BluetoothDevice? = null
     private var gattServer: BluetoothGattServer? = null
     private var advertiser: BluetoothLeAdvertiser? = null
     private var advertiseCallback: AdvertiseCallback? = null
+
+    // GATT Battery Service (BAS, 0x180F) state. Public, no security
+    // gating — kept entirely separate from the encrypted feedback
+    // path. The characteristic is held so the battery receiver can
+    // push NOTIFY updates; `batterySubscribers` tracks devices that
+    // wrote the CCCD enable value. `lastBattery*` + `lastBatteryNotifyAtMs`
+    // feed the pure [BatteryNotifyPolicy] cadence decision.
+    private var batteryReceiver: BroadcastReceiver? = null
+    private var batteryLevelCharacteristic: BluetoothGattCharacteristic? = null
+    private val batterySubscribers = mutableSetOf<BluetoothDevice>()
+    private var lastBatteryLevel = -1
+    private var lastBatteryCharging: Boolean? = null
+    private var lastBatteryNotifyAtMs = 0L
     private var pendingMode = HidMode.MOUSE
     private var registeredMode: HidMode? = null
     private var registrationInFlight = false
@@ -1151,6 +1177,19 @@ class BleHidGateway(
             }
         }
         aclReceiver = null
+        batteryReceiver?.let {
+            try {
+                context.unregisterReceiver(it)
+            } catch (_: IllegalArgumentException) {
+                // Receiver wasn't registered (e.g. startGatt never ran).
+            }
+        }
+        batteryReceiver = null
+        batterySubscribers.clear()
+        batteryLevelCharacteristic = null
+        lastBatteryLevel = -1
+        lastBatteryCharging = null
+        lastBatteryNotifyAtMs = 0L
         hid = null
         host = null
         registeredMode = null
@@ -1411,23 +1450,46 @@ class BleHidGateway(
                             status: Int,
                             service: BluetoothGattService,
                         ) {
-                            if (service.uuid != FEEDBACK_SERVICE_UUID) return
-                            if (status == BluetoothGatt.GATT_SUCCESS) {
-                                updateStatus(
-                                    feedback = "Feedback service ready",
-                                    compatibility = snapshotCompatibility(),
-                                    eventSource = "Feedback",
-                                    eventMessage = "Feedback GATT service was added.",
-                                )
-                                startFeedbackAdvertising()
-                            } else {
-                                updateStatus(
-                                    feedback = "Feedback service failed",
-                                    compatibility = snapshotCompatibility(),
-                                    error = "Android rejected the BLE feedback GATT service: $status.",
-                                    eventSource = "Feedback",
-                                    eventMessage = "Feedback GATT service add failed with status $status.",
-                                )
+                            when (service.uuid) {
+                                FEEDBACK_SERVICE_UUID -> {
+                                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                                        updateStatus(
+                                            feedback = "Feedback service ready",
+                                            compatibility = snapshotCompatibility(),
+                                            eventSource = "Feedback",
+                                            eventMessage = "Feedback GATT service was added.",
+                                        )
+                                        startFeedbackAdvertising()
+                                        // Android serializes addService; add the
+                                        // battery service only now that the feedback
+                                        // service reported GATT_SUCCESS. Adding both
+                                        // back-to-back can drop the second
+                                        // registration.
+                                        gattServer?.let { addBatteryService(it) }
+                                    } else {
+                                        updateStatus(
+                                            feedback = "Feedback service failed",
+                                            compatibility = snapshotCompatibility(),
+                                            error = "Android rejected the BLE feedback GATT service: $status.",
+                                            eventSource = "Feedback",
+                                            eventMessage = "Feedback GATT service add failed with status $status.",
+                                        )
+                                    }
+                                }
+                                BATTERY_SERVICE_UUID -> {
+                                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                                        ensureBatteryReceiverRegistered()
+                                        updateStatus(
+                                            eventSource = "Battery",
+                                            eventMessage = "Battery GATT service was added.",
+                                        )
+                                    } else {
+                                        updateStatus(
+                                            eventSource = "Battery",
+                                            eventMessage = "Battery GATT service add failed with status $status.",
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -1448,7 +1510,12 @@ class BleHidGateway(
                             // advertiser is already in the target state.
                             when (newState) {
                                 BluetoothProfile.STATE_CONNECTED -> stopFeedbackAdvertising()
-                                BluetoothProfile.STATE_DISCONNECTED -> startFeedbackAdvertising()
+                                BluetoothProfile.STATE_DISCONNECTED -> {
+                                    synchronized(this@BleHidGateway) {
+                                        batterySubscribers.remove(device)
+                                    }
+                                    startFeedbackAdvertising()
+                                }
                             }
                         }
 
@@ -1458,17 +1525,51 @@ class BleHidGateway(
                             offset: Int,
                             characteristic: BluetoothGattCharacteristic,
                         ) {
-                            if (characteristic.uuid != HANDSHAKE_CHARACTERISTIC_UUID) {
-                                sendResponseSafely(device, requestId, BluetoothGatt.GATT_FAILURE, offset, null)
-                                return
+                            when (characteristic.uuid) {
+                                HANDSHAKE_CHARACTERISTIC_UUID -> {
+                                    val pub = decryptor.publicKey
+                                    if (offset > pub.size) {
+                                        sendResponseSafely(
+                                            device,
+                                            requestId,
+                                            BluetoothGatt.GATT_INVALID_OFFSET,
+                                            offset,
+                                            null,
+                                        )
+                                        return
+                                    }
+                                    val slice = pub.copyOfRange(offset, pub.size)
+                                    sendResponseSafely(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, slice)
+                                }
+                                BATTERY_LEVEL_CHARACTERISTIC_UUID -> {
+                                    val bytes = byteArrayOf(readBatteryLevel().toByte())
+                                    if (offset > bytes.size) {
+                                        sendResponseSafely(
+                                            device,
+                                            requestId,
+                                            BluetoothGatt.GATT_INVALID_OFFSET,
+                                            offset,
+                                            null,
+                                        )
+                                        return
+                                    }
+                                    sendResponseSafely(
+                                        device,
+                                        requestId,
+                                        BluetoothGatt.GATT_SUCCESS,
+                                        offset,
+                                        bytes.copyOfRange(offset, bytes.size),
+                                    )
+                                }
+                                else ->
+                                    sendResponseSafely(
+                                        device,
+                                        requestId,
+                                        BluetoothGatt.GATT_FAILURE,
+                                        offset,
+                                        null,
+                                    )
                             }
-                            val pub = decryptor.publicKey
-                            if (offset > pub.size) {
-                                sendResponseSafely(device, requestId, BluetoothGatt.GATT_INVALID_OFFSET, offset, null)
-                                return
-                            }
-                            val slice = pub.copyOfRange(offset, pub.size)
-                            sendResponseSafely(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, slice)
                         }
 
                         override fun onCharacteristicWriteRequest(
@@ -1507,6 +1608,52 @@ class BleHidGateway(
                                         offset,
                                         null,
                                     )
+                            }
+                        }
+
+                        override fun onDescriptorWriteRequest(
+                            device: BluetoothDevice,
+                            requestId: Int,
+                            descriptor: BluetoothGattDescriptor,
+                            preparedWrite: Boolean,
+                            responseNeeded: Boolean,
+                            offset: Int,
+                            value: ByteArray,
+                        ) {
+                            val isBatteryCccd =
+                                descriptor.uuid == CCCD_UUID &&
+                                    descriptor.characteristic?.uuid == BATTERY_LEVEL_CHARACTERISTIC_UUID
+                            if (!isBatteryCccd) {
+                                if (responseNeeded) {
+                                    sendResponseSafely(
+                                        device,
+                                        requestId,
+                                        BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED,
+                                        offset,
+                                        null,
+                                    )
+                                }
+                                return
+                            }
+                            val enable =
+                                value.size >= 2 &&
+                                    value[0] == BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE[0] &&
+                                    value[1] == BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE[1]
+                            synchronized(this@BleHidGateway) {
+                                if (enable) {
+                                    batterySubscribers.add(device)
+                                } else {
+                                    batterySubscribers.remove(device)
+                                }
+                            }
+                            if (responseNeeded) {
+                                sendResponseSafely(
+                                    device,
+                                    requestId,
+                                    BluetoothGatt.GATT_SUCCESS,
+                                    offset,
+                                    value,
+                                )
                             }
                         }
                     },
@@ -1553,6 +1700,112 @@ class BleHidGateway(
                 eventSource = "Feedback",
                 eventMessage = "BluetoothGattServer.addService returned false.",
             )
+        }
+    }
+
+    /**
+     * Build and register the GATT Battery Service (0x180F) with a
+     * READ + NOTIFY Battery Level characteristic (0x2A19) plus its
+     * CCCD (0x2902). Called from `onServiceAdded` only after the
+     * feedback service reports GATT_SUCCESS — Android serializes
+     * addService and adding both at once can drop one.
+     */
+    private fun addBatteryService(server: BluetoothGattServer) {
+        val service =
+            BluetoothGattService(
+                BATTERY_SERVICE_UUID,
+                BluetoothGattService.SERVICE_TYPE_PRIMARY,
+            )
+        val level =
+            BluetoothGattCharacteristic(
+                BATTERY_LEVEL_CHARACTERISTIC_UUID,
+                BluetoothGattCharacteristic.PROPERTY_READ or
+                    BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+                BluetoothGattCharacteristic.PERMISSION_READ,
+            )
+        level.addDescriptor(
+            BluetoothGattDescriptor(
+                CCCD_UUID,
+                BluetoothGattDescriptor.PERMISSION_READ or
+                    BluetoothGattDescriptor.PERMISSION_WRITE,
+            ),
+        )
+        service.addCharacteristic(level)
+        batteryLevelCharacteristic = level
+        if (!server.addService(service)) {
+            updateStatus(
+                eventSource = "Battery",
+                eventMessage = "BluetoothGattServer.addService(battery) returned false.",
+            )
+        }
+    }
+
+    /** Current battery percentage clamped to the BAS-legal 0..100. */
+    private fun readBatteryLevel(): Int =
+        batteryManager
+            .getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            .coerceIn(0, 100)
+
+    private fun ensureBatteryReceiverRegistered() {
+        if (batteryReceiver != null) return
+        val receiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(receivedContext: Context?, intent: Intent?) {
+                    if (intent?.action != Intent.ACTION_BATTERY_CHANGED) return
+                    val status =
+                        intent.getIntExtra(
+                            BatteryManager.EXTRA_STATUS,
+                            BatteryManager.BATTERY_STATUS_UNKNOWN,
+                        )
+                    val charging =
+                        status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                            status == BatteryManager.BATTERY_STATUS_FULL
+                    onBatteryChanged(readBatteryLevel(), charging)
+                }
+            }
+        try {
+            context.registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            batteryReceiver = receiver
+        } catch (_: SecurityException) {
+            // Battery is public; no permission gating. Best-effort.
+        }
+    }
+
+    @Synchronized
+    private fun onBatteryChanged(level: Int, charging: Boolean) {
+        val now = SystemClock.elapsedRealtime()
+        val notify =
+            BatteryNotifyPolicy.shouldNotify(
+                lastLevel = lastBatteryLevel,
+                newLevel = level,
+                lastCharging = lastBatteryCharging,
+                newCharging = charging,
+                lastNotifyAtMs = lastBatteryNotifyAtMs,
+                nowMs = now,
+                minIntervalMs = BATTERY_NOTIFY_MIN_INTERVAL_MS,
+            )
+        lastBatteryLevel = level
+        lastBatteryCharging = charging
+        if (!notify) return
+        lastBatteryNotifyAtMs = now
+        notifyBatterySubscribers(level)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun notifyBatterySubscribers(level: Int) {
+        val server = gattServer ?: return
+        val characteristic = batteryLevelCharacteristic ?: return
+        val subscribers = batterySubscribers.toList()
+        if (subscribers.isEmpty()) return
+        @Suppress("DEPRECATION")
+        characteristic.value = byteArrayOf(level.toByte())
+        for (device in subscribers) {
+            try {
+                @Suppress("DEPRECATION")
+                server.notifyCharacteristicChanged(device, characteristic, false)
+            } catch (_: SecurityException) {
+                reportPermissionMissing()
+            }
         }
     }
 

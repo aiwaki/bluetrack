@@ -97,6 +97,20 @@ Targets `versionName 3.0.0` / `versionCode 3` once UI redesign lands.
 
 ### Protocol & Security
 
+- **#71** Add a standalone GATT Battery Service (`0x180F`) alongside the
+  feedback service so bonded hosts show the phone's battery level next
+  to "Bluetrack" in their Bluetooth menu. Battery Level characteristic
+  (`0x2A19`, READ + NOTIFY, uint8 0..100) sourced from
+  `BatteryManager.BATTERY_PROPERTY_CAPACITY`; CCCD (`0x2902`) tracks
+  notify subscribers; a runtime `ACTION_BATTERY_CHANGED` receiver
+  notifies on level change, charging-state flip, or every 60 s. The
+  service is added from inside `onServiceAdded` only after the feedback
+  service reports `GATT_SUCCESS` (Android serializes `addService`). No
+  security gating — battery is public; the encrypted feedback handshake
+  / crypto path is untouched. Cadence rule extracted to a pure
+  `BatteryNotifyPolicy` with 5 JUnit cases. **No re-pair**: adding a
+  GATT service does not change the HID descriptor or the feedback
+  service shape, so bonded hosts keep working.
 - **#34** Persist lifetime HID + feedback + rejection counters across
   process kill (SharedPreferences-backed `LifetimeCountersStore`,
   throttled `LifetimeCountersAccumulator`). 11 new JUnit cases.
