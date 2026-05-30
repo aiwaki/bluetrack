@@ -59,6 +59,23 @@ Targets `versionName 3.0.0` / `versionCode 3` once UI redesign lands.
 
 ### Input & HID
 
+- **#77** Wire the Mac-trackpad gesture handlers that feed #72's
+  keyboard + AC Pan data path (the triggers #72 left dark). Pure
+  classification lives in a new Android-free `TouchGestureClassifier`
+  (GatewayStatusReducer pattern, 19 JUnit cases); `MainActivity`'s
+  touch listener keeps only the stateful tracking and routes:
+  2-finger horizontal scroll → AC Pan via two-axis `processScroll`
+  (X-velocity EMA + fling, vertical feel unchanged); 2-finger pinch
+  → `Cmd+=` / `Cmd+-` (first-MOVE pinch-vs-scroll latch at 1.5×,
+  one chord per 36 dp notch); 3-finger swipe → `Ctrl+Left/Right`,
+  `F3`, `Ctrl+Down` past 80 dp; 4-finger pinch / spread → `F4` /
+  `F11` one-shot at 80 dp; palm-slap reject on a `<2→≥4` pointer
+  jump that skips 3 inside 80 ms. Chords route to keyboard report
+  ID 3 and are mouse-mode-gated, so gamepad mode is untouched; no
+  work runs on the input pacer. A one-line subline in the touchpad
+  hints overlay nudges the new gestures. **No re-pair**: the HID
+  descriptor already shipped in #72 — this PR is phone-side gesture
+  detection only, the report map is unchanged.
 - **#72** Composite HID descriptor gains a keyboard (report ID 3,
   8-byte boot-protocol layout: modifier byte + reserved + six
   keycodes) and a Consumer-page AC Pan byte on the mouse report —
