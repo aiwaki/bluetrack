@@ -1079,7 +1079,11 @@ class BleHidGateway(
             val sent =
                 device?.sendReport(
                     target,
-                    if (mode == HidMode.MOUSE) MOUSE_REPORT_ID else GAMEPAD_REPORT_ID,
+                    when (mode) {
+                        HidMode.MOUSE -> MOUSE_REPORT_ID
+                        HidMode.GAMEPAD -> GAMEPAD_REPORT_ID
+                        HidMode.KEYBOARD -> KEYBOARD_REPORT_ID
+                    },
                     report,
                 ) == true
             synchronized(this) {

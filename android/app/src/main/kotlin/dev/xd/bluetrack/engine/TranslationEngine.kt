@@ -24,13 +24,24 @@ class TranslationEngine(
     //   [0] buttons (low 3 bits + 5 padding)
     //   [1] X delta (signed 8-bit)
     //   [2] Y delta (signed 8-bit)
-    //   [3] Wheel (signed 8-bit) — Usage 0x38 is already declared
-    //       in the descriptor, no re-pair needed to start writing
-    //       to it.
-    private val mouseReport = byteArrayOf(0, 0, 0, 0)
+    //   [3] Wheel vertical (signed 8-bit) — Usage 0x38
+    //   [4] Wheel horizontal — AC Pan (signed 8-bit). NEW byte;
+    //       requires the re-paired descriptor that declares the
+    //       Consumer-page AC Pan usage.
+    private val mouseReport = byteArrayOf(0, 0, 0, 0, 0)
     private var mouseCarryX = 0f
     private var mouseCarryY = 0f
     private var wheelCarryY = 0f
+    private var wheelCarryX = 0f
+
+    // Keyboard report (boot protocol, report ID 3): [0] modifier
+    // bitmask, [1] reserved, [2..7] up to 6 simultaneous keycodes
+    // (HID Usage page 0x07). Driven by the Mac-trackpad gesture
+    // handlers (pinch zoom, 3/4-finger swipes) which map to
+    // Cmd/Ctrl/F-key chords the host's shortcut hooks honour.
+    private val keyboardReport = ByteArray(8)
+    private var keyboardModifiers = 0
+    private val keycodesPressed = LinkedHashSet<Int>()
 
     // Latched mouse button bits (L=1, R=2, M=4) mirrored into
     // `mouseReport[0]` on every emit so motion / wheel frames
@@ -85,10 +96,11 @@ class TranslationEngine(
             mouseReport[0] = (mouseButtons and 0x07).toByte()
             mouseReport[1] = mouseX.toByte()
             mouseReport[2] = mouseY.toByte()
-            // Wheel byte is reset on every motion frame so a stale
+            // Wheel bytes reset on every motion frame so a stale
             // value from the last 2-finger scroll never lingers
             // into a 1-finger drag.
             mouseReport[3] = 0
+            mouseReport[4] = 0
             send(mouseReport)
         }
         publishTelemetry(Telemetry(rx, ry, sx, sy))
@@ -153,25 +165,29 @@ class TranslationEngine(
      */
     fun processWheel(
         dy: Float,
+        dx: Float,
         send: (ByteArray) -> Unit,
     ) {
-        val carried = dy + wheelCarryY
-        // Cap per-emit wheel travel to keep scroll smooth on
-        // hosts that interpret each integer as one wheel notch.
+        val carriedY = dy + wheelCarryY
+        val carriedX = dx + wheelCarryX
+        // Cap per-emit wheel travel per axis to keep scroll smooth
+        // on hosts that interpret each integer as one wheel notch.
         // The full HID range is ±127, but anything past ~3 in a
         // single report triggers macOS's accelerated-scroll
-        // heuristic and the screen lurches. Residual travel
-        // beyond the cap stays in `wheelCarryY` and emits on the
-        // next pacer tick, so total scroll distance is preserved
-        // — just spread out as several small notches instead of
-        // one big jump.
-        val whole = carried.roundToInt().coerceIn(-MAX_WHEEL_PER_EMIT, MAX_WHEEL_PER_EMIT)
-        wheelCarryY = carried - whole
-        if (whole == 0) return
+        // heuristic and the screen lurches. Residual travel beyond
+        // the cap stays in the per-axis carry and emits on the next
+        // pacer tick, so total scroll distance is preserved — just
+        // spread out as several small notches instead of one jump.
+        val wholeY = carriedY.roundToInt().coerceIn(-MAX_WHEEL_PER_EMIT, MAX_WHEEL_PER_EMIT)
+        val wholeX = carriedX.roundToInt().coerceIn(-MAX_WHEEL_PER_EMIT, MAX_WHEEL_PER_EMIT)
+        wheelCarryY = carriedY - wholeY
+        wheelCarryX = carriedX - wholeX
+        if (wholeY == 0 && wholeX == 0) return
         mouseReport[0] = (mouseButtons and 0x07).toByte()
         mouseReport[1] = 0
         mouseReport[2] = 0
-        mouseReport[3] = whole.toByte()
+        mouseReport[3] = wholeY.toByte()
+        mouseReport[4] = wholeX.toByte()
         send(mouseReport)
     }
 
@@ -202,7 +218,71 @@ class TranslationEngine(
         mouseReport[1] = 0
         mouseReport[2] = 0
         mouseReport[3] = 0
+        mouseReport[4] = 0
         send(mouseReport)
+    }
+
+    /**
+     * Press one or more keyboard keys. [modifier] is an OR of the
+     * `HidKeys.MOD_*` bitmasks (held in the report's modifier byte
+     * until [processKeyUp] clears them); [keycode] is a HID Usage
+     * page 0x07 code, or 0 for a modifier-only chord. Up to 6
+     * keycodes roll over simultaneously (boot-keyboard limit);
+     * extra presses past 6 are dropped until a key releases.
+     */
+    fun processKeyDown(
+        modifier: Int,
+        keycode: Int,
+        send: (ByteArray) -> Unit,
+    ) {
+        keyboardModifiers = keyboardModifiers or modifier
+        if (keycode == 0) {
+            emitKeyboard(send)
+        } else if (keycodesPressed.size < MAX_KEYCODES && keycodesPressed.add(keycode)) {
+            emitKeyboard(send)
+        }
+    }
+
+    /**
+     * Release [keycode] and clear [modifier] bits, then emit the
+     * updated report. Releasing a key not currently down still
+     * emits (harmless idempotent refresh).
+     */
+    fun processKeyUp(
+        modifier: Int,
+        keycode: Int,
+        send: (ByteArray) -> Unit,
+    ) {
+        keyboardModifiers = keyboardModifiers and modifier.inv()
+        keycodesPressed.remove(keycode)
+        emitKeyboard(send)
+    }
+
+    /**
+     * Fire a complete key chord: down then immediately up. Used by
+     * the Mac-trackpad gesture handlers, which map each gesture to
+     * one discrete shortcut keystroke (e.g. Cmd+= zoom, F3 Mission
+     * Control).
+     */
+    fun tapKey(
+        modifier: Int,
+        keycode: Int,
+        send: (ByteArray) -> Unit,
+    ) {
+        processKeyDown(modifier, keycode, send)
+        processKeyUp(modifier, keycode, send)
+    }
+
+    private fun emitKeyboard(send: (ByteArray) -> Unit) {
+        keyboardReport[0] = (keyboardModifiers and 0xFF).toByte()
+        keyboardReport[1] = 0
+        var i = 2
+        for (kc in keycodesPressed) {
+            if (i >= keyboardReport.size) break
+            keyboardReport[i++] = kc.toByte()
+        }
+        while (i < keyboardReport.size) keyboardReport[i++] = 0
+        send(keyboardReport)
     }
 
     private fun quantizeMouseDelta(
@@ -232,10 +312,34 @@ class TranslationEngine(
         const val NANOS_PER_MS = 1_000_000L
         const val TELEMETRY_INTERVAL_MS = 100L
         const val MAX_WHEEL_PER_EMIT = 1
+        const val MAX_KEYCODES = 6
     }
 }
 
-enum class HidMode { MOUSE, GAMEPAD }
+enum class HidMode { MOUSE, GAMEPAD, KEYBOARD }
+
+/**
+ * HID Usage page 0x07 keycodes + modifier bitmasks used by the
+ * Mac-trackpad gesture → keyboard-chord mappings (pinch zoom,
+ * 3/4-finger swipes). Kept public so [TranslationEngine.tapKey]
+ * callers (gesture handlers) and unit tests share one source.
+ */
+object HidKeys {
+    const val MOD_LCTRL = 0x01
+    const val MOD_LSHIFT = 0x02
+    const val MOD_LALT = 0x04
+    const val MOD_LGUI = 0x08
+
+    const val KC_F3 = 0x3C
+    const val KC_F4 = 0x3D
+    const val KC_F11 = 0x44
+    const val KC_RIGHT = 0x4F
+    const val KC_LEFT = 0x50
+    const val KC_DOWN = 0x51
+    const val KC_UP = 0x52
+    const val KC_EQUAL = 0x2E
+    const val KC_MINUS = 0x2D
+}
 data class Telemetry(
     val rawX: Int = 0,
     val rawY: Int = 0,
