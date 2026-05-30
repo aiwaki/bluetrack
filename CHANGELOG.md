@@ -57,6 +57,27 @@ Targets `versionName 3.0.0` / `versionCode 3` once UI redesign lands.
   `hostKinds`-based discoverability guard. 25 files changed,
   ~1100 insertions across three squash-mergeable commits.
 
+### Input & HID
+
+- **#72** Composite HID descriptor gains a keyboard (report ID 3,
+  8-byte boot-protocol layout: modifier byte + reserved + six
+  keycodes) and a Consumer-page AC Pan byte on the mouse report —
+  the mouse frame widens to 5 bytes `[buttons, dx, dy, wheelY,
+  wheelX]`. Data path behind the descriptor: `TranslationEngine`
+  grows `processKeyDown` / `processKeyUp` / `tapKey` (modifier byte
+  + six-keycode rollover) and a two-axis `processWheel` with
+  per-axis fractional carry; `HidOutputBuffer` drains keyboard
+  frames through an independent pass-through FIFO so a key chord
+  never coalesces with — or wipes — pending cursor motion; the 8 ms
+  input pacer carries both wheel axes; `BleHidGateway.send` routes
+  `HidMode.KEYBOARD` to report ID 3. 11 new JUnit cases
+  (`TranslationEngineKeyboardTest`, `HidOutputBufferTest`). The
+  Mac-trackpad gesture handlers that feed these paths (pinch zoom,
+  horizontal scroll, multi-finger swipes) land in a follow-up PR.
+  **Forced re-pair**: HID descriptor shape changed — hosts (macOS,
+  Windows, …) cache the report map and must "Forget This Device"
+  and pair fresh.
+
 ### Protocol & Security
 
 - **#34** Persist lifetime HID + feedback + rejection counters across
