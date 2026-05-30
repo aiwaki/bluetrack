@@ -95,9 +95,11 @@ def _build_handshake(
     eph_pub: bytes, id_priv: Ed25519PrivateKey, id_pub: bytes
 ) -> bytes:
     sig = id_priv.sign(eph_pub)
-    assert len(sig) == IDENTITY_SIGNATURE_SIZE
+    if len(sig) != IDENTITY_SIGNATURE_SIZE:
+        raise AssertionError
     payload = eph_pub + id_pub + sig
-    assert len(payload) == HANDSHAKE_WIRE_SIZE
+    if len(payload) != HANDSHAKE_WIRE_SIZE:
+        raise AssertionError
     return payload
 
 
@@ -135,9 +137,12 @@ def main() -> None:
     shared_check, aes_key_check, nonce_salt_check = _derive_session(
         phone_x_priv, host_x_pub, PIN
     )
-    assert shared_check == shared, "X25519 ECDH mismatch"
-    assert aes_key_check == aes_key, "AES key derivation mismatch"
-    assert nonce_salt_check == nonce_salt, "Nonce salt derivation mismatch"
+    if shared_check != shared:
+        raise AssertionError("X25519 ECDH mismatch")
+    if aes_key_check != aes_key:
+        raise AssertionError("AES key derivation mismatch")
+    if nonce_salt_check != nonce_salt:
+        raise AssertionError("Nonce salt derivation mismatch")
 
     # Frames at varied counters and floats. Includes counter 0 to lock
     # in nonce layout and counter 0xFFFFFFFF to lock in wrap behaviour.
@@ -152,7 +157,8 @@ def main() -> None:
     frames = []
     for counter, dx, dy in cases:
         encrypted = _frame(counter, dx, dy, aes_key, nonce_salt)
-        assert len(encrypted) == FRAME_SIZE
+        if not len(encrypted) == FRAME_SIZE:
+            raise AssertionError()
         frames.append(
             {
                 "counter": counter,
