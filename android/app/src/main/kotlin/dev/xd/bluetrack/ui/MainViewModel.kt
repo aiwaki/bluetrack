@@ -67,6 +67,12 @@ class MainViewModel(
     // pendingDy) so a 1-finger drag and a 2-finger scroll within
     // the same gesture do not collide on the same delta channel.
     private var pendingWheelDy = 0f
+
+    // Two-finger horizontal scroll → AC Pan (wheel byte 4). Separate
+    // accumulator from pendingWheelDy so a diagonal 2-finger drag feeds
+    // both wheel axes independently without one channel clobbering the
+    // other.
+    private var pendingWheelDx = 0f
     private var pendingMode = HidMode.MOUSE
     private var lastQueuedInputAtMs = 0L
     private var lastRecordedInputAtMs = 0L
@@ -143,6 +149,7 @@ class MainViewModel(
             pendingDx = 0f
             pendingDy = 0f
             pendingWheelDy = 0f
+            pendingWheelDx = 0f
             pendingMode = mode
         }
         hidOutputBuffer.clear()
@@ -164,6 +171,7 @@ class MainViewModel(
             pendingDx = 0f
             pendingDy = 0f
             pendingWheelDy = 0f
+            pendingWheelDx = 0f
         }
         touchMotionPredictor.reset()
     }
@@ -279,18 +287,43 @@ class MainViewModel(
     }
 
     /**
+     * Fire a keyboard shortcut chord (key down + up) from a
+     * Mac-trackpad gesture (pinch zoom, 3/4-finger swipe). [modifier]
+     * is an OR of `HidKeys.MOD_*`; [keycode] is a HID Usage page 0x07
+     * code (0 = modifier-only chord). Mouse mode only.
+     *
+     * The keyboard report path is orthogonal to the active mouse path:
+     * it rides its own pass-through queue in [HidOutputBuffer] (report
+     * ID 3) so a chord never disturbs in-flight cursor motion.
+     */
+    fun tapHidKey(
+        modifier: Int,
+        keycode: Int,
+    ) {
+        if (_mode.value != HidMode.MOUSE) return
+        recordInputThrottled("Keyboard", SystemClock.elapsedRealtime())
+        engine.tapKey(modifier, keycode) { report ->
+            enqueueHidReport(HidMode.KEYBOARD, report)
+        }
+    }
+
+    /**
      * Touchpad two-finger scroll → wheel byte. Caller supplies a
      * pre-scaled wheel delta (typically `−touchDy / pxPerTick`).
      * Mouse mode only — gamepad mode silently ignores so a stray
      * 2-finger swipe over the gamepad layout never emits stick
      * input. Drains alongside motion in the input pacer.
      */
-    fun processScroll(wheelDy: Float) {
+    fun processScroll(
+        wheelDy: Float,
+        wheelDx: Float = 0f,
+    ) {
         if (_mode.value != HidMode.MOUSE) return
         val now = SystemClock.elapsedRealtime()
         recordInputThrottled("Touchpad", now)
         synchronized(inputLock) {
             pendingWheelDy += wheelDy
+            pendingWheelDx += wheelDx
             lastQueuedInputAtMs = now
         }
         ensureInputPacer()
@@ -467,19 +500,22 @@ class MainViewModel(
                             val dx = pendingDx
                             val dy = pendingDy
                             val wheel = pendingWheelDy
+                            val wheelX = pendingWheelDx
                             val idle = SystemClock.elapsedRealtime() - lastQueuedInputAtMs > INPUT_IDLE_STOP_MS
                             val motionEmpty = abs(dx) <= INPUT_EPSILON && abs(dy) <= INPUT_EPSILON
-                            val wheelEmpty = abs(wheel) <= INPUT_EPSILON
+                            val wheelEmpty = abs(wheel) <= INPUT_EPSILON && abs(wheelX) <= INPUT_EPSILON
                             if (motionEmpty && wheelEmpty) {
                                 if (idle) InputFrame.STOP else null
                             } else {
                                 pendingDx = 0f
                                 pendingDy = 0f
                                 pendingWheelDy = 0f
+                                pendingWheelDx = 0f
                                 InputFrame(
                                     dx = dx,
                                     dy = dy,
                                     wheelDy = wheel,
+                                    wheelDx = wheelX,
                                     mode = pendingMode,
                                     queuedAtMs = lastQueuedInputAtMs,
                                 )
@@ -498,8 +534,10 @@ class MainViewModel(
                     // motion or scroll) does not let the motion
                     // report's wheel=0 byte clobber an intended
                     // scroll tick.
-                    if (abs(frame.wheelDy) > INPUT_EPSILON && frame.mode == HidMode.MOUSE) {
-                        engine.processWheel(frame.wheelDy) { report ->
+                    if ((abs(frame.wheelDy) > INPUT_EPSILON || abs(frame.wheelDx) > INPUT_EPSILON) &&
+                        frame.mode == HidMode.MOUSE
+                    ) {
+                        engine.processWheel(frame.wheelDy, frame.wheelDx) { report ->
                             enqueueHidReport(frame.mode, report)
                         }
                     }
@@ -515,7 +553,8 @@ class MainViewModel(
                             inputPacerJob = null
                             abs(pendingDx) > INPUT_EPSILON ||
                                 abs(pendingDy) > INPUT_EPSILON ||
-                                abs(pendingWheelDy) > INPUT_EPSILON
+                                abs(pendingWheelDy) > INPUT_EPSILON ||
+                                abs(pendingWheelDx) > INPUT_EPSILON
                         } else {
                             false
                         }
@@ -592,6 +631,7 @@ class MainViewModel(
         val mode: HidMode,
         val queuedAtMs: Long,
         val wheelDy: Float = 0f,
+        val wheelDx: Float = 0f,
     ) {
         companion object {
             val STOP = InputFrame(0f, 0f, HidMode.MOUSE, 0L)

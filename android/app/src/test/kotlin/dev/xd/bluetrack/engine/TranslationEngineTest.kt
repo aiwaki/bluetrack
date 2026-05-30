@@ -20,7 +20,7 @@ class TranslationEngineTest {
             reports += report.copyOf()
         }
 
-        assertArrayEquals(byteArrayOf(0, 127.toByte(), (-127).toByte(), 0), reports.single())
+        assertArrayEquals(byteArrayOf(0, 127.toByte(), (-127).toByte(), 0, 0), reports.single())
     }
 
     @Test
@@ -32,9 +32,9 @@ class TranslationEngineTest {
         engine.processMouseToStick(0.4f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
         engine.processMouseToStick(0.4f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
 
-        assertArrayEquals(byteArrayOf(0, 0, 0, 0), reports[0])
-        assertArrayEquals(byteArrayOf(0, 1, 0, 0), reports[1])
-        assertArrayEquals(byteArrayOf(0, 0, 0, 0), reports[2])
+        assertArrayEquals(byteArrayOf(0, 0, 0, 0, 0), reports[0])
+        assertArrayEquals(byteArrayOf(0, 1, 0, 0, 0), reports[1])
+        assertArrayEquals(byteArrayOf(0, 0, 0, 0, 0), reports[2])
     }
 
     @Test
@@ -45,8 +45,8 @@ class TranslationEngineTest {
         engine.processMouseToStick(200f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
         engine.processMouseToStick(0f, 0f, HidMode.MOUSE) { report -> reports += report.copyOf() }
 
-        assertArrayEquals(byteArrayOf(0, 127.toByte(), 0, 0), reports[0])
-        assertArrayEquals(byteArrayOf(0, 73, 0, 0), reports[1])
+        assertArrayEquals(byteArrayOf(0, 127.toByte(), 0, 0, 0), reports[0])
+        assertArrayEquals(byteArrayOf(0, 73, 0, 0, 0), reports[1])
     }
 
     @Test

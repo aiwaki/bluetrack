@@ -111,6 +111,7 @@ class BleHidGateway(
         const val TAG = "Bluetrack"
         const val MOUSE_REPORT_ID = 1
         const val GAMEPAD_REPORT_ID = 2
+        const val KEYBOARD_REPORT_ID = 3
         const val REPORT_STATUS_INTERVAL_MS = 250L
         const val REPORT_EVENT_INTERVAL = 50
         const val GAMEPAD_WAKE_PRIME_MS = 40L
@@ -290,6 +291,25 @@ class BleHidGateway(
             0x03,
             0x81.toByte(),
             0x06,
+            // Horizontal wheel (AC Pan) — Consumer page usage 0x0238,
+            // appended inside the same physical-mouse collection.
+            // macOS + Windows read it as the mouse's horizontal
+            // scroll axis. Grows the mouse report to a 5th byte [4].
+            0x05,
+            0x0C,
+            0x0A,
+            0x38,
+            0x02,
+            0x15,
+            0x81.toByte(),
+            0x25,
+            0x7F,
+            0x75,
+            0x08,
+            0x95.toByte(),
+            0x01,
+            0x81.toByte(),
+            0x06,
             0xC0.toByte(),
             0xC0.toByte(),
         )
@@ -374,7 +394,63 @@ class BleHidGateway(
             0x02,
             0xC0.toByte(),
         )
-    private val compositeDesc = mouseDesc + gamepadDesc
+
+    // Boot-protocol keyboard, report ID 3. Modifier byte + 1
+    // reserved + 6 keycodes (HID Usage page 0x07). OS-level
+    // shortcut hooks (macOS event tap, Windows low-level keyboard
+    // hook) see these the same way as a hardware BT keyboard, so
+    // Mac trackpad gestures can map to real Cmd/Ctrl/F-key chords.
+    private val keyboardDesc =
+        byteArrayOf(
+            0x05,
+            0x01,
+            0x09,
+            0x06,
+            0xA1.toByte(),
+            0x01,
+            0x85.toByte(),
+            KEYBOARD_REPORT_ID.toByte(),
+            0x05,
+            0x07,
+            0x19,
+            0xE0.toByte(),
+            0x29,
+            0xE7.toByte(),
+            0x15,
+            0x00,
+            0x25,
+            0x01,
+            0x75,
+            0x01,
+            0x95.toByte(),
+            0x08,
+            0x81.toByte(),
+            0x02,
+            0x95.toByte(),
+            0x01,
+            0x75,
+            0x08,
+            0x81.toByte(),
+            0x01,
+            0x95.toByte(),
+            0x06,
+            0x75,
+            0x08,
+            0x15,
+            0x00,
+            0x25,
+            0x65,
+            0x05,
+            0x07,
+            0x19,
+            0x00,
+            0x29,
+            0x65,
+            0x81.toByte(),
+            0x00,
+            0xC0.toByte(),
+        )
+    private val compositeDesc = mouseDesc + gamepadDesc + keyboardDesc
 
     @Synchronized
     fun initialize(announceCompatibility: Boolean = true) {
@@ -1003,7 +1079,11 @@ class BleHidGateway(
             val sent =
                 device?.sendReport(
                     target,
-                    if (mode == HidMode.MOUSE) MOUSE_REPORT_ID else GAMEPAD_REPORT_ID,
+                    when (mode) {
+                        HidMode.MOUSE -> MOUSE_REPORT_ID
+                        HidMode.GAMEPAD -> GAMEPAD_REPORT_ID
+                        HidMode.KEYBOARD -> KEYBOARD_REPORT_ID
+                    },
                     report,
                 ) == true
             synchronized(this) {

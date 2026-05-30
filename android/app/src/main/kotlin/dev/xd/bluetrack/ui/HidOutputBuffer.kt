@@ -14,7 +14,14 @@ internal class HidOutputBuffer(
     private var mouseDx = 0
     private var mouseDy = 0
     private var mouseWheel = 0
+    private var mouseWheelX = 0
     private var mouseQueuedAtMs = 0L
+
+    // Keyboard frames ride their own pass-through FIFO queue: enqueueing
+    // one never triggers the mouse/gamepad coalesce-or-clear path, so a
+    // gesture-driven key chord can't wipe pending cursor motion. Drained
+    // first in poll().
+    private val keyboardReports = ArrayDeque<OutputFrame>()
 
     fun enqueue(
         mode: HidMode,
@@ -22,20 +29,32 @@ internal class HidOutputBuffer(
         queuedAtMs: Long,
     ) {
         synchronized(lock) {
+            // Keyboard is orthogonal: queue it without touching `mode`
+            // or the mouse/gamepad coalesce-clear below.
+            if (mode == HidMode.KEYBOARD) {
+                enqueueKeyboard(report, queuedAtMs)
+                return@synchronized
+            }
             if (this.mode != null && this.mode != mode) {
                 clearLocked()
             }
             when (mode) {
                 HidMode.MOUSE -> enqueueMouse(report, queuedAtMs)
                 HidMode.GAMEPAD -> enqueueGamepad(report, queuedAtMs)
+                HidMode.KEYBOARD -> {} // handled above
             }
         }
     }
 
     fun poll(): OutputFrame? = synchronized(lock) {
+        // Keyboard frames drain first, ahead of the active mouse/gamepad
+        // path, so a gesture chord lands promptly without waiting on a
+        // motion backlog.
+        keyboardReports.removeFirstOrNull()?.let { return@synchronized it }
         when (mode) {
             HidMode.MOUSE -> pollMouse()
             HidMode.GAMEPAD -> pollGamepad()
+            HidMode.KEYBOARD -> null
             null -> null
         }
     }
@@ -47,7 +66,7 @@ internal class HidOutputBuffer(
     }
 
     fun hasPending(): Boolean = synchronized(lock) {
-        hasMouseReport || gamepadReports.isNotEmpty()
+        hasMouseReport || gamepadReports.isNotEmpty() || keyboardReports.isNotEmpty()
     }
 
     private fun enqueueMouse(
@@ -58,6 +77,7 @@ internal class HidOutputBuffer(
         val dx = report.getOrElse(1) { 0 }.toInt()
         val dy = report.getOrElse(2) { 0 }.toInt()
         val wheel = report.getOrElse(3) { 0 }.toInt()
+        val wheelX = report.getOrElse(4) { 0 }.toInt()
         // Suppress idle noise but ALWAYS accept a button state
         // change — including the trailing release report
         // `[0,0,0,0]` after the user holds the touchpad button
@@ -67,7 +87,7 @@ internal class HidOutputBuffer(
         // selection drag kept running once the user moved to
         // their real trackpad.
         val buttonsChanged = buttons != mouseButtons
-        if (!buttonsChanged && dx == 0 && dy == 0 && wheel == 0) return
+        if (!buttonsChanged && dx == 0 && dy == 0 && wheel == 0 && wheelX == 0) return
 
         mode = HidMode.MOUSE
         // Drop accumulated motion if the buffered frame is older
@@ -81,6 +101,7 @@ internal class HidOutputBuffer(
             mouseDx = 0
             mouseDy = 0
             mouseWheel = 0
+            mouseWheelX = 0
         }
         if (!hasMouseReport) {
             mouseQueuedAtMs = queuedAtMs
@@ -95,6 +116,7 @@ internal class HidOutputBuffer(
         mouseDx += dx
         mouseDy += dy
         mouseWheel += wheel
+        mouseWheelX += wheelX
         // Cap accumulated cursor backlog so a sender stall does
         // not let dozens of pacer drains stack into a single
         // burst when the link recovers — the user's intent for
@@ -119,6 +141,7 @@ internal class HidOutputBuffer(
         // stall but short enough that a long held-press doesn't
         // queue absurd amounts of pending scroll.
         mouseWheel = mouseWheel.coerceIn(-MAX_WHEEL_PER_POLL, MAX_WHEEL_PER_POLL)
+        mouseWheelX = mouseWheelX.coerceIn(-MAX_WHEEL_PER_POLL, MAX_WHEEL_PER_POLL)
     }
 
     private fun enqueueGamepad(
@@ -132,6 +155,18 @@ internal class HidOutputBuffer(
         gamepadReports.addLast(OutputFrame(HidMode.GAMEPAD, report.copyOf(), queuedAtMs))
     }
 
+    private fun enqueueKeyboard(
+        report: ByteArray,
+        queuedAtMs: Long,
+    ) {
+        // Bounded like the gamepad queue so a key-event flood can't grow
+        // the backlog without limit; oldest frame drops first.
+        if (keyboardReports.size >= maxGamepadReports) {
+            keyboardReports.removeFirst()
+        }
+        keyboardReports.addLast(OutputFrame(HidMode.KEYBOARD, report.copyOf(), queuedAtMs))
+    }
+
     private fun pollMouse(): OutputFrame? {
         if (!hasMouseReport) {
             mode = null
@@ -141,17 +176,26 @@ internal class HidOutputBuffer(
         val dx = mouseDx.coerceIn(HID_MIN_DELTA, HID_MAX_DELTA)
         val dy = mouseDy.coerceIn(HID_MIN_DELTA, HID_MAX_DELTA)
         val wheel = mouseWheel.coerceIn(HID_MIN_DELTA, HID_MAX_DELTA)
+        val wheelX = mouseWheelX.coerceIn(HID_MIN_DELTA, HID_MAX_DELTA)
         mouseDx -= dx
         mouseDy -= dy
         mouseWheel -= wheel
+        mouseWheelX -= wheelX
 
         val output =
             OutputFrame(
                 mode = HidMode.MOUSE,
-                report = byteArrayOf(mouseButtons.toByte(), dx.toByte(), dy.toByte(), wheel.toByte()),
+                report =
+                    byteArrayOf(
+                        mouseButtons.toByte(),
+                        dx.toByte(),
+                        dy.toByte(),
+                        wheel.toByte(),
+                        wheelX.toByte(),
+                    ),
                 queuedAtMs = mouseQueuedAtMs,
             )
-        if (mouseDx == 0 && mouseDy == 0 && mouseWheel == 0) {
+        if (mouseDx == 0 && mouseDy == 0 && mouseWheel == 0 && mouseWheelX == 0) {
             hasMouseReport = false
             // Do NOT reset `mouseButtons` here. The field tracks
             // the LAST button state the buffer emitted to the
@@ -183,8 +227,10 @@ internal class HidOutputBuffer(
         mouseDx = 0
         mouseDy = 0
         mouseWheel = 0
+        mouseWheelX = 0
         mouseQueuedAtMs = 0L
         gamepadReports.clear()
+        keyboardReports.clear()
     }
 
     data class OutputFrame(
