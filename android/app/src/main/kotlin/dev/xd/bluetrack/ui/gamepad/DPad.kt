@@ -69,7 +69,7 @@ fun DPad(
         Arm(hat = 6, dx = -1, dy = 0, glyph = "←", vertical = false),
     )
     Box(
-        modifier = modifier.size(156.dp),
+        modifier = modifier.size(172.dp),
     ) {
         dirs.forEach { arm ->
             val isActive = active == arm.hat
@@ -101,9 +101,9 @@ fun DPad(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .size(
-                        width = if (arm.vertical) 56.dp else 76.dp,
-                        height = if (arm.vertical) 76.dp else 56.dp,
-                    ).offset(x = (arm.dx * 42).dp, y = (arm.dy * 42).dp)
+                        width = if (arm.vertical) 62.dp else 84.dp,
+                        height = if (arm.vertical) 84.dp else 62.dp,
+                    ).offset(x = (arm.dx * 48).dp, y = (arm.dy * 48).dp)
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = {
@@ -125,8 +125,8 @@ fun DPad(
                 Box(
                     modifier = Modifier
                         .size(
-                            width = if (arm.vertical) 40.dp else 58.dp,
-                            height = if (arm.vertical) 58.dp else 40.dp,
+                            width = if (arm.vertical) 46.dp else 64.dp,
+                            height = if (arm.vertical) 64.dp else 46.dp,
                         ).scale(pressScale)
                         .clip(RoundedCornerShape(BluetrackTokens.RadiusXs))
                         .background(
@@ -152,7 +152,7 @@ fun DPad(
                     Text(
                         text = arm.glyph,
                         color = if (isActive) Color.White else palette.fg1,
-                        fontSize = 24.sp,
+                        fontSize = 27.sp,
                         fontWeight = FontWeight.Bold,
                     )
                 }
