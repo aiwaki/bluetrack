@@ -152,9 +152,16 @@ object TouchGestureClassifier {
     /** A <2→≥4 pointer jump faster than this (ms), skipping 3, reads as a palm. */
     const val PALM_SLAP_WINDOW_MS = 80L
 
-    // dp tunables from docs/plans/KEYBOARD_HID_RELEASE.md §4.
-    // Caller multiplies by display density to get pixels.
-    const val PINCH_NOTCH_DP = 36f
-    const val SWIPE_THRESHOLD_DP = 80f
-    const val FOUR_FINGER_NOTCH_DP = 80f
+    // dp tunables (caller multiplies by display density to get pixels).
+    // The original plan §4 values (36/80/80 dp) were sized for a Mac
+    // trackpad's physical area; on-device logcat showed the phone
+    // touchpad surface only yields ~45-110px of centroid travel per
+    // 3-finger swipe (vs the old 220px threshold) and a few px of pinch
+    // separation per frame, so a swipe/zoom could never cross threshold.
+    // Lowered to match the measured travel envelope of the smaller
+    // surface: swipe fires on a modest ~77px drag, zoom steps every
+    // ~50px of separation.
+    const val PINCH_NOTCH_DP = 18f
+    const val SWIPE_THRESHOLD_DP = 28f
+    const val FOUR_FINGER_NOTCH_DP = 28f
 }
