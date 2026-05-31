@@ -1130,6 +1130,31 @@ class BleHidGateway(
         }
     }
 
+    /**
+     * Send a no-op mouse report purely to keep the BR/EDR link out of
+     * deep sniff (driven by the MainViewModel idle keepalive). Unlike
+     * [send] this deliberately bypasses the report / lifetime counters
+     * and the status flow: a keepalive is not user input, so it must
+     * not inflate the HID rate graph or the "reports sent" totals
+     * (otherwise the Hub / Diagnostics waveforms stay permanently
+     * alive while idle). Best-effort and silent — no host means there
+     * is nothing to keep warm.
+     */
+    fun sendKeepalive(report: ByteArray) {
+        try {
+            val target: BluetoothDevice
+            val device: BluetoothHidDevice?
+            synchronized(this) {
+                target = host ?: return
+                device = hid
+            }
+            device?.sendReport(target, MOUSE_REPORT_ID, report)
+        } catch (_: SecurityException) {
+            // Best-effort; a real permission loss surfaces on the
+            // user-input send path, not here.
+        }
+    }
+
     private fun publishReportStatusIfDue() {
         val now = SystemClock.elapsedRealtime()
         if (reportsSent != 1 && now - lastReportStatusAtMs < REPORT_STATUS_INTERVAL_MS) return

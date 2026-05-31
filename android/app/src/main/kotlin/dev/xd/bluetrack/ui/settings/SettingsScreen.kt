@@ -83,30 +83,16 @@ fun SettingsScreen(
                 .rememberStaggerModifier(index = 0),
         ) {
             SettingsGroup(title = "CONNECTION") {
-                SettingsRow(
-                    label = "Visible as",
-                    value = compat.adapterName ?: "—",
-                    mono = true,
-                    hint = "Search for this name in macOS · Windows BT settings",
-                )
-                SettingsRow(
-                    label = "Foreground service",
-                    value = if (compat.bluetoothEnabled) "Running" else "Off",
-                    accent = compat.bluetoothEnabled,
-                )
+                // Read-only adapter / capability readouts (Visible as,
+                // Foreground service, BLE advertiser, Multi
+                // advertisement) moved to Diagnostics → System: they are
+                // diagnostic state, not settings. CONNECTION now holds
+                // only what the user can actually change.
                 SettingsToggleRow(
                     label = "Auto-connect to bonded host",
                     hint = "Computer-class hosts only · audio + accessories are skipped",
                     checked = autoConnectEnabled,
                     onCheckedChange = onAutoConnectChange,
-                )
-                SettingsRow(
-                    label = "BLE advertiser",
-                    value = compat.bleAdvertiserAvailable.availabilityLabel(),
-                )
-                SettingsRow(
-                    label = "Multi advertisement",
-                    value = compat.multipleAdvertisementSupported.availabilityLabel(),
                 )
             }
         }
@@ -245,12 +231,6 @@ private fun SettingsGroup(
             content()
         }
     }
-}
-
-private fun Boolean?.availabilityLabel(): String = when (this) {
-    true -> "Available"
-    false -> "Not supported"
-    null -> "Unknown"
 }
 
 private fun Boolean?.grantLabel(): String = when (this) {

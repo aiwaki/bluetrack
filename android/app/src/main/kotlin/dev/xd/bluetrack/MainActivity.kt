@@ -800,8 +800,17 @@ private fun AppScreen(
                 StatusHero(
                     connected = isConnected(status),
                     hostName = status.host,
+                    // The live report COUNT lives in the ActivityStrip
+                    // REPORTS cell (lifetime total); the hero only states
+                    // status here, surfacing dropped feedback packets
+                    // only when there are any — so the two no longer
+                    // show competing HID counters.
                     metric = if (isConnected(status)) {
-                        "HID · ${compactCount(status.reportsSent)} reports · ${status.rejectedFeedbackPackets} dropped"
+                        if (status.rejectedFeedbackPackets > 0) {
+                            "HID active · ${status.rejectedFeedbackPackets} dropped"
+                        } else {
+                            "HID active"
+                        }
                     } else {
                         null
                     },

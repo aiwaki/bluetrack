@@ -12,7 +12,25 @@ must "Forget This Device" and pair fresh after these.
 
 Targets `versionName 3.0.0` / `versionCode 3` once UI redesign lands.
 
-### Input smoothness & gestures
+### Hub & Settings polish
+
+- **#80** Five UX fixes (no re-pair). (1) Idle keepalive no longer
+  inflates the HID waveforms: the keepalive now goes through a new
+  `BleHidGateway.sendKeepalive` that skips the report / lifetime
+  counters and status flow, so the Hub heartbeat and Diagnostics rate
+  graphs fall idle when the user is idle (the keepalive still keeps the
+  BR/EDR link warm). (2) Deduplicated the Hub HID counters — the
+  StatusHero subtitle dropped its session report count (it now states
+  "HID active", surfacing dropped feedback packets only when there are
+  any); the ActivityStrip REPORTS cell remains the single lifetime
+  counter. (3) The Mouse surface card now reads in the light theme: a
+  new theme-aware `coolGlowSoft` token replaces the flat
+  `cool.copy(alpha = 0.14f)` wash that washed out on white. (4) Read-
+  only adapter / capability readouts (Visible as, Foreground service,
+  BLE advertiser, Multi advertisement) moved from Settings → CONNECTION
+  to Diagnostics → System; Settings now holds only configurable rows.
+  (5) Removed the navigation-dock tap haptic — vibration stays on the
+  interactive surfaces (gamepad) where it belongs, not on dock taps.
 
 - **#79** Cursor idle keepalive + gesture-threshold tuning (no
   re-pair). On-device logcat localised the post-idle cursor lag to a
