@@ -160,8 +160,9 @@ object TouchGestureClassifier {
     // separation per frame, so a swipe/zoom could never cross threshold.
     // Lowered to match the measured travel envelope of the smaller
     // surface: swipe fires on a modest ~77px drag, zoom steps every
-    // ~50px of separation.
-    const val PINCH_NOTCH_DP = 18f
+    // ~60px of separation (22dp — large enough that finger lift-off
+    // drift does not emit a stray extra zoom notch on release).
+    const val PINCH_NOTCH_DP = 22f
     const val SWIPE_THRESHOLD_DP = 28f
     const val FOUR_FINGER_NOTCH_DP = 28f
 }
