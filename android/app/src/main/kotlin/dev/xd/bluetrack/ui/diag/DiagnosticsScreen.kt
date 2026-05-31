@@ -776,7 +776,27 @@ private fun SystemCard(status: GatewayStatus) {
         DiagStatusLine(label = "HID", value = status.hid)
         DiagStatusLine(label = "PAIR", value = status.pairing)
         DiagStatusLine(label = "BLE", value = status.feedback)
+        // Adapter + capability readouts moved here from Settings →
+        // CONNECTION (they are diagnostic state, not settings).
+        DiagStatusLine(
+            label = "VISIBLE",
+            value = status.compatibility.adapterName ?: "—",
+        )
+        DiagStatusLine(
+            label = "ADV",
+            value = status.compatibility.bleAdvertiserAvailable.availabilityLabel(),
+        )
+        DiagStatusLine(
+            label = "MULTI-ADV",
+            value = status.compatibility.multipleAdvertisementSupported.availabilityLabel(),
+        )
     }
+}
+
+private fun Boolean?.availabilityLabel(): String = when (this) {
+    true -> "Available"
+    false -> "Not supported"
+    null -> "Unknown"
 }
 
 @Composable

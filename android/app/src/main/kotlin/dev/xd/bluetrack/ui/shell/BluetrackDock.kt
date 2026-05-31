@@ -91,7 +91,6 @@ private fun DockSlot(
     inactiveTint: Color,
     onClick: () -> Unit,
 ) {
-    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     // Animated active indicator. Background colour crossfades
     // between transparent ↔ crit red; icon tint crossfades fg2 ↔
     // white; circle scale springs slightly above 1.0 when the
@@ -146,9 +145,6 @@ private fun DockSlot(
                 detectTapGestures(
                     onPress = {
                         pressed = true
-                        haptic.performHapticFeedback(
-                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove,
-                        )
                         val released = tryAwaitRelease()
                         pressed = false
                         if (released) onClick()

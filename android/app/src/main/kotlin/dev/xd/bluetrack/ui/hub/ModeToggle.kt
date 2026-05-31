@@ -134,7 +134,7 @@ fun ModeToggle(
                     title = "Mouse",
                     subtitle = "Mirror a real USB / BT mouse",
                     accent = palette.cool,
-                    background = palette.cool.copy(alpha = 0.14f),
+                    background = palette.coolGlowSoft,
                     glyph = "◯",
                     shape = shape,
                 )

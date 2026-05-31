@@ -642,7 +642,10 @@ class MainViewModel(
                     if (ble.status.value.host == null) continue
                     val idleMs = SystemClock.elapsedRealtime() - lastQueuedInputAtMs
                     if (idleMs < KEEPALIVE_IDLE_MS) continue
-                    ble.send(HidMode.MOUSE, engine.keepaliveReport())
+                    // Bypasses the report/lifetime counters so the idle
+                    // keepalive does not keep the Hub / Diagnostics rate
+                    // graphs permanently alive.
+                    ble.sendKeepalive(engine.keepaliveReport())
                 }
             }
     }

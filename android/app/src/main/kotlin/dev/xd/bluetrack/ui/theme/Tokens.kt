@@ -57,6 +57,14 @@ data object BluetrackTokens {
 
     // ─── Semantic spot colours (same in dark + light) ────────────────
     val Cool = Color(0xFF6DD6FF)
+
+    // Soft cool wash behind the selected Mouse surface card — the cool
+    // counterpart to MintGlowSoft. The light variant uses a deeper, more
+    // saturated cool at higher alpha so the Mouse face actually reads on
+    // a white background (the old flat `cool.copy(alpha = 0.14f)` washed
+    // out in the light theme).
+    val CoolGlowSoftDark = Color(0x2E6DD6FF) // ~18%
+    val CoolGlowSoftLight = Color(0x402AA8E6) // ~25% deeper cool
     val Warn = Color(0xFFFFB86B)
     val Crit = Color(0xFFFF4060)
 
