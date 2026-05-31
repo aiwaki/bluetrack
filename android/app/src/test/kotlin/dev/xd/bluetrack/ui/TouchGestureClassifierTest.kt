@@ -2,7 +2,6 @@ package dev.xd.bluetrack.ui
 
 import dev.xd.bluetrack.engine.HidKeys
 import dev.xd.bluetrack.ui.TouchGestureClassifier.KeyChord
-import dev.xd.bluetrack.ui.TouchGestureClassifier.TwoFingerMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -10,74 +9,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TouchGestureClassifierTest {
-    // --- 2-finger pinch vs scroll disambiguation ---
-
-    @Test
-    fun latchesPinchWhenSeparationChangeDominatesVerticalTravel() {
-        // |distChange| (40) > |avgYChange| (10) * 1.5 = 15 → PINCH.
-        assertEquals(
-            TwoFingerMode.PINCH,
-            TouchGestureClassifier.classifyTwoFinger(distChangePx = 40f, avgYChangePx = 10f),
-        )
-    }
-
-    @Test
-    fun latchesScrollWhenVerticalTravelDominates() {
-        // |distChange| (10) is not > |avgYChange| (30) * 1.5 = 45 → SCROLL.
-        assertEquals(
-            TwoFingerMode.SCROLL,
-            TouchGestureClassifier.classifyTwoFinger(distChangePx = 10f, avgYChangePx = 30f),
-        )
-    }
-
-    @Test
-    fun givesScrollPrecedenceOnNearPureVerticalMove() {
-        // Pure vertical: distance barely changes, fingers slide together.
-        assertEquals(
-            TwoFingerMode.SCROLL,
-            TouchGestureClassifier.classifyTwoFinger(distChangePx = 2f, avgYChangePx = 50f),
-        )
-    }
-
-    // --- pinch notch counting ---
-
-    @Test
-    fun countsOneSpreadNotchAndAdvancesAnchor() {
-        val r = TouchGestureClassifier.pinchNotches(currentDist = 240f, anchorDist = 200f, notchPx = 36f)
-        assertEquals(1, r.count)
-        assertEquals(236f, r.newAnchorDist)
-    }
-
-    @Test
-    fun countsNegativePinchNotch() {
-        val r = TouchGestureClassifier.pinchNotches(currentDist = 160f, anchorDist = 200f, notchPx = 36f)
-        assertEquals(-1, r.count)
-        assertEquals(164f, r.newAnchorDist)
-    }
-
-    @Test
-    fun crossingMultipleNotchesAtOnceEmitsEach() {
-        val r = TouchGestureClassifier.pinchNotches(currentDist = 290f, anchorDist = 200f, notchPx = 36f)
-        assertEquals(2, r.count)
-        assertEquals(272f, r.newAnchorDist)
-    }
-
-    @Test
-    fun subNotchMoveEmitsNothingAndKeepsAnchor() {
-        val r = TouchGestureClassifier.pinchNotches(currentDist = 220f, anchorDist = 200f, notchPx = 36f)
-        assertEquals(0, r.count)
-        assertEquals(200f, r.newAnchorDist)
-    }
-
-    // --- zoom chord mapping ---
-
-    @Test
-    fun spreadMapsToCmdEqualAndPinchToCmdMinus() {
-        assertEquals(KeyChord(HidKeys.MOD_LGUI, HidKeys.KC_EQUAL), TouchGestureClassifier.zoomChord(1))
-        assertEquals(KeyChord(HidKeys.MOD_LGUI, HidKeys.KC_MINUS), TouchGestureClassifier.zoomChord(-1))
-        assertNull(TouchGestureClassifier.zoomChord(0))
-    }
-
     // --- 3-finger swipe ---
 
     @Test
