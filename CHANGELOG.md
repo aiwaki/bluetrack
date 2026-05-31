@@ -27,10 +27,14 @@ Targets `versionName 3.0.0` / `versionCode 3` once UI redesign lands.
   real report. Gesture tunables in `TouchGestureClassifier` were sized
   for a Mac trackpad's physical area; logcat showed the phone touchpad
   surface only yields ~45–110 px of 3-finger centroid travel (vs the
-  old 220 px threshold), so swipe/zoom could never cross threshold.
-  Lowered `SWIPE_THRESHOLD_DP 80→28`, `PINCH_NOTCH_DP 36→18`,
-  `FOUR_FINGER_NOTCH_DP 80→28` to match the smaller surface, so
-  3-finger swipes and pinch zoom now fire on reachable travel.
+  old 220 px threshold), so swipes could never cross threshold. Lowered
+  `SWIPE_THRESHOLD_DP 80→28` and `FOUR_FINGER_NOTCH_DP 80→28` to match
+  the smaller surface. 2-finger pinch-to-zoom was removed entirely: HID
+  cannot emit the macOS magnify gesture and the Cmd+= / Cmd+- stand-in
+  is context-blind page zoom (right only in Preview, wrong in browsers
+  and anywhere Cmd+= is bound elsewhere), so two fingers now always
+  scroll (both axes), which also makes scroll more reliable and drops
+  the pinch-vs-scroll misclassification.
 
 ### UI & Connection UX
 
