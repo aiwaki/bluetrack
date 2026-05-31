@@ -12,6 +12,30 @@ must "Forget This Device" and pair fresh after these.
 
 Targets `versionName 3.0.0` / `versionCode 3` once UI redesign lands.
 
+### Input smoothness & gestures
+
+- **#79** Cursor idle keepalive + gesture-threshold tuning (no
+  re-pair). On-device logcat localised the post-idle cursor lag to a
+  BR/EDR sniff-wake stall (`maxHidSend ≈ 425 ms`, `maxOutputQueueLatency
+  ≈ 270 ms`) while the app pacer and input queue stayed clean
+  (`pacer:0 queue:0`). A low-rate idle keepalive
+  (`MainViewModel.ensureKeepalive` + `TranslationEngine.keepaliveReport`)
+  now re-sends the current mouse state every 500 ms once idle ≥ 400 ms,
+  keeping the link out of deep sniff so the first real input skips the
+  wake latency. The keepalive preserves held button bits (idempotent
+  mid-drag) and is skipped while the HID sender is actively draining a
+  real report. Gesture tunables in `TouchGestureClassifier` were sized
+  for a Mac trackpad's physical area; logcat showed the phone touchpad
+  surface only yields ~45–110 px of 3-finger centroid travel (vs the
+  old 220 px threshold), so swipes could never cross threshold. Lowered
+  `SWIPE_THRESHOLD_DP 80→28` and `FOUR_FINGER_NOTCH_DP 80→28` to match
+  the smaller surface. 2-finger pinch-to-zoom was removed entirely: HID
+  cannot emit the macOS magnify gesture and the Cmd+= / Cmd+- stand-in
+  is context-blind page zoom (right only in Preview, wrong in browsers
+  and anywhere Cmd+= is bound elsewhere), so two fingers now always
+  scroll (both axes), which also makes scroll more reliable and drops
+  the pinch-vs-scroll misclassification.
+
 ### UI & Connection UX
 
 - **#57** Real-device polish across three commits. Connection UX:

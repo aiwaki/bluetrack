@@ -1168,15 +1168,6 @@ private fun TouchpadPanel(
                     // diagonal scroll feels uniform across axes.
                     var lastScrollX = 0f
                     var scrollVelocityXPxPerMs = 0f
-                    // Two-finger pinch-vs-scroll. `twoFingerMode`
-                    // latches on the first 2-finger MOVE (sticky
-                    // until ACTION_UP): PINCH routes to discrete
-                    // zoom notches, SCROLL to the kinetic wheel path.
-                    // Baselines seeded at ACTION_POINTER_DOWN.
-                    var twoFingerStartDist = 0f
-                    var twoFingerStartY = 0f
-                    var twoFingerMode: TouchGestureClassifier.TwoFingerMode? = null
-                    var pinchAnchorDist = 0f
                     // 3-/4-finger swipe + pinch. `gestureKeyLatched`
                     // makes the chord one-shot — once a swipe fires
                     // we swallow the rest of the gesture so a single
@@ -1195,10 +1186,8 @@ private fun TouchpadPanel(
                     var lastPointerCount = 0
                     var palmRejected = false
                     // dp gesture tunables → px at the live display
-                    // density (plan: pinch 36dp, swipe 80dp,
-                    // 4-finger 80dp). Computed once at factory time.
+                    // density. Computed once at factory time.
                     val gestureDensity = resources.displayMetrics.density
-                    val pinchNotchPx = TouchGestureClassifier.PINCH_NOTCH_DP * gestureDensity
                     val swipeThresholdPx = TouchGestureClassifier.SWIPE_THRESHOLD_DP * gestureDensity
                     val fourFingerNotchPx = TouchGestureClassifier.FOUR_FINGER_NOTCH_DP * gestureDensity
                     isFocusableInTouchMode = true
@@ -1343,15 +1332,6 @@ private fun TouchpadPanel(
                         // horizontal-scroll counterpart to avgY().
                         fun avgX(): Float = if (ev.pointerCount >= 2) (ev.getX(0) + ev.getX(1)) * 0.5f else ev.x
 
-                        // Separation between the first two pointers.
-                        // Drives 2-finger pinch-zoom distance tracking.
-                        fun pairDist(): Float {
-                            if (ev.pointerCount < 2) return 0f
-                            val dx = ev.getX(0) - ev.getX(1)
-                            val dy = ev.getY(0) - ev.getY(1)
-                            return kotlin.math.sqrt(dx * dx + dy * dy)
-                        }
-
                         // Centroid of all current pointers — the
                         // displacement reference for 3-finger swipes
                         // (robust to one finger drifting).
@@ -1417,8 +1397,6 @@ private fun TouchpadPanel(
                                 // Multi-finger gesture state — fresh
                                 // every gesture so a previous swipe's
                                 // latch never bleeds into the next.
-                                twoFingerMode = null
-                                pinchAnchorDist = 0f
                                 gestureKeyLatched = false
                                 threeStartX = Float.NaN
                                 threeStartY = Float.NaN
@@ -1480,13 +1458,6 @@ private fun TouchpadPanel(
                                 if (ev.pointerCount >= 2) {
                                     lastScrollY = avgY()
                                     lastScrollX = avgX()
-                                    // Seed the pinch baseline so the
-                                    // first 2-finger MOVE measures
-                                    // separation + vertical travel
-                                    // from finger-down (drives the
-                                    // pinch-vs-scroll latch).
-                                    twoFingerStartDist = pairDist()
-                                    twoFingerStartY = avgY()
                                     // Reset velocity baseline so
                                     // the first 2-finger MOVE
                                     // delta does not pick up a
@@ -1545,7 +1516,6 @@ private fun TouchpadPanel(
                                         scrollVelocityPxPerMs = 0f
                                         scrollVelocityXPxPerMs = 0f
                                     }
-                                    twoFingerMode = null
                                 }
 
                                 // --- 4-finger pinch / spread → F4 / F11
@@ -1590,49 +1560,12 @@ private fun TouchpadPanel(
                                     return@setOnTouchListener true
                                 }
 
-                                // Lazy 2-finger latch: on the first
-                                // 2-finger MOVE, disambiguate pinch vs
-                                // scroll once (sticky until ACTION_UP).
-                                // A quick 2-finger down + up without
+                                // Lazy scroll latch: only on the first
+                                // 2-finger MOVE with real travel, so a
+                                // quick 2-finger down + up without
                                 // motion still registers as a
-                                // right-click tap because we only
-                                // decide here, on real travel.
-                                if (twoFingerMode == null && ev.pointerCount >= 2 && totalMovementPx > 6f) {
-                                    twoFingerMode = TouchGestureClassifier.classifyTwoFinger(
-                                        distChangePx = pairDist() - twoFingerStartDist,
-                                        avgYChangePx = avgY() - twoFingerStartY,
-                                    )
-                                    if (twoFingerMode == TouchGestureClassifier.TwoFingerMode.PINCH) {
-                                        pinchAnchorDist = pairDist()
-                                    }
-                                }
-                                // Pinch zoom: emit one Cmd+= / Cmd+-
-                                // per notch of separation change.
-                                if (twoFingerMode == TouchGestureClassifier.TwoFingerMode.PINCH) {
-                                    if (ev.pointerCount >= 2) {
-                                        val notches = TouchGestureClassifier.pinchNotches(
-                                            currentDist = pairDist(),
-                                            anchorDist = pinchAnchorDist,
-                                            notchPx = pinchNotchPx,
-                                        )
-                                        if (notches.count != 0) {
-                                            val chord = TouchGestureClassifier.zoomChord(
-                                                if (notches.count > 0) 1 else -1,
-                                            )
-                                            if (chord != null) {
-                                                repeat(kotlin.math.abs(notches.count)) {
-                                                    onTapKey(chord.modifier, chord.keycode)
-                                                }
-                                            }
-                                            pinchAnchorDist = notches.newAnchorDist
-                                        }
-                                    }
-                                    return@setOnTouchListener true
-                                }
-                                // Scroll latch (twoFingerMode == SCROLL).
-                                if (!inScrollGesture &&
-                                    twoFingerMode == TouchGestureClassifier.TwoFingerMode.SCROLL
-                                ) {
+                                // right-click tap.
+                                if (!inScrollGesture && ev.pointerCount >= 2 && totalMovementPx > 6f) {
                                     inScrollGesture = true
                                     lastScrollY = avgY()
                                     lastScrollX = avgX()
@@ -1918,7 +1851,6 @@ private fun TouchpadPanel(
                                 // next gesture (ACTION_DOWN also resets,
                                 // but ACTION_CANCEL may skip a fresh
                                 // DOWN, so clear here too).
-                                twoFingerMode = null
                                 gestureKeyLatched = false
                                 threeStartX = Float.NaN
                                 threeStartY = Float.NaN

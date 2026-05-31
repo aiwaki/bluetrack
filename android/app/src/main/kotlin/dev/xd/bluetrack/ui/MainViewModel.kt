@@ -79,6 +79,7 @@ class MainViewModel(
     private var lastRecordedInputSource: String? = null
     private var inputPacerJob: Job? = null
     private var hidSenderJob: Job? = null
+    private var keepaliveJob: Job? = null
     private val hidOutputBuffer = HidOutputBuffer()
     private val hidTransportGovernor = HidTransportGovernor()
     private val touchMotionPredictor = TouchMotionPredictor()
@@ -140,6 +141,7 @@ class MainViewModel(
     fun start() {
         started = true
         ble.maintainRegistration(_mode.value)
+        ensureKeepalive()
     }
 
     fun toggle(gamepad: Boolean) {
@@ -457,6 +459,8 @@ class MainViewModel(
         started = false
         inputPacerJob?.cancel()
         inputPacerJob = null
+        keepaliveJob?.cancel()
+        keepaliveJob = null
         synchronized(hidSenderLock) {
             hidSenderJob?.cancel()
             hidSenderJob = null
@@ -615,6 +619,34 @@ class MainViewModel(
         }
     }
 
+    /**
+     * Low-rate idle keepalive. While connected, in mouse mode, and idle
+     * for at least [KEEPALIVE_IDLE_MS], re-send the current mouse state
+     * (held buttons preserved, zero motion) every [KEEPALIVE_TICK_MS].
+     * The transmission keeps the BR/EDR link out of deep sniff so the
+     * first real input after a pause is not stalled by sniff-wake
+     * latency — the dominant cause of the "cursor lags on the first
+     * move after idle" feel (logcat showed maxHidSend spikes with a
+     * clean pacer/queue). Skipped whenever the HID sender is actively
+     * draining real input, so a keepalive never races a real sendReport.
+     */
+    private fun ensureKeepalive() {
+        if (keepaliveJob?.isActive == true) return
+        keepaliveJob =
+            viewModelScope.launch(Dispatchers.Default) {
+                while (isActive) {
+                    delay(KEEPALIVE_TICK_MS)
+                    if (!started) continue
+                    if (_mode.value != HidMode.MOUSE) continue
+                    if (hidSenderJob?.isActive == true) continue
+                    if (ble.status.value.host == null) continue
+                    val idleMs = SystemClock.elapsedRealtime() - lastQueuedInputAtMs
+                    if (idleMs < KEEPALIVE_IDLE_MS) continue
+                    ble.send(HidMode.MOUSE, engine.keepaliveReport())
+                }
+            }
+    }
+
     private fun recordInputThrottled(
         source: String,
         now: Long,
@@ -648,6 +680,12 @@ class MainViewModel(
         const val CLICK_GAP_MS = 20L
         const val NANOS_PER_MS = 1_000_000L
         const val TOUCHPAD_SOURCE = "Touchpad"
+
+        // Idle keepalive cadence: re-send mouse state every 500 ms once
+        // idle ≥ 400 ms, keeping the BR/EDR link out of deep sniff so the
+        // first real input after a pause skips the sniff-wake stall.
+        const val KEEPALIVE_TICK_MS = 500L
+        const val KEEPALIVE_IDLE_MS = 400L
     }
 
     private fun predictedInputFrame(

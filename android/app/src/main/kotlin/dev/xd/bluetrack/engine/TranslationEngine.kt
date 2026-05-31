@@ -223,6 +223,16 @@ class TranslationEngine(
     }
 
     /**
+     * A no-op mouse report preserving the currently-latched button bits
+     * with zero motion/wheel. Sent on a low-rate idle ticker to keep the
+     * BR/EDR link out of deep sniff so the first real input after an idle
+     * pause does not pay the sniff-wake latency (~hundreds of ms). Re-
+     * sending the held button state is idempotent on the host, so a
+     * keepalive fired mid hold-drag never releases the drag.
+     */
+    fun keepaliveReport(): ByteArray = byteArrayOf((mouseButtons and 0x07).toByte(), 0, 0, 0, 0)
+
+    /**
      * Press one or more keyboard keys. [modifier] is an OR of the
      * `HidKeys.MOD_*` bitmasks (held in the report's modifier byte
      * until [processKeyUp] clears them); [keycode] is a HID Usage
