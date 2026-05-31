@@ -69,12 +69,12 @@ fun FaceButtons(
     // buttons clipped into each other. 30 dp clears the diagonal
     // (centre-to-centre ≈ 42 dp).
     val buttons = listOf(
-        FaceButton(label = "Y", accent = Color(0xFFFFD23F), dx = 0, dy = -30),
-        FaceButton(label = "X", accent = Color(0xFF3FB6FF), dx = -30, dy = 0),
-        FaceButton(label = "B", accent = Color(0xFFFF4060), dx = 30, dy = 0),
-        FaceButton(label = "A", accent = Color(0xFF3FFF80), dx = 0, dy = 30),
+        FaceButton(label = "Y", accent = Color(0xFFFFD23F), dx = 0, dy = -42),
+        FaceButton(label = "X", accent = Color(0xFF3FB6FF), dx = -42, dy = 0),
+        FaceButton(label = "B", accent = Color(0xFFFF4060), dx = 42, dy = 0),
+        FaceButton(label = "A", accent = Color(0xFF3FFF80), dx = 0, dy = 42),
     )
-    Box(modifier = modifier.size(108.dp)) {
+    Box(modifier = modifier.size(148.dp)) {
         buttons.forEach { btn ->
             val pressed = active == btn.label
             // Press feedback: spring scale 1.0 → 0.88 → 1.0. Down
@@ -101,7 +101,7 @@ fun FaceButtons(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .offset(x = btn.dx.dp, y = btn.dy.dp)
-                    .size(48.dp)
+                    .size(64.dp)
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = {
@@ -122,7 +122,7 @@ fun FaceButtons(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(52.dp)
                         .scale(pressScale)
                         .clip(CircleShape)
                         .background(
@@ -156,7 +156,7 @@ fun FaceButtons(
                     Text(
                         text = btn.label,
                         color = if (pressed) Color.White else btn.accent,
-                        fontSize = 14.sp,
+                        fontSize = 19.sp,
                         fontWeight = FontWeight.ExtraBold,
                     )
                 }
