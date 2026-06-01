@@ -42,10 +42,10 @@ import dev.xd.bluetrack.ui.theme.BluetrackTokens
 fun AuroraBackground(
     modifier: Modifier = Modifier,
     motionReduced: Boolean = false,
-    glassEnabled: Boolean = true,
 ) {
-    if (!glassEnabled) return
-
+    // The iridescent wash is the app's signature look, so it always
+    // renders (decoupled from the `glassEnabled` flat-surface toggle
+    // that previously suppressed it). `motionReduced` still freezes it.
     val transition = rememberInfiniteTransition(label = "aurora")
     val driftX by transition.animateFloat(
         initialValue = -0.04f,

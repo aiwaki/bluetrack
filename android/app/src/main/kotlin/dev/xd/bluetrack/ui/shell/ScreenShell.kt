@@ -112,7 +112,6 @@ fun ScreenShell(
         AuroraBackground(
             modifier = Modifier.fillMaxSize(),
             motionReduced = motionReduced,
-            glassEnabled = glassEnabled,
         )
         Column(
             modifier = Modifier
