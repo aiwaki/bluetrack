@@ -1,117 +1,176 @@
 package dev.xd.bluetrack.ui.shell
 
+import android.graphics.RuntimeShader
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.withInfiniteAnimationFrameMillis
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.drawscope.Fill
-import dev.xd.bluetrack.ui.theme.BluetrackTokens
 
 /**
- * Iridescent aurora — vivid radial halos that both drift and slowly
- * shift hue, so the canvas behind the shell reads as a living,
- * colour-shimmering surface (reference: the Gemini app's bright
- * shifting wash) rather than the earlier muted single-accent glow.
+ * Animated "aura" background — a dark field with one dominant glowing
+ * bloom (plus a faint same-family accent) that slowly breathes and
+ * shifts hue. Cohesive on purpose: a single colour on screen at a
+ * time, most of the field left near-black for contrast, the way the
+ * Gemini reference reads — not a scatter of clashing hues.
  *
- * Each halo is a saturated [Color.hsv] blob whose hue = a shared
- * rotating phase + a fixed per-halo offset. Because the offsets span
- * the wheel, several distinct vivid hues are on screen at once and
- * all rotate together — blue → green → violet → pink → back — giving
- * the "переливается" shimmer. Saturated `value = 1` over the dark
- * `bg0` reads as a bright glow; the centre stays comparatively dark
- * (halos sit at the edges / corners + one big bottom bloom) so card
- * text keeps its contrast.
+ * On API 33+ this is an AGSL [RuntimeShader] (smooth mesh gradient,
+ * 60 fps, animated via a `time` uniform fed by
+ * [withInfiniteAnimationFrameMillis]). On older devices it falls back
+ * to a two-halo [Canvas] gradient.
  *
- * - Hue rotates over [HUE_PERIOD_MS] (RepeatMode.Restart — 360°≡0° so
- *   the loop is seamless). Position drifts over `AURORA_DURATION_MS`.
- * - `motionReduced = true` freezes both animations on a calm static
- *   frame at reduced intensity.
- * - `glassEnabled = false` removes the aurora entirely (flat surface).
+ * `motionReduced` freezes the animation (static frame) but keeps the
+ * glow visible.
  */
 @Composable
 fun AuroraBackground(
     modifier: Modifier = Modifier,
     motionReduced: Boolean = false,
 ) {
-    // The iridescent wash is the app's signature look, so it always
-    // renders (decoupled from the `glassEnabled` flat-surface toggle
-    // that previously suppressed it). `motionReduced` still freezes it.
-    val transition = rememberInfiniteTransition(label = "aurora")
-    val driftX by transition.animateFloat(
-        initialValue = -0.04f,
-        targetValue = 0.03f,
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        AuroraShader(modifier = modifier, motionReduced = motionReduced)
+    } else {
+        AuroraFallback(modifier = modifier, motionReduced = motionReduced)
+    }
+}
+
+// language=AGSL
+private const val AURORA_AGSL = """
+uniform float2 resolution;
+uniform float time;
+
+// Inigo-Quilez cosine palette tuned to a cohesive cool→violet→magenta
+// arc (no garish yellow/green) so the wash stays premium as it morphs.
+half3 auroraPalette(float t) {
+    half3 a = half3(0.26, 0.22, 0.40);
+    half3 b = half3(0.26, 0.22, 0.40);
+    half3 c = half3(1.0, 1.0, 1.0);
+    half3 d = half3(0.62, 0.50, 0.38);
+    return a + b * cos(6.28318 * (c * t + d));
+}
+
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / resolution;
+    float asp = resolution.x / resolution.y;
+    float2 q = float2(uv.x * asp, uv.y);
+
+    // Slow hue morph.
+    float tt = time * 0.045;
+
+    // Dominant bloom anchored just below the bottom edge; faint accent
+    // just above the top edge. Both drift slightly so the glow breathes.
+    float2 p1 = float2(0.50 + 0.16 * sin(time * 0.12), 1.04 + 0.04 * sin(time * 0.10));
+    float2 p2 = float2(0.30 + 0.16 * cos(time * 0.09), -0.06 + 0.05 * cos(time * 0.15));
+
+    float d1 = distance(q, float2(p1.x * asp, p1.y));
+    float d2 = distance(q, float2(p2.x * asp, p2.y));
+
+    float g1 = smoothstep(0.95, 0.0, d1);
+    float g2 = smoothstep(0.70, 0.0, d2);
+
+    half3 col = auroraPalette(tt) * g1 + auroraPalette(tt + 0.05) * g2 * 0.5;
+
+    // Soft tonemap: lifts the glow but never blows out to white, so the
+    // result stays matte/premium with deep blacks (high contrast).
+    col = col * 1.25;
+    col = col / (col + 0.65);
+
+    return half4(col, 1.0);
+}
+"""
+
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+@Composable
+private fun AuroraShader(
+    modifier: Modifier,
+    motionReduced: Boolean,
+) {
+    val shader = remember { RuntimeShader(AURORA_AGSL) }
+    val brush = remember { ShaderBrush(shader) }
+
+    val time by if (motionReduced) {
+        remember { androidx.compose.runtime.mutableStateOf(6f) }
+    } else {
+        produceState(0f) {
+            val start = withInfiniteAnimationFrameMillis { it }
+            while (true) {
+                withInfiniteAnimationFrameMillis { millis ->
+                    value = (millis - start) / 1000f
+                }
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .drawWithCache {
+                onDrawBehind {
+                    shader.setFloatUniform("resolution", size.width, size.height)
+                    shader.setFloatUniform("time", time)
+                    drawRect(brush)
+                }
+            },
+    )
+}
+
+@Composable
+private fun AuroraFallback(
+    modifier: Modifier,
+    motionReduced: Boolean,
+) {
+    val transition = rememberInfiniteTransition(label = "aurora-fallback")
+    val hue by transition.animateFloat(
+        initialValue = 200f,
+        targetValue = 320f,
         animationSpec = infiniteRepeatable(
-            animation = tween(BluetrackTokens.AURORA_DURATION_MS, easing = LinearEasing),
+            animation = tween(durationMillis = 24_000, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse,
         ),
-        label = "auroraDriftX",
+        label = "aurora-fallback-hue",
     )
-    val driftY by transition.animateFloat(
-        initialValue = 0.03f,
-        targetValue = -0.02f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(BluetrackTokens.AURORA_DURATION_MS, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "auroraDriftY",
-    )
-    // Shared hue phase, full 360° rotation. Restart (not Reverse) so
-    // the colour keeps travelling the same way around the wheel.
-    val huePhase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(HUE_PERIOD_MS, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "auroraHue",
-    )
+    val h = if (motionReduced) 250f else hue
+    val glow = Color.hsv(h, 0.75f, 1f)
 
-    val tx = if (motionReduced) 0f else driftX
-    val ty = if (motionReduced) 0f else driftY
-    // Frozen calm frame keeps a pleasant cyan/violet mix when motion
-    // is reduced; live mode rotates from the moving phase.
-    val hue = if (motionReduced) 210f else huePhase
-    val intensity = if (motionReduced) 0.6f else 1f
-
-    Canvas(modifier = modifier) {
+    Canvas(modifier = modifier.fillMaxSize()) {
         val w = size.width
-        val h = size.height
-        // Five vivid blobs. Hue offsets spread across the wheel so the
-        // field is multi-colour at any instant; all share the rotating
-        // phase so the whole wash shimmers in sync. The big bottom
-        // bloom (radius 0.9w) mirrors the reference's strong lower glow.
-        drawHalo(Offset(w * (0.16f + tx), h * (0.12f + ty)), w * 0.62f, hue + 0f, 0.40f * intensity)
-        drawHalo(Offset(w * (0.88f + tx), h * (0.16f + ty)), w * 0.58f, hue + 80f, 0.38f * intensity)
-        drawHalo(Offset(w * (0.50f + tx), h * (0.96f + ty)), w * 0.90f, hue + 165f, 0.44f * intensity)
-        drawHalo(Offset(w * (0.08f + tx), h * (0.60f + ty)), w * 0.50f, hue + 250f, 0.34f * intensity)
-        drawHalo(Offset(w * (0.90f + tx), h * (0.82f + ty)), w * 0.52f, hue + 315f, 0.36f * intensity)
+        val hgt = size.height
+        // One dominant bottom bloom + faint top accent, same hue.
+        drawHalo(Offset(w * 0.5f, hgt * 1.02f), w * 1.05f, glow, 0.5f)
+        drawHalo(Offset(w * 0.3f, -hgt * 0.04f), w * 0.6f, glow, 0.18f)
     }
 }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHalo(
     center: Offset,
     radius: Float,
-    hueDeg: Float,
-    alpha: Float,
+    color: Color,
+    opacity: Float,
 ) {
-    // Wrap hue into 0..360 and build a vivid, fully-saturated colour.
-    val hue = ((hueDeg % 360f) + 360f) % 360f
-    val color = Color.hsv(hue, saturation = 0.85f, value = 1f, alpha = alpha.coerceIn(0f, 1f))
+    val scaled = color.copy(alpha = (color.alpha * opacity).coerceIn(0f, 1f))
     drawRect(
         brush = Brush.radialGradient(
             colorStops = arrayOf(
-                0f to color,
+                0f to scaled,
                 1f to Color.Transparent,
             ),
             center = center,
@@ -121,6 +180,3 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHalo(
         style = Fill,
     )
 }
-
-/** Full hue-wheel rotation period for the iridescent shimmer. */
-private const val HUE_PERIOD_MS = 14_000
