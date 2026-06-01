@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Text
@@ -117,11 +117,16 @@ fun ScreenShell(
             darkTheme = darkTheme,
             motionReduced = motionReduced,
         )
+        // Content fills the whole screen (edge-to-edge) except the
+        // status-bar inset at the very top. It is NOT clipped to an
+        // inset window: each screen's scroll runs full-bleed and uses
+        // its own bottom contentPadding so content scrolls off the real
+        // screen edges (and behind the floating bar) instead of cutting
+        // at a rectangle.
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.systemBars)
-                .padding(bottom = DOCK_RESERVED_HEIGHT_DP.dp),
+                .windowInsetsPadding(WindowInsets.statusBars),
         ) {
             // Route transitions. Direction follows the dock's
             // left-to-right enum order so navigating from Hub →
@@ -207,7 +212,3 @@ fun ComingSoonScreen(label: String) {
  * (~ 60 dp) plus a 12 dp safety margin so spring overshoot doesn't
  * clip into content.
  */
-// Tall enough that scrolled content always stops a clear gap ABOVE the
-// floating nav pill (capsule ≈ 60 dp + lift) — the bar hangs in the air
-// over the background, content never slides behind it.
-private const val DOCK_RESERVED_HEIGHT_DP: Int = 84

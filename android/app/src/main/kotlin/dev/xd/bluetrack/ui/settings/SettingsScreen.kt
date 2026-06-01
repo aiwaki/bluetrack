@@ -72,7 +72,8 @@ fun SettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
     ) {
         HubHeader(title = "Settings")

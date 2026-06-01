@@ -782,7 +782,10 @@ private fun AppScreen(
         TrustState.Empty
     }
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         // Step 3a: canvas Hub header (`[Blue·track]` wordmark + 26 sp
@@ -796,9 +799,8 @@ private fun AppScreen(
         )
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 4.dp)
-                .verticalScroll(rememberScrollState()),
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Box(
