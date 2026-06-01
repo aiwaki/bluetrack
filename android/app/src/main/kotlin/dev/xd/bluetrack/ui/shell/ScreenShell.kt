@@ -18,10 +18,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -154,6 +157,21 @@ fun ScreenShell(
                 content(route)
             }
         }
+        // Top fade: scrolled content dissolves into the status-bar area
+        // instead of a hard rectangular cut — a base→transparent wash
+        // over the status-bar inset plus a little.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(
+                    WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 14.dp,
+                ).background(
+                    Brush.verticalGradient(
+                        listOf(palette.bg0, palette.bg0.copy(alpha = 0f)),
+                    ),
+                ),
+        )
         BluetrackDock(
             current = router.current,
             onSelect = router::navigate,
