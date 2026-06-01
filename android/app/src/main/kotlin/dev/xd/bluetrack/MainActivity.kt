@@ -199,22 +199,16 @@ class MainActivity : ComponentActivity() {
         // StateFlow's `initial = "SYSTEM"` could flash the wrong
         // palette for ~150 ms before the DataStore reader emitted
         // the persisted value, visible as a black ↔ white flip.
-        val initialThemeMode = kotlinx.coroutines.runBlocking {
-            tweaksRepo.themeMode.firstOrNull() ?: "SYSTEM"
-        }
         // Drain pending tweaks on a single coroutine so writes
         // happen in arrival order and never race.
         ioScope.launch {
             pendingTweaks.collect { state -> tweaksRepo.setAll(state) }
         }
         setContent {
-            val themeMode by tweaksRepo.themeMode.collectAsState(initial = initialThemeMode)
-            val systemInDark = androidx.compose.foundation.isSystemInDarkTheme()
-            val darkTheme = when (themeMode) {
-                "LIGHT" -> false
-                "DARK" -> true
-                else -> systemInDark
-            }
+            // Follow the system theme unconditionally — the manual
+            // Light / Dark / System selector was removed for a simpler,
+            // unambiguous experience.
+            val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
             // Flip the system bar icon palette to match the
             // active theme. Light bg → dark icons, dark bg →
             // light icons. Re-applies `enableEdgeToEdge` with the
@@ -418,12 +412,17 @@ class MainActivity : ComponentActivity() {
                 } else {
                     val shellStatus by vm.status.collectAsState()
                     val auroraState =
-                        when {
-                            router.current == Route.Diagnostics ->
-                                dev.xd.bluetrack.ui.shell.AuroraState.Diagnostics
-                            shellStatus.host != null ->
-                                dev.xd.bluetrack.ui.shell.AuroraState.Live
-                            else -> dev.xd.bluetrack.ui.shell.AuroraState.Calm
+                        when (router.current) {
+                            Route.Diagnostics -> dev.xd.bluetrack.ui.shell.AuroraState.Diagnostics
+                            Route.Hosts -> dev.xd.bluetrack.ui.shell.AuroraState.Hosts
+                            Route.Activity -> dev.xd.bluetrack.ui.shell.AuroraState.Activity
+                            Route.Settings -> dev.xd.bluetrack.ui.shell.AuroraState.Settings
+                            Route.Hub ->
+                                if (shellStatus.host != null) {
+                                    dev.xd.bluetrack.ui.shell.AuroraState.Live
+                                } else {
+                                    dev.xd.bluetrack.ui.shell.AuroraState.Calm
+                                }
                         }
                     ScreenShell(
                         router = router,
@@ -431,6 +430,7 @@ class MainActivity : ComponentActivity() {
                         glassEnabled = tweaks.glassEnabled,
                         neonStrength = tweaks.neonStrength,
                         auroraState = auroraState,
+                        darkTheme = darkTheme,
                     ) { route ->
                         when (route) {
                             Route.Hub -> AppScreen(
@@ -477,8 +477,6 @@ class MainActivity : ComponentActivity() {
                                 notificationsPermissionGranted = hasNotificationsPermission(),
                                 autoConnectEnabled = autoConnectEnabled,
                                 onAutoConnectChange = { persistAutoConnect(it) },
-                                themeMode = themeMode,
-                                onThemeModeChange = { persistThemeMode(it) },
                                 touchpadSensitivity = touchpadSensitivity,
                                 onTouchpadSensitivityChange = { persistTouchpadSensitivity(it) },
                                 onOpenNotificationSettings = { openNotificationSettings() },

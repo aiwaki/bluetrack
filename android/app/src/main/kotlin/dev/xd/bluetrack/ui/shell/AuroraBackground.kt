@@ -6,10 +6,11 @@ import androidx.annotation.RequiresApi
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.withInfiniteAnimationFrameMillis
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.core.withInfiniteAnimationFrameMillis
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -29,29 +30,25 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import kotlinx.coroutines.isActive
 
 /**
- * Situational ("state-driven") aura background.
+ * Situational ("state-driven") ambient aura.
  *
- * A dark field with one diffuse glow that hugs the bottom edge (so it
- * wraps the floating nav bar) while the top + centre stay deep black
- * for depth. The glow's colour, reach, brightness and breathing speed
- * are chosen by [AuroraState] and cross-fade smoothly (≈1.2 s,
- * [FastOutSlowInEasing]) whenever the state changes, so switching tabs
- * makes the light flow rather than snap.
+ * A deep base (near-black in dark theme, near-white in light) with one
+ * diffuse glow hugging the bottom edge so it wraps the floating nav
+ * bar; the top + centre stay clean for depth. Over the glow sits an
+ * animated stipple (dot-screen) texture that breathes — subtle dimples
+ * whose size pulses and whose grid micro-drifts, giving the surface a
+ * living digital texture without any Frutiger-Aero gloss.
+ *
+ * Each [AuroraState] (one per route, plus a connected "Live" variant)
+ * carries its own cool-family palette / reach / speed, and they
+ * cross-fade over ≈1.2 s ([FastOutSlowInEasing]) on change, so moving
+ * between tabs makes the light flow.
  *
  * API 33+: an AGSL [RuntimeShader] (GPU, 60 fps). Older devices fall
- * back to a single tinted [Canvas] halo. `motionReduced` freezes the
- * breathing.
+ * back to a single tinted [Canvas] halo (no stipple). `motionReduced`
+ * freezes the animation.
  */
-enum class AuroraState {
-    /** Idle / Hub / Hosts / Settings — calm cool teal↔violet breathing. */
-    Calm,
-
-    /** A HID host is connected — brighter, taller cyan↔azure glow. */
-    Live,
-
-    /** Diagnostics route — restrained steel blue-grey / cool white. */
-    Diagnostics,
-}
+enum class AuroraState { Calm, Live, Diagnostics, Hosts, Activity, Settings }
 
 private data class AuroraParams(
     val colorA: Color,
@@ -62,39 +59,25 @@ private data class AuroraParams(
 )
 
 private fun AuroraState.params(): AuroraParams = when (this) {
-    AuroraState.Calm -> AuroraParams(
-        colorA = Color(0xFF18B5AE),
-        colorB = Color(0xFF6E5CFF),
-        glowHeight = 0.50f,
-        intensity = 0.85f,
-        speed = 1.0f,
-    )
-    AuroraState.Live -> AuroraParams(
-        colorA = Color(0xFF2BD4FF),
-        colorB = Color(0xFF3E76FF),
-        glowHeight = 0.62f,
-        intensity = 1.0f,
-        speed = 1.15f,
-    )
-    AuroraState.Diagnostics -> AuroraParams(
-        colorA = Color(0xFF8AA2C6),
-        colorB = Color(0xFFE3ECF6),
-        glowHeight = 0.42f,
-        intensity = 0.7f,
-        speed = 0.7f,
-    )
+    AuroraState.Calm -> AuroraParams(Color(0xFF18B5AE), Color(0xFF6E5CFF), 0.50f, 0.85f, 1.00f)
+    AuroraState.Live -> AuroraParams(Color(0xFF2BD4FF), Color(0xFF3E76FF), 0.62f, 1.00f, 1.15f)
+    AuroraState.Diagnostics -> AuroraParams(Color(0xFF8AA2C6), Color(0xFFE3ECF6), 0.42f, 0.70f, 0.70f)
+    AuroraState.Hosts -> AuroraParams(Color(0xFF1FCF9A), Color(0xFF2BD4FF), 0.50f, 0.85f, 0.95f)
+    AuroraState.Activity -> AuroraParams(Color(0xFF7A5CFF), Color(0xFFC95CFF), 0.50f, 0.85f, 0.90f)
+    AuroraState.Settings -> AuroraParams(Color(0xFF3E76FF), Color(0xFF5C6CFF), 0.46f, 0.80f, 0.85f)
 }
 
 @Composable
 fun AuroraBackground(
     modifier: Modifier = Modifier,
     state: AuroraState = AuroraState.Calm,
+    darkTheme: Boolean = true,
     motionReduced: Boolean = false,
 ) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        AuroraShader(modifier = modifier, state = state, motionReduced = motionReduced)
+        AuroraShader(modifier = modifier, state = state, darkTheme = darkTheme, motionReduced = motionReduced)
     } else {
-        AuroraFallback(modifier = modifier, state = state, motionReduced = motionReduced)
+        AuroraFallback(modifier = modifier, state = state, darkTheme = darkTheme, motionReduced = motionReduced)
     }
 }
 
@@ -102,38 +85,52 @@ fun AuroraBackground(
 private const val AURORA_AGSL = """
 uniform float2 resolution;
 uniform float time;
+uniform half3 baseColor;
 uniform half3 colorA;
 uniform half3 colorB;
 uniform float glowHeight;
 uniform float intensity;
+uniform float dotStrength;
 
 half4 main(float2 fragCoord) {
     float2 uv = fragCoord / resolution;
     float asp = resolution.x / resolution.y;
 
-    // Bloom centre sits just below the bottom edge and drifts a little
-    // horizontally so the glow breathes. glowHeight is the radial reach
-    // (aspect-corrected) — small reach keeps the upper screen deep black.
+    // Bloom centred just below the bottom edge, drifting a little so it
+    // breathes. glowHeight is the radial reach — small reach keeps the
+    // upper screen at the clean base colour.
     float2 c = float2(0.5 + 0.10 * sin(time * 0.22), 1.06);
     float d = distance(float2(uv.x * asp, uv.y), float2(c.x * asp, c.y));
     float g = smoothstep(glowHeight, 0.0, d);
 
-    // Slow colour breathing between the state's two stops.
     float tt = 0.5 - 0.5 * cos(time * 0.20);
-    half3 col = mix(colorA, colorB, tt) * g * intensity;
+    half3 glow = mix(colorA, colorB, tt);
+    half3 col = mix(baseColor, glow, g * intensity);
 
-    // Soft tonemap: diffuse aura, never an acid-neon blowout; keeps deep
-    // blacks for contrast/volume.
-    col = col / (col + 0.9);
+    // Animated stipple (dot screen): a fine grid of dimples gated to the
+    // glow region. The grid micro-drifts and each dot's radius pulses on
+    // a per-cell phase, so the texture "breathes".
+    float spacing = 9.0;
+    float2 gr = fragCoord / spacing + float2(sin(time * 0.15), cos(time * 0.12)) * 0.6;
+    float2 cell = fract(gr) - 0.5;
+    float dd = length(cell);
+    float pulse = 0.32 + 0.08 * sin(time * 0.9 + (floor(gr).x + floor(gr).y));
+    float dot = smoothstep(pulse, pulse - 0.10, dd);
+    col = col * (1.0 - dot * dotStrength * g);
+
     return half4(col, 1.0);
 }
 """
+
+private fun baseColorFor(darkTheme: Boolean): Color =
+    if (darkTheme) Color(0xFF07080C) else Color(0xFFF6F8FB)
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @Composable
 private fun AuroraShader(
     modifier: Modifier,
     state: AuroraState,
+    darkTheme: Boolean,
     motionReduced: Boolean,
 ) {
     val shader = remember { RuntimeShader(AURORA_AGSL) }
@@ -152,7 +149,7 @@ private fun AuroraShader(
         transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
         label = "aurora-glow",
     ) { it.params().glowHeight }
-    val intensity by transition.animateFloat(
+    val intensityBase by transition.animateFloat(
         transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
         label = "aurora-intensity",
     ) { it.params().intensity }
@@ -161,8 +158,12 @@ private fun AuroraShader(
         label = "aurora-speed",
     ) { it.params().speed }
 
-    // Phase accumulator so a speed change never jumps the breathing
-    // phase — we integrate dt * (live, animated) speed.
+    // Light theme: pull the glow back so it reads as a soft pastel wash
+    // on white instead of a saturated bloom.
+    val intensity = intensityBase * if (darkTheme) 1.0f else 0.5f
+    val baseColor = baseColorFor(darkTheme)
+    val dotStrength = if (darkTheme) 0.12f else 0.08f
+
     var time by remember { mutableStateOf(0f) }
     LaunchedEffect(motionReduced) {
         if (motionReduced) {
@@ -185,10 +186,12 @@ private fun AuroraShader(
                 onDrawBehind {
                     shader.setFloatUniform("resolution", size.width, size.height)
                     shader.setFloatUniform("time", time)
+                    shader.setFloatUniform("baseColor", baseColor.red, baseColor.green, baseColor.blue)
                     shader.setFloatUniform("colorA", colorA.red, colorA.green, colorA.blue)
                     shader.setFloatUniform("colorB", colorB.red, colorB.green, colorB.blue)
                     shader.setFloatUniform("glowHeight", glowHeight)
                     shader.setFloatUniform("intensity", intensity)
+                    shader.setFloatUniform("dotStrength", dotStrength)
                     drawRect(brush)
                 }
             },
@@ -199,6 +202,7 @@ private fun AuroraShader(
 private fun AuroraFallback(
     modifier: Modifier,
     state: AuroraState,
+    darkTheme: Boolean,
     motionReduced: Boolean,
 ) {
     val transition = updateTransition(targetState = state, label = "aurora-state-fb")
@@ -210,25 +214,30 @@ private fun AuroraFallback(
         transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
         label = "aurora-fb-glow",
     ) { it.params().glowHeight }
-    val intensity by transition.animateFloat(
+    val intensityBase by transition.animateFloat(
         transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
         label = "aurora-fb-intensity",
     ) { it.params().intensity }
 
-    Canvas(modifier = modifier.fillMaxSize()) {
-        val w = size.width
-        val h = size.height
-        drawRect(
-            brush = Brush.radialGradient(
-                colorStops = arrayOf(
-                    0f to color.copy(alpha = (0.5f * intensity).coerceIn(0f, 1f)),
-                    1f to Color.Transparent,
+    val intensity = intensityBase * if (darkTheme) 1.0f else 0.5f
+    val base = baseColorFor(darkTheme)
+
+    Box(modifier = modifier.fillMaxSize().background(base)) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            drawRect(
+                brush = Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0f to color.copy(alpha = (0.5f * intensity).coerceIn(0f, 1f)),
+                        1f to Color.Transparent,
+                    ),
+                    center = Offset(w * 0.5f, h * 1.06f),
+                    radius = w * (0.55f + glowHeight),
                 ),
-                center = Offset(w * 0.5f, h * 1.06f),
-                radius = w * (0.55f + glowHeight),
-            ),
-            size = Size(w, h),
-            style = Fill,
-        )
+                size = Size(w, h),
+                style = Fill,
+            )
+        }
     }
 }

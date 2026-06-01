@@ -60,8 +60,6 @@ fun SettingsScreen(
     commitShort: String? = null,
     autoConnectEnabled: Boolean = true,
     onAutoConnectChange: (Boolean) -> Unit = {},
-    themeMode: String = "SYSTEM",
-    onThemeModeChange: (String) -> Unit = {},
     touchpadSensitivity: Float = 1f,
     onTouchpadSensitivityChange: (Float) -> Unit = {},
     onOpenNotificationSettings: () -> Unit = {},
@@ -129,20 +127,6 @@ fun SettingsScreen(
         Box(
             modifier = dev.xd.bluetrack.ui
                 .rememberStaggerModifier(index = 2),
-        ) {
-            SettingsGroup(title = "APPEARANCE") {
-                SettingsSegmentedRow(
-                    label = "Theme",
-                    hint = "System follows your phone's dark / light setting.",
-                    options = listOf("SYSTEM", "LIGHT", "DARK"),
-                    selected = themeMode,
-                    onSelect = onThemeModeChange,
-                )
-            }
-        }
-        Box(
-            modifier = dev.xd.bluetrack.ui
-                .rememberStaggerModifier(index = 3),
         ) {
             SettingsGroup(title = "INPUT") {
                 // Touchpad sensitivity multiplier. The Hub touchpad
