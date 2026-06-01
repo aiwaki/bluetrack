@@ -68,6 +68,7 @@ fun ScreenShell(
     motionReduced: Boolean = false,
     glassEnabled: Boolean = true,
     neonStrength: Float = 1f,
+    auroraState: AuroraState = AuroraState.Calm,
     content: @Composable (Route) -> Unit,
 ) {
     val palette = BluetrackTheme.palette
@@ -111,6 +112,7 @@ fun ScreenShell(
     ) {
         AuroraBackground(
             modifier = Modifier.fillMaxSize(),
+            state = auroraState,
             motionReduced = motionReduced,
         )
         Column(

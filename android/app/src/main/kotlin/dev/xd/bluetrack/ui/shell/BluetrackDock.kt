@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -51,34 +53,36 @@ fun BluetrackDock(
     val palette = BluetrackTheme.palette
     val routes = Route.entries.filter { it != Route.Activity }
 
-    // Dock floats on the aurora background — no glass surface,
-    // no border, just the slot row. User read the previous
-    // `btGlass(strong=true)` panel as "black bar at the bottom"
-    // rather than the intended translucent shelf. Going fully
-    // transparent matches the design reference where the icon
-    // row reads as anchored UI without a chrome rail.
-    // Outer wrapper is now a Row directly. Earlier we wrapped
-    // it in a Box with horizontal padding, which combined with
-    // `SpaceEvenly` placed extra slack at the edges and visibly
-    // shifted the icon cluster off centre. Row fills the dock's
-    // assigned width and `SpaceAround` equalises the gaps so the
-    // four icons sit symmetric on both axes.
-    Row(
+    // Floating glass nav bar: a centred pill that hovers off the
+    // screen edges over the aurora. Liquid-glass = translucent matte
+    // black (alpha 0.4) + a hairline edge, deliberately no Frutiger-Aero
+    // gloss / skeuomorphic highlights. The aurora glows through it.
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .wrapContentHeight()
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 28.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        routes.forEach { route ->
-            DockSlot(
-                route = route,
-                active = route == current,
-                activeColor = palette.crit,
-                inactiveTint = palette.fg2,
-                onClick = { onSelect(route) },
-            )
+        val pill = RoundedCornerShape(percent = 50)
+        Row(
+            modifier = Modifier
+                .clip(pill)
+                .background(Color.Black.copy(alpha = 0.4f))
+                .border(1.dp, palette.hairline, pill)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            routes.forEach { route ->
+                DockSlot(
+                    route = route,
+                    active = route == current,
+                    activeColor = palette.crit,
+                    inactiveTint = palette.fg2,
+                    onClick = { onSelect(route) },
+                )
+            }
         }
     }
 }

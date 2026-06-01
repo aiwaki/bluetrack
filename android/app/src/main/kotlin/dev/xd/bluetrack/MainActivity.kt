@@ -416,11 +416,21 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 } else {
+                    val shellStatus by vm.status.collectAsState()
+                    val auroraState =
+                        when {
+                            router.current == Route.Diagnostics ->
+                                dev.xd.bluetrack.ui.shell.AuroraState.Diagnostics
+                            shellStatus.host != null ->
+                                dev.xd.bluetrack.ui.shell.AuroraState.Live
+                            else -> dev.xd.bluetrack.ui.shell.AuroraState.Calm
+                        }
                     ScreenShell(
                         router = router,
                         motionReduced = tweaks.motionReduced,
                         glassEnabled = tweaks.glassEnabled,
                         neonStrength = tweaks.neonStrength,
+                        auroraState = auroraState,
                     ) { route ->
                         when (route) {
                             Route.Hub -> AppScreen(
