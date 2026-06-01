@@ -99,24 +99,32 @@ half4 main(float2 fragCoord) {
     // Bloom centred just below the bottom edge, drifting a little so it
     // breathes. glowHeight is the radial reach — small reach keeps the
     // upper screen at the clean base colour.
-    float2 c = float2(0.5 + 0.10 * sin(time * 0.22), 1.06);
-    float d = distance(float2(uv.x * asp, uv.y), float2(c.x * asp, c.y));
-    float g = smoothstep(glowHeight, 0.0, d);
+    // Two corner blooms (bottom-left + bottom-right). The bottom centre
+    // is farther from both, so it reads as a dimmer "valley" between
+    // them instead of one solid band across the width.
+    float driftX = 0.05 * sin(time * 0.18);
+    float2 cl = float2((0.14 + driftX) * asp, 1.10);
+    float2 cr = float2((0.86 + driftX) * asp, 1.10);
+    float2 p = float2(uv.x * asp, uv.y);
+    float g = max(
+        smoothstep(glowHeight, 0.0, distance(p, cl)),
+        smoothstep(glowHeight, 0.0, distance(p, cr))
+    );
 
     float tt = 0.5 - 0.5 * cos(time * 0.20);
     half3 glow = mix(colorA, colorB, tt);
     half3 col = mix(baseColor, glow, g * intensity);
 
-    // Animated stipple (dot screen): a fine grid of dimples gated to the
-    // glow region. The grid micro-drifts and each dot's radius pulses on
-    // a per-cell phase, so the texture "breathes".
-    float spacing = 9.0;
-    float2 gr = fragCoord / spacing + float2(sin(time * 0.15), cos(time * 0.12)) * 0.6;
-    float2 cell = fract(gr) - 0.5;
+    // Crisp, sparse stipple. Wide spacing + an anti-aliased edge kills
+    // the moiré the tight grid caused on scroll; dots are an additive
+    // glow-tint (soft-light feel), gated to the glow so clean areas stay
+    // clean. Only a slow, gentle radius pulse animates.
+    float spacing = 16.0;
+    float2 cell = fract(fragCoord / spacing) - 0.5;
     float dd = length(cell);
-    float pulse = 0.32 + 0.08 * sin(time * 0.9 + (floor(gr).x + floor(gr).y));
-    float dot = smoothstep(pulse, pulse - 0.10, dd);
-    col = col * (1.0 - dot * dotStrength * g);
+    float r = 0.26 + 0.03 * sin(time * 0.5);
+    float dot = smoothstep(r, r - 0.05, dd);
+    col = col + glow * (dot * dotStrength * g);
 
     return half4(col, 1.0);
 }
@@ -162,7 +170,7 @@ private fun AuroraShader(
     // on white instead of a saturated bloom.
     val intensity = intensityBase * if (darkTheme) 1.0f else 0.5f
     val baseColor = baseColorFor(darkTheme)
-    val dotStrength = if (darkTheme) 0.12f else 0.08f
+    val dotStrength = if (darkTheme) 0.22f else 0.16f
 
     var time by remember { mutableStateOf(0f) }
     LaunchedEffect(motionReduced) {

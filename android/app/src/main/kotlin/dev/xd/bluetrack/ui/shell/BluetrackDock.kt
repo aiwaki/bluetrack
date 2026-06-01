@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -53,10 +54,11 @@ fun BluetrackDock(
     val palette = BluetrackTheme.palette
     val routes = Route.entries.filter { it != Route.Activity }
 
-    // Floating glass nav bar: a centred pill that hovers off the
-    // screen edges over the aurora. Liquid-glass = translucent matte
-    // black (alpha 0.4) + a hairline edge, deliberately no Frutiger-Aero
-    // gloss / skeuomorphic highlights. The aurora glows through it.
+    // Floating glass nav bar: a centred pill that hovers off the screen
+    // edges over the aurora. Theme-aware translucent fill (light → soft
+    // white, dark → smoked) via `palette.glassBg`, a soft drop shadow,
+    // and a hairline edge. Deliberately matte — no Frutiger-Aero gloss.
+    // The aurora glows through it.
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -67,8 +69,9 @@ fun BluetrackDock(
         val pill = RoundedCornerShape(percent = 50)
         Row(
             modifier = Modifier
+                .shadow(elevation = 14.dp, shape = pill, clip = false)
                 .clip(pill)
-                .background(Color.Black.copy(alpha = 0.4f))
+                .background(palette.glassBg)
                 .border(1.dp, palette.hairline, pill)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -128,7 +131,7 @@ private fun DockSlot(
     // press still feels tactile (1.06 × 0.9 ≈ 0.95 dip from rest).
     var pressed by remember { mutableStateOf(false) }
     val pressScale by animateFloatAsState(
-        targetValue = if (pressed) 0.9f else 1f,
+        targetValue = if (pressed) 0.95f else 1f,
         animationSpec = if (pressed) {
             spring(stiffness = Spring.StiffnessMedium)
         } else {
