@@ -58,14 +58,12 @@ private const val AURORA_AGSL = """
 uniform float2 resolution;
 uniform float time;
 
-// Inigo-Quilez cosine palette tuned to a cohesive cool→violet→magenta
-// arc (no garish yellow/green) so the wash stays premium as it morphs.
-half3 auroraPalette(float t) {
-    half3 a = half3(0.26, 0.22, 0.40);
-    half3 b = half3(0.26, 0.22, 0.40);
-    half3 c = half3(1.0, 1.0, 1.0);
-    half3 d = half3(0.62, 0.50, 0.38);
-    return a + b * cos(6.28318 * (c * t + d));
+// HSV→RGB so the wash can be pinned to a curated cool arc
+// (teal → cyan → blue → violet → magenta) and never wander into
+// muddy warm / olive tones. Keeps it vivid and premium.
+half3 hsv2rgb(float h, float s, float v) {
+    float3 p = abs(fract(float3(h, h, h) + float3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+    return half3(v * mix(float3(1.0), clamp(p - 1.0, 0.0, 1.0), s));
 }
 
 half4 main(float2 fragCoord) {
@@ -73,8 +71,9 @@ half4 main(float2 fragCoord) {
     float asp = resolution.x / resolution.y;
     float2 q = float2(uv.x * asp, uv.y);
 
-    // Slow hue morph.
-    float tt = time * 0.045;
+    // Slow ping-pong across a curated cool hue arc (teal ↔ magenta).
+    float phase = 0.5 - 0.5 * cos(time * 0.05);
+    float hue = mix(0.46, 0.84, phase);
 
     // Dominant bloom anchored just below the bottom edge; faint accent
     // just above the top edge. Both drift slightly so the glow breathes.
@@ -87,7 +86,7 @@ half4 main(float2 fragCoord) {
     float g1 = smoothstep(0.95, 0.0, d1);
     float g2 = smoothstep(0.70, 0.0, d2);
 
-    half3 col = auroraPalette(tt) * g1 + auroraPalette(tt + 0.05) * g2 * 0.5;
+    half3 col = hsv2rgb(hue, 0.85, 1.0) * g1 + hsv2rgb(hue + 0.05, 0.9, 1.0) * g2 * 0.5;
 
     // Soft tonemap: lifts the glow but never blows out to white, so the
     // result stays matte/premium with deep blacks (high contrast).
