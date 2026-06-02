@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
@@ -119,7 +120,13 @@ fun Stick(
     ) {
         Box(
             modifier = Modifier
-                .size(wellSize)
+                // requiredSize (not size) so the well is ALWAYS an exact
+                // wellSize×wellSize square → a true circle. With plain
+                // size(), a height-constrained parent (the last child in
+                // an overflowing thumb column) coerced the height below
+                // wellSize and the clipped circle rendered as a squished
+                // ellipse. requiredSize ignores the incoming constraint.
+                .requiredSize(wellSize)
                 .scale(clickBurst.value)
                 .clip(CircleShape)
                 .background(
