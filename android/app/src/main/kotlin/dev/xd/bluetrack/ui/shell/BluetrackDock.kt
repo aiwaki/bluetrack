@@ -63,7 +63,7 @@ fun BluetrackDock(
         modifier = modifier
             .fillMaxWidth()
             .wrapContentHeight()
-            .padding(horizontal = 10.dp, vertical = 2.dp),
+            .padding(horizontal = 14.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center,
     ) {
         val pill = RoundedCornerShape(percent = 50)
@@ -74,7 +74,7 @@ fun BluetrackDock(
                 // large, diffuse elevation that lifts the pill off the
                 // background.
                 .shadow(
-                    elevation = 22.dp,
+                    elevation = 44.dp,
                     shape = pill,
                     clip = false,
                     ambientColor = Color.Black,

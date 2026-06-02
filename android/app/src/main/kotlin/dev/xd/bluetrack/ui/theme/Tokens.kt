@@ -100,8 +100,8 @@ data object BluetrackTokens {
     val HeightCta: Dp = 50.dp
 
     // ─── Glass ───────────────────────────────────────────────────────
-    val GlassBgDark = Color(0xCC23272C) // milky frosted, ~80% — cards read clearly over the dark aura
-    val GlassBgStrongDark = Color(0xE02A2F35) // milky frosted, ~88%
+    val GlassBgDark = Color(0xD916191B) // dark frosted, ~85% — opaque enough to read, still dark not grey
+    val GlassBgStrongDark = Color(0xEB181B1E) // dark frosted, ~92%
     val GlassBorderDark = Color(0x1AFFFFFF) // 10% white
 
     val GlassBgLight = Color(0xB3FFFFFF) // ~70%, a touch milkier
