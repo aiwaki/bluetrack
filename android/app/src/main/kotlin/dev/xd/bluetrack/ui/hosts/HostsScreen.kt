@@ -32,7 +32,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.xd.bluetrack.ble.BluetoothHostKind
 import dev.xd.bluetrack.ble.GatewayStatus
-import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.SectionLabel
 import dev.xd.bluetrack.ui.shell.btGlass
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
@@ -67,10 +66,10 @@ fun HostsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(top = 100.dp, bottom = 120.dp),
             verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
         ) {
-            HubHeader(title = "Hosts")
             if (entries.isEmpty()) {
                 Box(
                     modifier = dev.xd.bluetrack.ui

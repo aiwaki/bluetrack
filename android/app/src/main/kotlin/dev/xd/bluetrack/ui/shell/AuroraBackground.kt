@@ -1,124 +1,259 @@
 package dev.xd.bluetrack.ui.shell
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
+import android.graphics.RuntimeShader
+import android.os.Build
+import androidx.annotation.RequiresApi
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.core.withInfiniteAnimationFrameMillis
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.drawscope.Fill
-import dev.xd.bluetrack.ui.theme.BluetrackTheme
-import dev.xd.bluetrack.ui.theme.BluetrackTokens
+import kotlinx.coroutines.isActive
 
 /**
- * Drifting radial gradients that paint the canvas's `--bt-aurora`
- * behind the screen shell. Three soft halos slowly translate so the
- * dock + cards appear to float on a living surface.
+ * Situational ("state-driven") ambient aura.
  *
- * Behaviour matches `tokens.css`:
- * - Drift period 18 s (`AURORA_DURATION_MS`), alternates direction.
- * - `motionReduced = true` freezes the animation but keeps the
- *   static halos visible at 50% opacity.
- * - `glassEnabled = false` removes the aurora entirely so flat
- *   surfaces render exactly like the `data-glass="off"` canvas.
+ * A deep base (near-black in dark theme, near-white in light) with one
+ * diffuse glow hugging the bottom edge so it wraps the floating nav
+ * bar; the top + centre stay clean for depth. Over the glow sits an
+ * animated stipple (dot-screen) texture that breathes — subtle dimples
+ * whose size pulses and whose grid micro-drifts, giving the surface a
+ * living digital texture without any Frutiger-Aero gloss.
+ *
+ * Each [AuroraState] (one per route, plus a connected "Live" variant)
+ * carries its own cool-family palette / reach / speed, and they
+ * cross-fade over ≈1.2 s ([FastOutSlowInEasing]) on change, so moving
+ * between tabs makes the light flow.
+ *
+ * API 33+: an AGSL [RuntimeShader] (GPU, 60 fps). Older devices fall
+ * back to a single tinted [Canvas] halo (no stipple). `motionReduced`
+ * freezes the animation.
  */
+enum class AuroraState { Calm, Live, Diagnostics, Hosts, Activity, Settings, Gamepad }
+
+private data class AuroraParams(
+    val colorA: Color,
+    val colorB: Color,
+    val glowHeight: Float,
+    val intensity: Float,
+    val speed: Float,
+)
+
+private fun AuroraState.params(): AuroraParams = when (this) {
+    AuroraState.Calm -> AuroraParams(Color(0xFF18B5AE), Color(0xFF6E5CFF), 0.50f, 0.85f, 1.00f)
+    AuroraState.Live -> AuroraParams(Color(0xFF2BD4FF), Color(0xFF3E76FF), 0.62f, 1.00f, 1.15f)
+    AuroraState.Diagnostics -> AuroraParams(Color(0xFF8AA2C6), Color(0xFFE3ECF6), 0.42f, 0.70f, 0.70f)
+    AuroraState.Hosts -> AuroraParams(Color(0xFF1FCF9A), Color(0xFF2BD4FF), 0.50f, 0.85f, 0.95f)
+    AuroraState.Activity -> AuroraParams(Color(0xFF7A5CFF), Color(0xFFC95CFF), 0.50f, 0.85f, 0.90f)
+    AuroraState.Settings -> AuroraParams(Color(0xFF3E76FF), Color(0xFF5C6CFF), 0.46f, 0.80f, 0.85f)
+    // Gamepad: warm crimson bloom — the only red aurora, matching the
+    // surface's live-input identity and the crit accent on its controls.
+    AuroraState.Gamepad -> AuroraParams(Color(0xFFFF3344), Color(0xFF7A0014), 0.60f, 1.00f, 1.20f)
+}
+
 @Composable
 fun AuroraBackground(
     modifier: Modifier = Modifier,
+    state: AuroraState = AuroraState.Calm,
+    darkTheme: Boolean = true,
     motionReduced: Boolean = false,
-    glassEnabled: Boolean = true,
 ) {
-    val palette = BluetrackTheme.palette
-    if (!glassEnabled) return
-
-    val transition = rememberInfiniteTransition(label = "aurora")
-    val driftX by transition.animateFloat(
-        initialValue = -0.04f,
-        targetValue = 0.03f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = BluetrackTokens.AURORA_DURATION_MS,
-                easing = LinearEasing,
-            ),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "auroraDriftX",
-    )
-    val driftY by transition.animateFloat(
-        initialValue = 0.03f,
-        targetValue = -0.02f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = BluetrackTokens.AURORA_DURATION_MS,
-                easing = LinearEasing,
-            ),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "auroraDriftY",
-    )
-    val tx = if (motionReduced) 0f else driftX
-    val ty = if (motionReduced) 0f else driftY
-    val opacity = if (motionReduced) 0.5f else 0.9f
-
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        // Three radial halos roughly matching the canvas
-        // `bt-aurora` recipe: mint top-left, violet top-right,
-        // cool blue bottom-centre. Soft mint accent bottom-right
-        // brings the dock area back to brand.
-        drawHalo(
-            center = Offset(w * (0.18f + tx), h * (0.14f + ty)),
-            radius = w * 0.55f,
-            color = palette.mintGlow,
-            opacity = opacity,
-        )
-        drawHalo(
-            center = Offset(w * (0.88f + tx), h * (0.30f + ty)),
-            radius = w * 0.55f,
-            color = Color(0x52_78_50_FF), // violet 32%
-            opacity = opacity,
-        )
-        drawHalo(
-            center = Offset(w * (0.50f + tx), h * (0.92f + ty)),
-            radius = w * 0.75f,
-            color = Color(0x3800_B4_FF), // cool 22%
-            opacity = opacity,
-        )
-        drawHalo(
-            center = Offset(w * (0.80f + tx), h * (0.80f + ty)),
-            radius = w * 0.40f,
-            color = palette.mintGlowSoft,
-            opacity = opacity,
-        )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        AuroraShader(modifier = modifier, state = state, darkTheme = darkTheme, motionReduced = motionReduced)
+    } else {
+        AuroraFallback(modifier = modifier, state = state, darkTheme = darkTheme, motionReduced = motionReduced)
     }
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHalo(
-    center: Offset,
-    radius: Float,
-    color: Color,
-    opacity: Float,
+// language=AGSL
+private const val AURORA_AGSL = """
+uniform float2 resolution;
+uniform float time;
+uniform half3 baseColor;
+uniform half3 colorA;
+uniform half3 colorB;
+uniform float glowHeight;
+uniform float intensity;
+uniform float dotStrength;
+
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / resolution;
+    float asp = resolution.x / resolution.y;
+
+    // Bloom centred just below the bottom edge, drifting a little so it
+    // breathes. glowHeight is the radial reach — small reach keeps the
+    // upper screen at the clean base colour.
+    // Single soft glow centred just below the bottom edge, breathing a
+    // touch. glowHeight is the reach — the top stays at the clean base
+    // colour. No stipple, no corner split (reverted).
+    float2 c = float2(0.5 + 0.06 * sin(time * 0.20), 1.08);
+    float d = distance(float2(uv.x * asp, uv.y), float2(c.x * asp, c.y));
+    float g = smoothstep(glowHeight, 0.0, d);
+
+    float tt = 0.5 - 0.5 * cos(time * 0.20);
+    half3 glow = mix(colorA, colorB, tt);
+    half3 col = mix(baseColor, glow, g * intensity);
+
+    // Drifting colour fields across the WHOLE screen (not just the
+    // bottom bloom) so the glass cards refract gentle moving colour
+    // everywhere instead of pure black up top. Two soft blobs in the
+    // state's own two hues — cohesive, not a rainbow.
+    float2 p = float2(uv.x * asp, uv.y);
+    float2 b1 = float2((0.28 + 0.14 * sin(time * 0.13)) * asp, 0.30 + 0.10 * cos(time * 0.11));
+    float2 b2 = float2((0.74 + 0.12 * cos(time * 0.10)) * asp, 0.52 + 0.13 * sin(time * 0.09));
+    float g1 = smoothstep(0.52, 0.0, distance(p, b1));
+    float g2 = smoothstep(0.58, 0.0, distance(p, b2));
+    col = col + colorA * (g1 * 0.16 * intensity) + colorB * (g2 * 0.16 * intensity);
+
+    // Stipple dome (Gemini-style): a crisp, wide-spaced dot grid that
+    // lives only inside the glow. Wide spacing + an AA edge avoids the
+    // moiré the tight grid caused. An expanding ring pulse sweeps out
+    // from the bloom centre every few seconds ("impulse-wave"), then the
+    // dots settle back to a static glow tint.
+    float spacing = 14.0;
+    float2 cell = fract(fragCoord / spacing) - 0.5;
+    float dotMask = smoothstep(0.30, 0.22, length(cell));
+    float ring = smoothstep(0.05, 0.0, abs(d - fract(time * 0.13) * (glowHeight + 0.30)));
+    col = col + glow * (dotMask * g * (0.10 + 0.50 * ring) * dotStrength);
+
+    return half4(col, 1.0);
+}
+"""
+
+private fun baseColorFor(darkTheme: Boolean): Color =
+    if (darkTheme) Color(0xFF07080C) else Color(0xFFF6F8FB)
+
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+@Composable
+private fun AuroraShader(
+    modifier: Modifier,
+    state: AuroraState,
+    darkTheme: Boolean,
+    motionReduced: Boolean,
 ) {
-    val scaled = color.copy(alpha = (color.alpha * opacity).coerceIn(0f, 1f))
-    drawRect(
-        brush = Brush.radialGradient(
-            colorStops = arrayOf(
-                0f to scaled,
-                1f to Color.Transparent,
-            ),
-            center = center,
-            radius = radius,
-        ),
-        size = Size(size.width, size.height),
-        style = Fill,
+    val shader = remember { RuntimeShader(AURORA_AGSL) }
+    val brush = remember { ShaderBrush(shader) }
+
+    val transition = updateTransition(targetState = state, label = "aurora-state")
+    val colorA by transition.animateColor(
+        transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
+        label = "aurora-colorA",
+    ) { it.params().colorA }
+    val colorB by transition.animateColor(
+        transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
+        label = "aurora-colorB",
+    ) { it.params().colorB }
+    val glowHeight by transition.animateFloat(
+        transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
+        label = "aurora-glow",
+    ) { it.params().glowHeight }
+    val intensityBase by transition.animateFloat(
+        transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
+        label = "aurora-intensity",
+    ) { it.params().intensity }
+    val speed by transition.animateFloat(
+        transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
+        label = "aurora-speed",
+    ) { it.params().speed }
+
+    // Light theme: pull the glow back so it reads as a soft pastel wash
+    // on white instead of a saturated bloom.
+    val intensity = intensityBase * if (darkTheme) 1.0f else 0.5f
+    val baseColor = baseColorFor(darkTheme)
+    val dotStrength = if (darkTheme) 1.0f else 0.65f
+
+    var time by remember { mutableStateOf(0f) }
+    LaunchedEffect(motionReduced) {
+        if (motionReduced) {
+            time = 6f
+            return@LaunchedEffect
+        }
+        var last = 0L
+        while (isActive) {
+            withInfiniteAnimationFrameMillis { ms ->
+                if (last != 0L) time += (ms - last) / 1000f * speed
+                last = ms
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .drawWithCache {
+                onDrawBehind {
+                    shader.setFloatUniform("resolution", size.width, size.height)
+                    shader.setFloatUniform("time", time)
+                    shader.setFloatUniform("baseColor", baseColor.red, baseColor.green, baseColor.blue)
+                    shader.setFloatUniform("colorA", colorA.red, colorA.green, colorA.blue)
+                    shader.setFloatUniform("colorB", colorB.red, colorB.green, colorB.blue)
+                    shader.setFloatUniform("glowHeight", glowHeight)
+                    shader.setFloatUniform("intensity", intensity)
+                    drawRect(brush)
+                }
+            },
     )
+}
+
+@Composable
+private fun AuroraFallback(
+    modifier: Modifier,
+    state: AuroraState,
+    darkTheme: Boolean,
+    motionReduced: Boolean,
+) {
+    val transition = updateTransition(targetState = state, label = "aurora-state-fb")
+    val color by transition.animateColor(
+        transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
+        label = "aurora-fb-color",
+    ) { it.params().colorA }
+    val glowHeight by transition.animateFloat(
+        transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
+        label = "aurora-fb-glow",
+    ) { it.params().glowHeight }
+    val intensityBase by transition.animateFloat(
+        transitionSpec = { tween(1200, easing = FastOutSlowInEasing) },
+        label = "aurora-fb-intensity",
+    ) { it.params().intensity }
+
+    val intensity = intensityBase * if (darkTheme) 1.0f else 0.5f
+    val base = baseColorFor(darkTheme)
+
+    Box(modifier = modifier.fillMaxSize().background(base)) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            drawRect(
+                brush = Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0f to color.copy(alpha = (0.5f * intensity).coerceIn(0f, 1f)),
+                        1f to Color.Transparent,
+                    ),
+                    center = Offset(w * 0.5f, h * 1.06f),
+                    radius = w * (0.55f + glowHeight),
+                ),
+                size = Size(w, h),
+                style = Fill,
+            )
+        }
+    }
 }

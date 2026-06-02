@@ -14,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ble.GatewayStatus
-import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.SectionLabel
 import dev.xd.bluetrack.ui.shell.btGlass
 import dev.xd.bluetrack.ui.theme.BluetrackTokens
@@ -60,8 +59,6 @@ fun SettingsScreen(
     commitShort: String? = null,
     autoConnectEnabled: Boolean = true,
     onAutoConnectChange: (Boolean) -> Unit = {},
-    themeMode: String = "SYSTEM",
-    onThemeModeChange: (String) -> Unit = {},
     touchpadSensitivity: Float = 1f,
     onTouchpadSensitivityChange: (Float) -> Unit = {},
     onOpenNotificationSettings: () -> Unit = {},
@@ -74,10 +71,10 @@ fun SettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .padding(top = 100.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
     ) {
-        HubHeader(title = "Settings")
         Box(
             modifier = dev.xd.bluetrack.ui
                 .rememberStaggerModifier(index = 0),
@@ -129,20 +126,6 @@ fun SettingsScreen(
         Box(
             modifier = dev.xd.bluetrack.ui
                 .rememberStaggerModifier(index = 2),
-        ) {
-            SettingsGroup(title = "APPEARANCE") {
-                SettingsSegmentedRow(
-                    label = "Theme",
-                    hint = "System follows your phone's dark / light setting.",
-                    options = listOf("SYSTEM", "LIGHT", "DARK"),
-                    selected = themeMode,
-                    onSelect = onThemeModeChange,
-                )
-            }
-        }
-        Box(
-            modifier = dev.xd.bluetrack.ui
-                .rememberStaggerModifier(index = 3),
         ) {
             SettingsGroup(title = "INPUT") {
                 // Touchpad sensitivity multiplier. The Hub touchpad

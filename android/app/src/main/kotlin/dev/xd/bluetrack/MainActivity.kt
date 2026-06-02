@@ -58,12 +58,10 @@ import dev.xd.bluetrack.ui.hosts.HostsScreen
 import dev.xd.bluetrack.ui.hub.ActivityStrip
 import dev.xd.bluetrack.ui.hub.GamepadShortcut
 import dev.xd.bluetrack.ui.hub.Heartbeat
-import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.ModeToggle
 import dev.xd.bluetrack.ui.hub.MouseMirrorPanel
 import dev.xd.bluetrack.ui.hub.NeonRibbon
 import dev.xd.bluetrack.ui.hub.PinBlock
-import dev.xd.bluetrack.ui.hub.ServiceChip
 import dev.xd.bluetrack.ui.hub.StatusHero
 import dev.xd.bluetrack.ui.hub.TouchpadHintsOverlay
 import dev.xd.bluetrack.ui.hub.TrustCard
@@ -199,22 +197,16 @@ class MainActivity : ComponentActivity() {
         // StateFlow's `initial = "SYSTEM"` could flash the wrong
         // palette for ~150 ms before the DataStore reader emitted
         // the persisted value, visible as a black ↔ white flip.
-        val initialThemeMode = kotlinx.coroutines.runBlocking {
-            tweaksRepo.themeMode.firstOrNull() ?: "SYSTEM"
-        }
         // Drain pending tweaks on a single coroutine so writes
         // happen in arrival order and never race.
         ioScope.launch {
             pendingTweaks.collect { state -> tweaksRepo.setAll(state) }
         }
         setContent {
-            val themeMode by tweaksRepo.themeMode.collectAsState(initial = initialThemeMode)
-            val systemInDark = androidx.compose.foundation.isSystemInDarkTheme()
-            val darkTheme = when (themeMode) {
-                "LIGHT" -> false
-                "DARK" -> true
-                else -> systemInDark
-            }
+            // Follow the system theme unconditionally — the manual
+            // Light / Dark / System selector was removed for a simpler,
+            // unambiguous experience.
+            val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
             // Flip the system bar icon palette to match the
             // active theme. Light bg → dark icons, dark bg →
             // light icons. Re-applies `enableEdgeToEdge` with the
@@ -416,11 +408,27 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 } else {
+                    val shellStatus by vm.status.collectAsState()
+                    val auroraState =
+                        when (router.current) {
+                            Route.Diagnostics -> dev.xd.bluetrack.ui.shell.AuroraState.Diagnostics
+                            Route.Hosts -> dev.xd.bluetrack.ui.shell.AuroraState.Hosts
+                            Route.Activity -> dev.xd.bluetrack.ui.shell.AuroraState.Activity
+                            Route.Settings -> dev.xd.bluetrack.ui.shell.AuroraState.Settings
+                            Route.Hub ->
+                                if (shellStatus.host != null) {
+                                    dev.xd.bluetrack.ui.shell.AuroraState.Live
+                                } else {
+                                    dev.xd.bluetrack.ui.shell.AuroraState.Calm
+                                }
+                        }
                     ScreenShell(
                         router = router,
                         motionReduced = tweaks.motionReduced,
                         glassEnabled = tweaks.glassEnabled,
                         neonStrength = tweaks.neonStrength,
+                        auroraState = auroraState,
+                        darkTheme = darkTheme,
                     ) { route ->
                         when (route) {
                             Route.Hub -> AppScreen(
@@ -467,8 +475,6 @@ class MainActivity : ComponentActivity() {
                                 notificationsPermissionGranted = hasNotificationsPermission(),
                                 autoConnectEnabled = autoConnectEnabled,
                                 onAutoConnectChange = { persistAutoConnect(it) },
-                                themeMode = themeMode,
-                                onThemeModeChange = { persistThemeMode(it) },
                                 touchpadSensitivity = touchpadSensitivity,
                                 onTouchpadSensitivityChange = { persistTouchpadSensitivity(it) },
                                 onOpenNotificationSettings = { openNotificationSettings() },
@@ -774,7 +780,10 @@ private fun AppScreen(
         TrustState.Empty
     }
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(top = 100.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         // Step 3a: canvas Hub header (`[Blue·track]` wordmark + 26 sp
@@ -782,15 +791,10 @@ private fun AppScreen(
         // each time a fresh feedback PIN is issued — equivalent to the
         // canvas `NeonRibbon` keyed on a new GATT session.
         NeonRibbon(trigger = status.feedbackPin)
-        HubHeader(
-            title = "Hub",
-            rightSlot = { ServiceChip(running = running) },
-        )
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 4.dp)
-                .verticalScroll(rememberScrollState()),
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Box(

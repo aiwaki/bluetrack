@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,7 +26,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ui.Route
@@ -47,38 +52,85 @@ fun BluetrackDock(
     onSelect: (Route) -> Unit,
     modifier: Modifier = Modifier,
     @Suppress("UNUSED_PARAMETER") neonStrength: Float = 1f,
+    backdrop: BackdropState? = null,
+    backdropLayer: GraphicsLayer? = null,
 ) {
     val palette = BluetrackTheme.palette
     val routes = Route.entries.filter { it != Route.Activity }
 
-    // Dock floats on the aurora background — no glass surface,
-    // no border, just the slot row. User read the previous
-    // `btGlass(strong=true)` panel as "black bar at the bottom"
-    // rather than the intended translucent shelf. Going fully
-    // transparent matches the design reference where the icon
-    // row reads as anchored UI without a chrome rail.
-    // Outer wrapper is now a Row directly. Earlier we wrapped
-    // it in a Box with horizontal padding, which combined with
-    // `SpaceEvenly` placed extra slack at the edges and visibly
-    // shifted the icon cluster off centre. Row fills the dock's
-    // assigned width and `SpaceAround` equalises the gaps so the
-    // four icons sit symmetric on both axes.
-    Row(
+    // Floating glass nav bar: a centred pill that hovers off the screen
+    // edges over the aurora. Theme-aware translucent fill (light → soft
+    // white, dark → smoked) via `palette.glassBg`, a soft drop shadow,
+    // and a hairline edge. Deliberately matte — no Frutiger-Aero gloss.
+    // The aurora glows through it.
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .wrapContentHeight()
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 14.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        routes.forEach { route ->
-            DockSlot(
-                route = route,
-                active = route == current,
-                activeColor = palette.crit,
-                inactiveTint = palette.fg2,
-                onClick = { onSelect(route) },
-            )
+        val pill = RoundedCornerShape(percent = 50)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                // Soft "defining" drop shadow like the Gemini bar — a
+                // large, diffuse elevation that lifts the pill off the
+                // background.
+                .shadow(
+                    elevation = 44.dp,
+                    shape = pill,
+                    clip = false,
+                    ambientColor = Color.Black,
+                    spotColor = Color.Black,
+                )
+                // Real backdrop blur (API 31+) of the content scrolling
+                // behind the pill, with a translucent tint on top — the
+                // Liquid Glass look. Falls back to the opaque frosted
+                // fill wherever blur is unavailable.
+                .then(
+                    if (backdrop != null && backdropLayer != null && backdropBlurSupported) {
+                        Modifier
+                            .backdropBlur(backdropLayer, backdrop, pill, 26.dp)
+                            .background(palette.glassBlurTint)
+                    } else {
+                        Modifier
+                            .clip(pill)
+                            .background(palette.glassBgStrong)
+                    },
+                )
+                // Specular top sheen + two-tone rim (bright top → dim
+                // bottom) so the floating pill has a lit, premium edge in
+                // dark theme where the black drop shadow is invisible.
+                .background(
+                    Brush.verticalGradient(
+                        listOf(palette.glassSheen, Color.Transparent),
+                    ),
+                    pill,
+                ).border(
+                    1.dp,
+                    Brush.verticalGradient(
+                        listOf(palette.glassRimTop, palette.glassRimBottom),
+                    ),
+                    pill,
+                )
+                // Consume every tap that lands on the pill (including the
+                // gaps between icons) so nothing falls through to the
+                // content scrolling behind the floating bar.
+                .pointerInput(Unit) { detectTapGestures {} }
+                .padding(horizontal = 16.dp, vertical = 22.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            routes.forEach { route ->
+                DockSlot(
+                    route = route,
+                    active = route == current,
+                    activeColor = palette.crit,
+                    inactiveTint = palette.fg2,
+                    onClick = { onSelect(route) },
+                )
+            }
         }
     }
 }
@@ -124,7 +176,7 @@ private fun DockSlot(
     // press still feels tactile (1.06 × 0.9 ≈ 0.95 dip from rest).
     var pressed by remember { mutableStateOf(false) }
     val pressScale by animateFloatAsState(
-        targetValue = if (pressed) 0.9f else 1f,
+        targetValue = if (pressed) 0.95f else 1f,
         animationSpec = if (pressed) {
             spring(stiffness = Spring.StiffnessMedium)
         } else {

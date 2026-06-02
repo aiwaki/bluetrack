@@ -38,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.xd.bluetrack.ble.GatewayEvent
 import dev.xd.bluetrack.ble.GatewayStatus
-import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.shell.btGlass
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
@@ -124,10 +123,10 @@ fun ActivityScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .padding(top = 100.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
     ) {
-        HubHeader(title = "Activity", onBack = onBack)
         Column(
             modifier = Modifier.padding(horizontal = BluetrackTokens.Sp6),
             verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),

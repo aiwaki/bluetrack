@@ -22,12 +22,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -35,9 +37,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.RouterState
+import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
 
 /**
@@ -68,9 +73,20 @@ fun ScreenShell(
     motionReduced: Boolean = false,
     glassEnabled: Boolean = true,
     neonStrength: Float = 1f,
+    auroraState: AuroraState = AuroraState.Calm,
+    darkTheme: Boolean = true,
     content: @Composable (Route) -> Unit,
 ) {
     val palette = BluetrackTheme.palette
+    // Shared backdrop layer + origin, captured from the aurora +
+    // scrolling content so the floating dock can sample a real
+    // backdrop blur of whatever scrolls behind it (API 31+).
+    val backdrop = remember { BackdropState() }
+    val backdropLayer = rememberGraphicsLayer()
+    // Aurora-only layer the cards blur (separate from the content layer
+    // the dock + header use) so a card never blurs its own text.
+    val auroraBackdrop = remember { BackdropState() }
+    val auroraLayer = rememberGraphicsLayer()
     // Slow deep-red radial pulse drawn behind everything — same
     // idiom as the gamepad surface so the main shell shares the
     // ambient warmth. Lower max alpha keeps it from competing
@@ -109,52 +125,108 @@ fun ScreenShell(
                 )
             },
     ) {
-        AuroraBackground(
-            modifier = Modifier.fillMaxSize(),
-            motionReduced = motionReduced,
-            glassEnabled = glassEnabled,
-        )
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.systemBars)
-                .padding(bottom = DOCK_RESERVED_HEIGHT_DP.dp),
+                .captureBackdrop(backdrop, backdropLayer),
         ) {
-            // Route transitions. Direction follows the dock's
-            // left-to-right enum order so navigating from Hub →
-            // Settings slides in from the right, and Settings →
-            // Hub slides in from the left. Reads as native
-            // tab-bar motion without pulling in
-            // Compose Navigation. Disabled when `motionReduced`
-            // is on — accessibility users get an instant swap.
-            AnimatedContent(
-                targetState = router.current,
-                transitionSpec = {
-                    if (motionReduced) {
-                        fadeIn(animationSpec = tween(0)) togetherWith
-                            fadeOut(animationSpec = tween(0))
-                    } else {
-                        val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
-                        val durMs = 260
-                        slideInHorizontally(
-                            animationSpec = tween(durMs, easing = FastOutSlowInEasing),
-                            initialOffsetX = { full -> direction * full / 6 },
-                        ) + fadeIn(animationSpec = tween(durMs)) togetherWith
-                            slideOutHorizontally(
-                                animationSpec = tween(durMs, easing = FastOutSlowInEasing),
-                                targetOffsetX = { full -> -direction * full / 6 },
-                            ) + fadeOut(animationSpec = tween(durMs))
+            AuroraBackground(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .captureBackdrop(auroraBackdrop, auroraLayer),
+                state = auroraState,
+                darkTheme = darkTheme,
+                motionReduced = motionReduced,
+            )
+            // Content fills the whole screen (edge-to-edge) except the
+            // status-bar inset at the very top. It is NOT clipped to an
+            // inset window: each screen's scroll runs full-bleed and uses
+            // its own bottom contentPadding so content scrolls off the real
+            // screen edges (and behind the floating bar) instead of cutting
+            // at a rectangle.
+            CompositionLocalProvider(
+                LocalCardBackdrop provides CardBackdrop(auroraBackdrop, auroraLayer),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.statusBars),
+                ) {
+                    // Route transitions. Direction follows the dock's
+                    // left-to-right enum order so navigating from Hub →
+                    // Settings slides in from the right, and Settings →
+                    // Hub slides in from the left. Reads as native
+                    // tab-bar motion without pulling in
+                    // Compose Navigation. Disabled when `motionReduced`
+                    // is on — accessibility users get an instant swap.
+                    AnimatedContent(
+                        targetState = router.current,
+                        transitionSpec = {
+                            if (motionReduced) {
+                                fadeIn(animationSpec = tween(0)) togetherWith
+                                    fadeOut(animationSpec = tween(0))
+                            } else {
+                                val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                                val durMs = 260
+                                slideInHorizontally(
+                                    animationSpec = tween(durMs, easing = FastOutSlowInEasing),
+                                    initialOffsetX = { full -> direction * full / 6 },
+                                ) + fadeIn(animationSpec = tween(durMs)) togetherWith
+                                    slideOutHorizontally(
+                                        animationSpec = tween(durMs, easing = FastOutSlowInEasing),
+                                        targetOffsetX = { full -> -direction * full / 6 },
+                                    ) + fadeOut(animationSpec = tween(durMs))
+                            }
+                        },
+                        label = "route-transition",
+                    ) { route ->
+                        content(route)
                     }
-                },
-                label = "route-transition",
-            ) { route ->
-                content(route)
+                }
             }
+        }
+        // Pinned translucent top bar: the route title stays fixed while
+        // content scrolls underneath and dissolves into a soft
+        // base→transparent gradient (status bar stays transparent), like
+        // a sticky web header. Each screen offsets its first item with a
+        // matching top contentPadding.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                // Backdrop blur of the content scrolling up under the
+                // pinned header (API 31+), with the soft base→transparent
+                // tint on top so the bar still dissolves into the page.
+                .then(
+                    if (backdropBlurSupported) {
+                        Modifier.backdropBlur(backdropLayer, backdrop, RectangleShape, 20.dp)
+                    } else {
+                        Modifier
+                    },
+                ).background(
+                    Brush.verticalGradient(
+                        0f to palette.bg0.copy(alpha = 0.78f),
+                        0.6f to palette.bg0.copy(alpha = 0.42f),
+                        1f to palette.bg0.copy(alpha = 0f),
+                    ),
+                ).windowInsetsPadding(WindowInsets.statusBars)
+                .padding(bottom = 12.dp),
+        ) {
+            HubHeader(
+                title = router.current.label,
+                onBack = if (router.current == Route.Activity) {
+                    { router.navigate(Route.Hub) }
+                } else {
+                    null
+                },
+            )
         }
         BluetrackDock(
             current = router.current,
             onSelect = router::navigate,
             neonStrength = neonStrength,
+            backdrop = backdrop,
+            backdropLayer = backdropLayer,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
@@ -204,4 +276,3 @@ fun ComingSoonScreen(label: String) {
  * (~ 60 dp) plus a 12 dp safety margin so spring overshoot doesn't
  * clip into content.
  */
-private const val DOCK_RESERVED_HEIGHT_DP: Int = 56

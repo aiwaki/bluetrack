@@ -100,13 +100,38 @@ data object BluetrackTokens {
     val HeightCta: Dp = 50.dp
 
     // ─── Glass ───────────────────────────────────────────────────────
-    val GlassBgDark = Color(0x8C16191B) // rgba(20,22,25,0.55)
-    val GlassBgStrongDark = Color(0xB8181B1E) // rgba(24,27,30,0.72)
+    val GlassBgDark = Color(0xE00B0C0F) // near-black frosted, ~88% — interior almost merges with bg, edge-defined
+    val GlassBgStrongDark = Color(0xF00D0E12) // near-black frosted, ~94%
     val GlassBorderDark = Color(0x1AFFFFFF) // 10% white
 
-    val GlassBgLight = Color(0x8CFFFFFF)
-    val GlassBgStrongLight = Color(0xC7FFFFFF)
+    val GlassBgLight = Color(0xB3FFFFFF) // ~70%, a touch milkier
+    val GlassBgStrongLight = Color(0xDCFFFFFF) // ~86%
     val GlassBorderLight = Color(0x1A0F1210)
+
+    // ─── Premium "liquid glass" specular cues ────────────────────────
+    // A faint top-edge sheen overlaid on the tint + a brighter top rim
+    // (fading to a dim bottom rim) for the border. In dark this gives the
+    // glass a lit top edge so cards/the dock read as premium frosted
+    // panels even where a black drop shadow is invisible. Light keeps the
+    // existing dark hairline on both rim stops so its look is unchanged.
+    val GlassSheenTopDark = Color(0x12FFFFFF) // ~7% — a touch of body so the card isn't a pure-black void
+    val GlassRimTopDark = Color(0x30FFFFFF) // ~19% — soft top highlight, not a stark white outline
+    val GlassRimBottomDark = Color(0x0AFFFFFF) // ~4% dim bottom edge
+
+    // Light mirrors the dark "edge-defined" language in its own idiom:
+    // a faint light top hairline + a slightly stronger dark bottom edge
+    // ground the card, instead of one flat border. Fill is unchanged so
+    // the (liked) light surface stays put.
+    val GlassSheenTopLight = Color(0x40FFFFFF) // subtle top sheen on white
+    val GlassRimTopLight = Color(0x120F1210) // ~7% light top hairline
+    val GlassRimBottomLight = Color(0x240F1210) // ~14% grounded bottom edge
+
+    // Tint painted OVER a real backdrop-blur pass (API 31+). Far more
+    // translucent than the flat glassBg tints so the blurred content
+    // shows through — the actual Liquid Glass look. Falls back to the
+    // opaque glassBgStrong on pre-31 devices (no blur).
+    val GlassBlurTintDark = Color(0x990D0F13) // ~60% over blur
+    val GlassBlurTintLight = Color(0x99FFFFFF) // ~60% over blur
 
     /** Backdrop blur radius for default + strong glass layers. */
     val GlassBlur: Dp = 22.dp

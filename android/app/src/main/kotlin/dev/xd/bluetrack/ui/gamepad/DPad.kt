@@ -31,7 +31,7 @@ import dev.xd.bluetrack.ui.theme.BluetrackTokens
  * standard composite gamepad report's hat-switch byte (Up = 0,
  * Right = 2, Down = 4, Left = 6, neutral = 8).
  *
- * Each direction is a 32 dp pill positioned 22 dp from centre.
+ * Each direction is a tall pill positioned 34 dp from centre.
  * Press = mint gradient + 18 dp mint glow + filled arrow glyph.
  * Release = dark vertical gradient + outlined arrow.
  *
@@ -49,12 +49,13 @@ fun DPad(
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var active by remember { mutableStateOf<Int?>(null) }
 
-    // DualSense-style cross: each arm is a tall pill oriented
-    // along its own axis so adjacent arrows share parallel
-    // edges (not corners). Up / Down are 28 dp wide x 40 dp
-    // tall, Left / Right swap dimensions. With centres offset
-    // 30 dp from origin, edges just touch — no overlap, all
-    // four reading as one continuous cross.
+    // DualSense-style cross: four separate arrow keys, each a
+    // rounded pill oriented along its own axis. Up / Down are
+    // 32 dp wide x 42 dp tall, Left / Right swap dimensions,
+    // centres offset 34 dp from origin. The 3 dp diagonal corner
+    // overlap is fully inside the 12 dp (RadiusSm) corner radius,
+    // so adjacent arrows keep a clean diagonal gap instead of
+    // clipping into each other — matching a real DualSense.
     data class Arm(
         val hat: Int,
         val dx: Int,
@@ -69,7 +70,7 @@ fun DPad(
         Arm(hat = 6, dx = -1, dy = 0, glyph = "←", vertical = false),
     )
     Box(
-        modifier = modifier.size(112.dp),
+        modifier = modifier.size(120.dp),
     ) {
         dirs.forEach { arm ->
             val isActive = active == arm.hat
@@ -95,15 +96,15 @@ fun DPad(
             // Outer hit zone is 4 dp wider/taller on each side than
             // the visual pill so taps just outside the arm still
             // register. Stops short of the perpendicular arm's
-            // hit zone because adjacent arms have centres 30 dp
-            // apart and visual half-thickness only 14 dp.
+            // hit zone because adjacent arms have centres 34 dp
+            // apart and visual half-thickness only 16 dp.
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .size(
-                        width = if (arm.vertical) 40.dp else 54.dp,
-                        height = if (arm.vertical) 54.dp else 40.dp,
-                    ).offset(x = (arm.dx * 30).dp, y = (arm.dy * 30).dp)
+                        width = if (arm.vertical) 42.dp else 54.dp,
+                        height = if (arm.vertical) 54.dp else 42.dp,
+                    ).offset(x = (arm.dx * 34).dp, y = (arm.dy * 34).dp)
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = {
@@ -125,10 +126,10 @@ fun DPad(
                 Box(
                     modifier = Modifier
                         .size(
-                            width = if (arm.vertical) 28.dp else 40.dp,
-                            height = if (arm.vertical) 40.dp else 28.dp,
+                            width = if (arm.vertical) 32.dp else 42.dp,
+                            height = if (arm.vertical) 42.dp else 32.dp,
                         ).scale(pressScale)
-                        .clip(RoundedCornerShape(BluetrackTokens.RadiusXs))
+                        .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
                         .background(
                             if (isActive) {
                                 Brush.verticalGradient(
@@ -145,14 +146,14 @@ fun DPad(
                         ).border(
                             1.dp,
                             if (isActive) Color.Transparent else palette.glassBorder,
-                            RoundedCornerShape(BluetrackTokens.RadiusXs),
+                            RoundedCornerShape(BluetrackTokens.RadiusSm),
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = arm.glyph,
                         color = if (isActive) Color.White else palette.fg1,
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                     )
                 }
