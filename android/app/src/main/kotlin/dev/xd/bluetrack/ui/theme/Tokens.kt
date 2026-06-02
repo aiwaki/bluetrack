@@ -100,8 +100,8 @@ data object BluetrackTokens {
     val HeightCta: Dp = 50.dp
 
     // ─── Glass ───────────────────────────────────────────────────────
-    val GlassBgDark = Color(0xD916191B) // dark frosted, ~85% — opaque enough to read, still dark not grey
-    val GlassBgStrongDark = Color(0xEB181B1E) // dark frosted, ~92%
+    val GlassBgDark = Color(0xDE101217) // deep frosted, ~87% — near-black interior (Apple Liquid Glass dark)
+    val GlassBgStrongDark = Color(0xEE12141A) // deep frosted, ~93%
     val GlassBorderDark = Color(0x1AFFFFFF) // 10% white
 
     val GlassBgLight = Color(0xB3FFFFFF) // ~70%, a touch milkier
@@ -114,9 +114,9 @@ data object BluetrackTokens {
     // glass a lit top edge so cards/the dock read as premium frosted
     // panels even where a black drop shadow is invisible. Light keeps the
     // existing dark hairline on both rim stops so its look is unchanged.
-    val GlassSheenTopDark = Color(0x14FFFFFF) // ~8% white top sheen
-    val GlassRimTopDark = Color(0x33FFFFFF) // ~20% specular top edge
-    val GlassRimBottomDark = Color(0x14FFFFFF) // ~8% dim bottom edge
+    val GlassSheenTopDark = Color(0x0DFFFFFF) // ~5% — keep the interior dark, not grey
+    val GlassRimTopDark = Color(0x40FFFFFF) // ~25% crisp specular top edge (Apple-style)
+    val GlassRimBottomDark = Color(0x0FFFFFFF) // ~6% dim bottom edge
 
     val GlassSheenTopLight = Color(0x40FFFFFF) // subtle, ~invisible on white
     val GlassRimTopLight = Color(0x1A0F1210) // = GlassBorderLight (unchanged)
