@@ -63,22 +63,33 @@ fun BluetrackDock(
         modifier = modifier
             .fillMaxWidth()
             .wrapContentHeight()
-            .padding(horizontal = 16.dp, vertical = 2.dp),
+            .padding(horizontal = 10.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center,
     ) {
         val pill = RoundedCornerShape(percent = 50)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(elevation = 16.dp, shape = pill, clip = false)
+                // Soft "defining" drop shadow like the Gemini bar — a
+                // large, diffuse elevation that lifts the pill off the
+                // background.
+                .shadow(
+                    elevation = 22.dp,
+                    shape = pill,
+                    clip = false,
+                    ambientColor = Color.Black,
+                    spotColor = Color.Black,
+                )
                 .clip(pill)
-                .background(palette.glassBgStrong)
+                // Near-opaque theme surface so the bar reads as a solid
+                // floating control, not a translucent wash.
+                .background(palette.bg1.copy(alpha = 0.94f))
                 .border(1.dp, palette.hairline, pill)
                 // Consume every tap that lands on the pill (including the
                 // gaps between icons) so nothing falls through to the
                 // content scrolling behind the floating bar.
                 .pointerInput(Unit) { detectTapGestures {} }
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
         ) {
