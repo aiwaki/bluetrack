@@ -36,6 +36,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ui.Route
@@ -182,10 +183,20 @@ fun ScreenShell(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
+                // Backdrop blur of the content scrolling up under the
+                // pinned header (API 31+), with the soft base→transparent
+                // tint on top so the bar still dissolves into the page.
+                .then(
+                    if (backdropBlurSupported) {
+                        Modifier.backdropBlur(backdropLayer, backdrop, RectangleShape, 20.dp)
+                    } else {
+                        Modifier
+                    },
+                )
                 .background(
                     Brush.verticalGradient(
-                        0f to palette.bg0.copy(alpha = 0.92f),
-                        0.6f to palette.bg0.copy(alpha = 0.70f),
+                        0f to palette.bg0.copy(alpha = 0.78f),
+                        0.6f to palette.bg0.copy(alpha = 0.42f),
                         1f to palette.bg0.copy(alpha = 0f),
                     ),
                 )
