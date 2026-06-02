@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ui.Route
 import dev.xd.bluetrack.ui.RouterState
+import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
 
 /**
@@ -158,6 +159,34 @@ fun ScreenShell(
             ) { route ->
                 content(route)
             }
+        }
+        // Pinned translucent top bar: the route title stays fixed while
+        // content scrolls underneath and dissolves into a soft
+        // base→transparent gradient (status bar stays transparent), like
+        // a sticky web header. Each screen offsets its first item with a
+        // matching top contentPadding.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        0f to palette.bg0.copy(alpha = 0.92f),
+                        0.6f to palette.bg0.copy(alpha = 0.70f),
+                        1f to palette.bg0.copy(alpha = 0f),
+                    ),
+                )
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(bottom = 12.dp),
+        ) {
+            HubHeader(
+                title = router.current.label,
+                onBack = if (router.current == Route.Activity) {
+                    { router.navigate(Route.Hub) }
+                } else {
+                    null
+                },
+            )
         }
         BluetrackDock(
             current = router.current,

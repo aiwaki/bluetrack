@@ -58,12 +58,10 @@ import dev.xd.bluetrack.ui.hosts.HostsScreen
 import dev.xd.bluetrack.ui.hub.ActivityStrip
 import dev.xd.bluetrack.ui.hub.GamepadShortcut
 import dev.xd.bluetrack.ui.hub.Heartbeat
-import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.ModeToggle
 import dev.xd.bluetrack.ui.hub.MouseMirrorPanel
 import dev.xd.bluetrack.ui.hub.NeonRibbon
 import dev.xd.bluetrack.ui.hub.PinBlock
-import dev.xd.bluetrack.ui.hub.ServiceChip
 import dev.xd.bluetrack.ui.hub.StatusHero
 import dev.xd.bluetrack.ui.hub.TouchpadHintsOverlay
 import dev.xd.bluetrack.ui.hub.TrustCard
@@ -785,7 +783,7 @@ private fun AppScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 120.dp),
+            .padding(top = 80.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         // Step 3a: canvas Hub header (`[Blue·track]` wordmark + 26 sp
@@ -793,10 +791,6 @@ private fun AppScreen(
         // each time a fresh feedback PIN is issued — equivalent to the
         // canvas `NeonRibbon` keyed on a new GATT session.
         NeonRibbon(trigger = status.feedbackPin)
-        HubHeader(
-            title = "Hub",
-            rightSlot = { ServiceChip(running = running) },
-        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()

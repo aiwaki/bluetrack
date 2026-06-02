@@ -14,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ble.GatewayStatus
-import dev.xd.bluetrack.ui.hub.HubHeader
 import dev.xd.bluetrack.ui.hub.SectionLabel
 import dev.xd.bluetrack.ui.shell.btGlass
 import dev.xd.bluetrack.ui.theme.BluetrackTokens
@@ -73,10 +72,9 @@ fun SettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 120.dp),
+            .padding(top = 80.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
     ) {
-        HubHeader(title = "Settings")
         Box(
             modifier = dev.xd.bluetrack.ui
                 .rememberStaggerModifier(index = 0),

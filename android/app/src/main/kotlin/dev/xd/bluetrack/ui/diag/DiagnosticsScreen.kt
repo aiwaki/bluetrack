@@ -38,10 +38,6 @@ import dev.xd.bluetrack.ble.GatewayStatus
 import dev.xd.bluetrack.ble.RejectionCause
 import dev.xd.bluetrack.ui.automationLabel
 import dev.xd.bluetrack.ui.hostFallbackLabel
-import dev.xd.bluetrack.ui.hub.Chip
-import dev.xd.bluetrack.ui.hub.ChipKind
-import dev.xd.bluetrack.ui.hub.HubHeader
-import dev.xd.bluetrack.ui.hub.Pulse
 import dev.xd.bluetrack.ui.hub.SectionLabel
 import dev.xd.bluetrack.ui.inputSourceLabel
 import dev.xd.bluetrack.ui.primaryStatusLabel
@@ -102,21 +98,9 @@ fun DiagnosticsScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 120.dp),
+            .padding(top = 80.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            HubHeader(
-                title = "Diagnostics",
-                modifier = Modifier.weight(1f),
-                rightSlot = {
-                    Chip(text = "RECORDING", kind = ChipKind.Live, leading = { Pulse(size = 2.5.dp) })
-                },
-            )
-        }
         Column(
             modifier = Modifier.padding(horizontal = BluetrackTokens.Sp6),
             verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
