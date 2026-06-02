@@ -100,8 +100,8 @@ data object BluetrackTokens {
     val HeightCta: Dp = 50.dp
 
     // ─── Glass ───────────────────────────────────────────────────────
-    val GlassBgDark = Color(0xDE101217) // deep frosted, ~87% — near-black interior (Apple Liquid Glass dark)
-    val GlassBgStrongDark = Color(0xEE12141A) // deep frosted, ~93%
+    val GlassBgDark = Color(0xE00B0C0F) // near-black frosted, ~88% — interior almost merges with bg, edge-defined
+    val GlassBgStrongDark = Color(0xF00D0E12) // near-black frosted, ~94%
     val GlassBorderDark = Color(0x1AFFFFFF) // 10% white
 
     val GlassBgLight = Color(0xB3FFFFFF) // ~70%, a touch milkier
@@ -115,12 +115,16 @@ data object BluetrackTokens {
     // panels even where a black drop shadow is invisible. Light keeps the
     // existing dark hairline on both rim stops so its look is unchanged.
     val GlassSheenTopDark = Color(0x0DFFFFFF) // ~5% — keep the interior dark, not grey
-    val GlassRimTopDark = Color(0x40FFFFFF) // ~25% crisp specular top edge (Apple-style)
+    val GlassRimTopDark = Color(0x4DFFFFFF) // ~30% crisp specular top edge — defines the near-black card
     val GlassRimBottomDark = Color(0x0FFFFFFF) // ~6% dim bottom edge
 
-    val GlassSheenTopLight = Color(0x40FFFFFF) // subtle, ~invisible on white
-    val GlassRimTopLight = Color(0x1A0F1210) // = GlassBorderLight (unchanged)
-    val GlassRimBottomLight = Color(0x1A0F1210) // = GlassBorderLight (unchanged)
+    // Light mirrors the dark "edge-defined" language in its own idiom:
+    // a faint light top hairline + a slightly stronger dark bottom edge
+    // ground the card, instead of one flat border. Fill is unchanged so
+    // the (liked) light surface stays put.
+    val GlassSheenTopLight = Color(0x40FFFFFF) // subtle top sheen on white
+    val GlassRimTopLight = Color(0x120F1210) // ~7% light top hairline
+    val GlassRimBottomLight = Color(0x240F1210) // ~14% grounded bottom edge
 
     /** Backdrop blur radius for default + strong glass layers. */
     val GlassBlur: Dp = 22.dp
