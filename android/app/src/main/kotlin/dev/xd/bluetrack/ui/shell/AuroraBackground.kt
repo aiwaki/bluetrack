@@ -90,6 +90,7 @@ uniform half3 colorA;
 uniform half3 colorB;
 uniform float glowHeight;
 uniform float intensity;
+uniform float dotStrength;
 
 half4 main(float2 fragCoord) {
     float2 uv = fragCoord / resolution;
@@ -108,6 +109,17 @@ half4 main(float2 fragCoord) {
     float tt = 0.5 - 0.5 * cos(time * 0.20);
     half3 glow = mix(colorA, colorB, tt);
     half3 col = mix(baseColor, glow, g * intensity);
+
+    // Stipple dome (Gemini-style): a crisp, wide-spaced dot grid that
+    // lives only inside the glow. Wide spacing + an AA edge avoids the
+    // moiré the tight grid caused. An expanding ring pulse sweeps out
+    // from the bloom centre every few seconds ("impulse-wave"), then the
+    // dots settle back to a static glow tint.
+    float spacing = 14.0;
+    float2 cell = fract(fragCoord / spacing) - 0.5;
+    float dotMask = smoothstep(0.30, 0.22, length(cell));
+    float ring = smoothstep(0.05, 0.0, abs(d - fract(time * 0.13) * (glowHeight + 0.30)));
+    col = col + glow * (dotMask * g * (0.10 + 0.50 * ring) * dotStrength);
 
     return half4(col, 1.0);
 }
@@ -153,6 +165,7 @@ private fun AuroraShader(
     // on white instead of a saturated bloom.
     val intensity = intensityBase * if (darkTheme) 1.0f else 0.5f
     val baseColor = baseColorFor(darkTheme)
+    val dotStrength = if (darkTheme) 1.0f else 0.65f
 
     var time by remember { mutableStateOf(0f) }
     LaunchedEffect(motionReduced) {

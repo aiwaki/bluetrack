@@ -63,18 +63,23 @@ fun BluetrackDock(
         modifier = modifier
             .fillMaxWidth()
             .wrapContentHeight()
-            .padding(horizontal = 28.dp, vertical = 2.dp),
+            .padding(horizontal = 16.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center,
     ) {
         val pill = RoundedCornerShape(percent = 50)
         Row(
             modifier = Modifier
-                .shadow(elevation = 14.dp, shape = pill, clip = false)
+                .fillMaxWidth()
+                .shadow(elevation = 16.dp, shape = pill, clip = false)
                 .clip(pill)
-                .background(palette.glassBg)
+                .background(palette.glassBgStrong)
                 .border(1.dp, palette.hairline, pill)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                // Consume every tap that lands on the pill (including the
+                // gaps between icons) so nothing falls through to the
+                // content scrolling behind the floating bar.
+                .pointerInput(Unit) { detectTapGestures {} }
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             routes.forEach { route ->
