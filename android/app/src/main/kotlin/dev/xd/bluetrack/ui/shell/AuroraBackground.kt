@@ -48,7 +48,7 @@ import kotlinx.coroutines.isActive
  * back to a single tinted [Canvas] halo (no stipple). `motionReduced`
  * freezes the animation.
  */
-enum class AuroraState { Calm, Live, Diagnostics, Hosts, Activity, Settings }
+enum class AuroraState { Calm, Live, Diagnostics, Hosts, Activity, Settings, Gamepad }
 
 private data class AuroraParams(
     val colorA: Color,
@@ -65,6 +65,9 @@ private fun AuroraState.params(): AuroraParams = when (this) {
     AuroraState.Hosts -> AuroraParams(Color(0xFF1FCF9A), Color(0xFF2BD4FF), 0.50f, 0.85f, 0.95f)
     AuroraState.Activity -> AuroraParams(Color(0xFF7A5CFF), Color(0xFFC95CFF), 0.50f, 0.85f, 0.90f)
     AuroraState.Settings -> AuroraParams(Color(0xFF3E76FF), Color(0xFF5C6CFF), 0.46f, 0.80f, 0.85f)
+    // Gamepad: warm crimson bloom — the only red aurora, matching the
+    // surface's live-input identity and the crit accent on its controls.
+    AuroraState.Gamepad -> AuroraParams(Color(0xFFFF3344), Color(0xFF7A0014), 0.60f, 1.00f, 1.20f)
 }
 
 @Composable

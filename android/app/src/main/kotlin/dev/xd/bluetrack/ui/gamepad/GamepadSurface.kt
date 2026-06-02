@@ -1,17 +1,12 @@
 package dev.xd.bluetrack.ui.gamepad
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,10 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -54,6 +46,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.xd.bluetrack.ui.rememberStaggerModifier
+import dev.xd.bluetrack.ui.shell.AuroraBackground
+import dev.xd.bluetrack.ui.shell.AuroraState
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
 import kotlinx.coroutines.delay
 
@@ -92,48 +86,16 @@ fun GamepadSurface(
     reportsTotal: Long = 0L,
     uptimeMs: Long = 0L,
 ) {
-    val palette = BluetrackTheme.palette
-    // Slow red breath pulse drawn behind everything else — the
-    // user-flagged "приятная тусклая красная пульсация по центру".
-    // Sits at low alpha (0.06 → 0.16) so it reads as ambient
-    // background warmth without competing with the controls.
-    val pulseTransition = rememberInfiniteTransition(label = "gamepad-bg-pulse")
-    val pulseAlpha by pulseTransition.animateFloat(
-        initialValue = 0.10f,
-        targetValue = 0.32f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 6_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "gamepad-bg-pulse-alpha",
-    )
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(palette.bg0)
-            .drawBehind {
-                val cx = size.width / 2f
-                val cy = size.height / 2f
-                val radius = (size.width.coerceAtLeast(size.height)) * 0.65f
-                // Deep red — more saturated / darker than the
-                // bright `palette.crit` so the pulse reads as
-                // "warm low-light glow" rather than "warning".
-                val deep = Color(0xFF8B0000)
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            deep.copy(alpha = pulseAlpha),
-                            deep.copy(alpha = pulseAlpha * 0.5f),
-                            Color.Transparent,
-                        ),
-                        center = Offset(cx, cy),
-                        radius = radius,
-                    ),
-                    topLeft = Offset.Zero,
-                    size = Size(size.width, size.height),
-                )
-            },
-    ) {
+    val darkTheme = isSystemInDarkTheme()
+    Box(modifier = modifier.fillMaxSize()) {
+        // Animated aurora shader background — a warm crimson bloom that
+        // replaces the old flat bg0 + red radial pulse, so the gamepad
+        // shares the app-wide animated background from the glass redesign.
+        AuroraBackground(
+            modifier = Modifier.fillMaxSize(),
+            state = AuroraState.Gamepad,
+            darkTheme = darkTheme,
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -357,7 +319,7 @@ private fun LeftThumbStack(
             Stick(
                 label = "L",
                 onChange = { x, y -> onStickMotion("L", x, y) },
-                modifier = Modifier.size(124.dp),
+                modifier = Modifier.size(100.dp),
                 onPress = { pressed -> onButton("L3", pressed) },
             )
             DPad(onHat = { hat -> onButton("HAT_$hat", hat != 8) })
@@ -393,7 +355,7 @@ private fun RightThumbStack(
             Stick(
                 label = "R",
                 onChange = { x, y -> onStickMotion("R", x, y) },
-                modifier = Modifier.size(124.dp),
+                modifier = Modifier.size(100.dp),
                 onPress = { pressed -> onButton("R3", pressed) },
             )
         }

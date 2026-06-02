@@ -49,13 +49,13 @@ fun DPad(
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var active by remember { mutableStateOf<Int?>(null) }
 
-    // DualSense-style cross: each arm is a tall pill oriented
-    // along its own axis so adjacent arrows share parallel
-    // edges (not corners). Up / Down are 34 dp wide x 48 dp
-    // tall, Left / Right swap dimensions. With centres offset
-    // 34 dp from origin, edges just touch — no overlap, all
-    // four reading as one continuous cross. Enlarged 2026-06
-    // from the old 28×40 / 30 dp set.
+    // DualSense-style cross: four separate arrow keys, each a
+    // rounded pill oriented along its own axis. Up / Down are
+    // 32 dp wide x 42 dp tall, Left / Right swap dimensions,
+    // centres offset 34 dp from origin. The 3 dp diagonal corner
+    // overlap is fully inside the 12 dp (RadiusSm) corner radius,
+    // so adjacent arrows keep a clean diagonal gap instead of
+    // clipping into each other — matching a real DualSense.
     data class Arm(
         val hat: Int,
         val dx: Int,
@@ -70,7 +70,7 @@ fun DPad(
         Arm(hat = 6, dx = -1, dy = 0, glyph = "←", vertical = false),
     )
     Box(
-        modifier = modifier.size(128.dp),
+        modifier = modifier.size(120.dp),
     ) {
         dirs.forEach { arm ->
             val isActive = active == arm.hat
@@ -97,13 +97,13 @@ fun DPad(
             // the visual pill so taps just outside the arm still
             // register. Stops short of the perpendicular arm's
             // hit zone because adjacent arms have centres 34 dp
-            // apart and visual half-thickness only 17 dp.
+            // apart and visual half-thickness only 16 dp.
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .size(
-                        width = if (arm.vertical) 46.dp else 60.dp,
-                        height = if (arm.vertical) 60.dp else 46.dp,
+                        width = if (arm.vertical) 42.dp else 54.dp,
+                        height = if (arm.vertical) 54.dp else 42.dp,
                     ).offset(x = (arm.dx * 34).dp, y = (arm.dy * 34).dp)
                     .pointerInput(Unit) {
                         detectTapGestures(
@@ -126,10 +126,10 @@ fun DPad(
                 Box(
                     modifier = Modifier
                         .size(
-                            width = if (arm.vertical) 34.dp else 48.dp,
-                            height = if (arm.vertical) 48.dp else 34.dp,
+                            width = if (arm.vertical) 32.dp else 42.dp,
+                            height = if (arm.vertical) 42.dp else 32.dp,
                         ).scale(pressScale)
-                        .clip(RoundedCornerShape(BluetrackTokens.RadiusXs))
+                        .clip(RoundedCornerShape(BluetrackTokens.RadiusSm))
                         .background(
                             if (isActive) {
                                 Brush.verticalGradient(
@@ -146,14 +146,14 @@ fun DPad(
                         ).border(
                             1.dp,
                             if (isActive) Color.Transparent else palette.glassBorder,
-                            RoundedCornerShape(BluetrackTokens.RadiusXs),
+                            RoundedCornerShape(BluetrackTokens.RadiusSm),
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = arm.glyph,
                         color = if (isActive) Color.White else palette.fg1,
-                        fontSize = 21.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                     )
                 }
