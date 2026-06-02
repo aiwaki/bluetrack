@@ -126,6 +126,13 @@ data object BluetrackTokens {
     val GlassRimTopLight = Color(0x120F1210) // ~7% light top hairline
     val GlassRimBottomLight = Color(0x240F1210) // ~14% grounded bottom edge
 
+    // Tint painted OVER a real backdrop-blur pass (API 31+). Far more
+    // translucent than the flat glassBg tints so the blurred content
+    // shows through — the actual Liquid Glass look. Falls back to the
+    // opaque glassBgStrong on pre-31 devices (no blur).
+    val GlassBlurTintDark = Color(0x990D0F13) // ~60% over blur
+    val GlassBlurTintLight = Color(0x99FFFFFF) // ~60% over blur
+
     /** Backdrop blur radius for default + strong glass layers. */
     val GlassBlur: Dp = 22.dp
     val GlassBlurStrong: Dp = 28.dp

@@ -51,6 +51,7 @@ fun BluetrackDock(
     onSelect: (Route) -> Unit,
     modifier: Modifier = Modifier,
     @Suppress("UNUSED_PARAMETER") neonStrength: Float = 1f,
+    backdrop: BackdropState? = null,
 ) {
     val palette = BluetrackTheme.palette
     val routes = Route.entries.filter { it != Route.Activity }
@@ -81,10 +82,21 @@ fun BluetrackDock(
                     ambientColor = Color.Black,
                     spotColor = Color.Black,
                 )
-                .clip(pill)
-                // Frosted "milk glass" surface (theme-aware) — matte and
-                // foggy rather than flatly opaque.
-                .background(palette.glassBgStrong)
+                // Real backdrop blur (API 31+) of the content scrolling
+                // behind the pill, with a translucent tint on top — the
+                // Liquid Glass look. Falls back to the opaque frosted
+                // fill wherever blur is unavailable.
+                .then(
+                    if (backdrop != null && backdropBlurSupported) {
+                        Modifier
+                            .backdropBlur(backdrop, pill, 26.dp)
+                            .background(palette.glassBlurTint)
+                    } else {
+                        Modifier
+                            .clip(pill)
+                            .background(palette.glassBgStrong)
+                    },
+                )
                 // Specular top sheen + two-tone rim (bright top → dim
                 // bottom) so the floating pill has a lit, premium edge in
                 // dark theme where the black drop shadow is invisible.
