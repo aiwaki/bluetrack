@@ -5,6 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
@@ -40,5 +42,22 @@ fun Modifier.btGlass(
     this
         .clip(shape)
         .background(bg, shape)
-        .border(1.dp, palette.glassBorder, shape)
+        // Specular top sheen — a faint light wash on the top edge that
+        // fades out, giving the flat tint a lit "liquid glass" feel.
+        .background(
+            Brush.verticalGradient(
+                listOf(palette.glassSheen, Color.Transparent),
+            ),
+            shape,
+        )
+        // Two-tone rim: brighter on top, dimmer at the bottom, so the
+        // glass reads as premium frosted even where a drop shadow can't
+        // (e.g. dark glass over the dark aura).
+        .border(
+            1.dp,
+            Brush.verticalGradient(
+                listOf(palette.glassRimTop, palette.glassRimBottom),
+            ),
+            shape,
+        )
 }

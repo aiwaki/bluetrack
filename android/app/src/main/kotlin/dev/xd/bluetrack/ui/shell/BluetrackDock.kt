@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -84,12 +85,27 @@ fun BluetrackDock(
                 // Frosted "milk glass" surface (theme-aware) — matte and
                 // foggy rather than flatly opaque.
                 .background(palette.glassBgStrong)
-                .border(1.dp, palette.hairline, pill)
+                // Specular top sheen + two-tone rim (bright top → dim
+                // bottom) so the floating pill has a lit, premium edge in
+                // dark theme where the black drop shadow is invisible.
+                .background(
+                    Brush.verticalGradient(
+                        listOf(palette.glassSheen, Color.Transparent),
+                    ),
+                    pill,
+                )
+                .border(
+                    1.dp,
+                    Brush.verticalGradient(
+                        listOf(palette.glassRimTop, palette.glassRimBottom),
+                    ),
+                    pill,
+                )
                 // Consume every tap that lands on the pill (including the
                 // gaps between icons) so nothing falls through to the
                 // content scrolling behind the floating bar.
                 .pointerInput(Unit) { detectTapGestures {} }
-                .padding(horizontal = 16.dp, vertical = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 22.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
         ) {

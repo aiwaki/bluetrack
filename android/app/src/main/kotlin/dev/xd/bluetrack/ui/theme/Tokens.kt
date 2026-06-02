@@ -108,6 +108,20 @@ data object BluetrackTokens {
     val GlassBgStrongLight = Color(0xDCFFFFFF) // ~86%
     val GlassBorderLight = Color(0x1A0F1210)
 
+    // ─── Premium "liquid glass" specular cues ────────────────────────
+    // A faint top-edge sheen overlaid on the tint + a brighter top rim
+    // (fading to a dim bottom rim) for the border. In dark this gives the
+    // glass a lit top edge so cards/the dock read as premium frosted
+    // panels even where a black drop shadow is invisible. Light keeps the
+    // existing dark hairline on both rim stops so its look is unchanged.
+    val GlassSheenTopDark = Color(0x14FFFFFF) // ~8% white top sheen
+    val GlassRimTopDark = Color(0x33FFFFFF) // ~20% specular top edge
+    val GlassRimBottomDark = Color(0x14FFFFFF) // ~8% dim bottom edge
+
+    val GlassSheenTopLight = Color(0x40FFFFFF) // subtle, ~invisible on white
+    val GlassRimTopLight = Color(0x1A0F1210) // = GlassBorderLight (unchanged)
+    val GlassRimBottomLight = Color(0x1A0F1210) // = GlassBorderLight (unchanged)
+
     /** Backdrop blur radius for default + strong glass layers. */
     val GlassBlur: Dp = 22.dp
     val GlassBlurStrong: Dp = 28.dp

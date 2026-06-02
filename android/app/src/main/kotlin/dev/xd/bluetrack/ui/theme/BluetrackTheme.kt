@@ -99,6 +99,9 @@ data class BluetrackPalette(
     val glassBg: Color,
     val glassBgStrong: Color,
     val glassBorder: Color,
+    val glassSheen: Color,
+    val glassRimTop: Color,
+    val glassRimBottom: Color,
 )
 
 internal val DarkPalette = BluetrackPalette(
@@ -125,6 +128,9 @@ internal val DarkPalette = BluetrackPalette(
     glassBg = BluetrackTokens.GlassBgDark,
     glassBgStrong = BluetrackTokens.GlassBgStrongDark,
     glassBorder = BluetrackTokens.GlassBorderDark,
+    glassSheen = BluetrackTokens.GlassSheenTopDark,
+    glassRimTop = BluetrackTokens.GlassRimTopDark,
+    glassRimBottom = BluetrackTokens.GlassRimBottomDark,
 )
 
 internal val LightPalette = BluetrackPalette(
@@ -151,6 +157,9 @@ internal val LightPalette = BluetrackPalette(
     glassBg = BluetrackTokens.GlassBgLight,
     glassBgStrong = BluetrackTokens.GlassBgStrongLight,
     glassBorder = BluetrackTokens.GlassBorderLight,
+    glassSheen = BluetrackTokens.GlassSheenTopLight,
+    glassRimTop = BluetrackTokens.GlassRimTopLight,
+    glassRimBottom = BluetrackTokens.GlassRimBottomLight,
 )
 
 internal val LocalBluetrackPalette = staticCompositionLocalOf { DarkPalette }
