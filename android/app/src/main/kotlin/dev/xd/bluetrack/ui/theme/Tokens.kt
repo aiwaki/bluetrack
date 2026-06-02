@@ -100,12 +100,12 @@ data object BluetrackTokens {
     val HeightCta: Dp = 50.dp
 
     // ─── Glass ───────────────────────────────────────────────────────
-    val GlassBgDark = Color(0x8C16191B) // rgba(20,22,25,0.55)
-    val GlassBgStrongDark = Color(0xB8181B1E) // rgba(24,27,30,0.72)
+    val GlassBgDark = Color(0xCC23272C) // milky frosted, ~80% — cards read clearly over the dark aura
+    val GlassBgStrongDark = Color(0xE02A2F35) // milky frosted, ~88%
     val GlassBorderDark = Color(0x1AFFFFFF) // 10% white
 
-    val GlassBgLight = Color(0x8CFFFFFF)
-    val GlassBgStrongLight = Color(0xC7FFFFFF)
+    val GlassBgLight = Color(0xB3FFFFFF) // ~70%, a touch milkier
+    val GlassBgStrongLight = Color(0xDCFFFFFF) // ~86%
     val GlassBorderLight = Color(0x1A0F1210)
 
     /** Backdrop blur radius for default + strong glass layers. */

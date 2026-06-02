@@ -81,15 +81,15 @@ fun BluetrackDock(
                     spotColor = Color.Black,
                 )
                 .clip(pill)
-                // Near-opaque theme surface so the bar reads as a solid
-                // floating control, not a translucent wash.
-                .background(palette.bg1.copy(alpha = 0.94f))
+                // Frosted "milk glass" surface (theme-aware) — matte and
+                // foggy rather than flatly opaque.
+                .background(palette.glassBgStrong)
                 .border(1.dp, palette.hairline, pill)
                 // Consume every tap that lands on the pill (including the
                 // gaps between icons) so nothing falls through to the
                 // content scrolling behind the floating bar.
                 .pointerInput(Unit) { detectTapGestures {} }
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
         ) {
