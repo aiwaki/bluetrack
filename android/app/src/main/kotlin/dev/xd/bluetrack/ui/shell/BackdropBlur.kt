@@ -1,7 +1,6 @@
 package dev.xd.bluetrack.ui.shell
 
 import android.os.Build
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,7 +58,10 @@ class BackdropState {
  * aurora has no sharp content, so the blur reads as a soft colour
  * refraction of the shader behind each card.
  */
-class CardBackdrop(val state: BackdropState, val layer: GraphicsLayer)
+class CardBackdrop(
+    val state: BackdropState,
+    val layer: GraphicsLayer,
+)
 
 /** Provided by [ScreenShell]; consumed by `Modifier.btGlass`. */
 val LocalCardBackdrop = staticCompositionLocalOf<CardBackdrop?> { null }

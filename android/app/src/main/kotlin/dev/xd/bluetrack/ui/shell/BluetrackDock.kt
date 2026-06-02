@@ -107,8 +107,7 @@ fun BluetrackDock(
                         listOf(palette.glassSheen, Color.Transparent),
                     ),
                     pill,
-                )
-                .border(
+                ).border(
                     1.dp,
                     Brush.verticalGradient(
                         listOf(palette.glassRimTop, palette.glassRimBottom),

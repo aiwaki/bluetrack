@@ -203,15 +203,13 @@ fun ScreenShell(
                     } else {
                         Modifier
                     },
-                )
-                .background(
+                ).background(
                     Brush.verticalGradient(
                         0f to palette.bg0.copy(alpha = 0.78f),
                         0.6f to palette.bg0.copy(alpha = 0.42f),
                         1f to palette.bg0.copy(alpha = 0f),
                     ),
-                )
-                .windowInsetsPadding(WindowInsets.statusBars)
+                ).windowInsetsPadding(WindowInsets.statusBars)
                 .padding(bottom = 12.dp),
         ) {
             HubHeader(
