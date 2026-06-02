@@ -783,7 +783,7 @@ private fun AppScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(top = 80.dp, bottom = 120.dp),
+            .padding(top = 100.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         // Step 3a: canvas Hub header (`[Blue·track]` wordmark + 26 sp

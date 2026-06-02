@@ -113,6 +113,17 @@ half4 main(float2 fragCoord) {
     half3 glow = mix(colorA, colorB, tt);
     half3 col = mix(baseColor, glow, g * intensity);
 
+    // Drifting colour fields across the WHOLE screen (not just the
+    // bottom bloom) so the glass cards refract gentle moving colour
+    // everywhere instead of pure black up top. Two soft blobs in the
+    // state's own two hues — cohesive, not a rainbow.
+    float2 p = float2(uv.x * asp, uv.y);
+    float2 b1 = float2((0.28 + 0.14 * sin(time * 0.13)) * asp, 0.30 + 0.10 * cos(time * 0.11));
+    float2 b2 = float2((0.74 + 0.12 * cos(time * 0.10)) * asp, 0.52 + 0.13 * sin(time * 0.09));
+    float g1 = smoothstep(0.52, 0.0, distance(p, b1));
+    float g2 = smoothstep(0.58, 0.0, distance(p, b2));
+    col = col + colorA * (g1 * 0.16 * intensity) + colorB * (g2 * 0.16 * intensity);
+
     // Stipple dome (Gemini-style): a crisp, wide-spaced dot grid that
     // lives only inside the glow. Wide spacing + an AA edge avoids the
     // moiré the tight grid caused. An expanding ring pulse sweeps out

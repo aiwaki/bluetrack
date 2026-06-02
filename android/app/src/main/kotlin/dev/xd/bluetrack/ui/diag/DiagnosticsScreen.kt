@@ -98,7 +98,7 @@ fun DiagnosticsScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(top = 80.dp, bottom = 120.dp),
+            .padding(top = 100.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(BluetrackTokens.Sp3),
     ) {
         Column(
