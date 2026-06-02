@@ -114,9 +114,9 @@ data object BluetrackTokens {
     // glass a lit top edge so cards/the dock read as premium frosted
     // panels even where a black drop shadow is invisible. Light keeps the
     // existing dark hairline on both rim stops so its look is unchanged.
-    val GlassSheenTopDark = Color(0x0DFFFFFF) // ~5% — keep the interior dark, not grey
-    val GlassRimTopDark = Color(0x4DFFFFFF) // ~30% crisp specular top edge — defines the near-black card
-    val GlassRimBottomDark = Color(0x0FFFFFFF) // ~6% dim bottom edge
+    val GlassSheenTopDark = Color(0x12FFFFFF) // ~7% — a touch of body so the card isn't a pure-black void
+    val GlassRimTopDark = Color(0x30FFFFFF) // ~19% — soft top highlight, not a stark white outline
+    val GlassRimBottomDark = Color(0x0AFFFFFF) // ~4% dim bottom edge
 
     // Light mirrors the dark "edge-defined" language in its own idiom:
     // a faint light top hairline + a slightly stronger dark bottom edge

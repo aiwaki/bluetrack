@@ -174,18 +174,35 @@ private fun BoxScope.MirrorCaptureSurface(
                     handleCapturedEvent(ev, onMotion, onScroll, onButton)
                     true
                 }
-                // Fallback: generic-motion listener catches the
-                // pre-capture HOVER_MOVE stream so the first
-                // mouse wiggle wakes the surface even before the
-                // OS hands us captured events.
+                // Generic-motion listener handles the non-captured
+                // streams:
+                //
+                //  - SOURCE_MOUSE_RELATIVE devices already report
+                //    relative deltas on AXIS_X / AXIS_Y and DO NOT
+                //    drive an on-screen cursor, so their motion is
+                //    never bounded by this view's rectangle. Routing
+                //    them here (semantics identical to a captured
+                //    event) sidesteps the "cursor stuck at the panel
+                //    edge" failure mode entirely — no pointer capture
+                //    required.
+                //  - SOURCE_MOUSE devices still emit pre-capture
+                //    HOVER_MOVE with relative deltas on
+                //    AXIS_RELATIVE_X/Y; keep that so the first wiggle
+                //    wakes the surface before capture lands.
                 setOnGenericMotionListener { _, ev ->
-                    if (ev.isFromSource(InputDevice.SOURCE_MOUSE) && ev.action == MotionEvent.ACTION_HOVER_MOVE) {
-                        val dx = ev.getAxisValue(MotionEvent.AXIS_RELATIVE_X)
-                        val dy = ev.getAxisValue(MotionEvent.AXIS_RELATIVE_Y)
-                        if (dx != 0f || dy != 0f) onMotion(dx, dy, "Mirror mouse")
-                        true
-                    } else {
-                        false
+                    when {
+                        ev.isFromSource(InputDevice.SOURCE_MOUSE_RELATIVE) -> {
+                            handleCapturedEvent(ev, onMotion, onScroll, onButton)
+                            true
+                        }
+                        ev.isFromSource(InputDevice.SOURCE_MOUSE) &&
+                            ev.action == MotionEvent.ACTION_HOVER_MOVE -> {
+                            val dx = ev.getAxisValue(MotionEvent.AXIS_RELATIVE_X)
+                            val dy = ev.getAxisValue(MotionEvent.AXIS_RELATIVE_Y)
+                            if (dx != 0f || dy != 0f) onMotion(dx, dy, "Mirror mouse")
+                            true
+                        }
+                        else -> false
                     }
                 }
                 post { requestPointerCapture() }
