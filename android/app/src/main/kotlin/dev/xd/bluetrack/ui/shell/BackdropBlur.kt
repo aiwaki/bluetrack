@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
@@ -50,6 +51,18 @@ class BackdropState {
     /** Where the recorded backdrop layer's origin sits in root space. */
     var origin: Offset by mutableStateOf(Offset.Zero)
 }
+
+/**
+ * Aurora-only backdrop exposed to `btGlass` cards. Cards blur THIS
+ * layer (the aurora alone), never the content layer — sampling a layer
+ * that contained the card itself would ghost the card's own text. The
+ * aurora has no sharp content, so the blur reads as a soft colour
+ * refraction of the shader behind each card.
+ */
+class CardBackdrop(val state: BackdropState, val layer: GraphicsLayer)
+
+/** Provided by [ScreenShell]; consumed by `Modifier.btGlass`. */
+val LocalCardBackdrop = staticCompositionLocalOf<CardBackdrop?> { null }
 
 val backdropBlurSupported: Boolean
     get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S

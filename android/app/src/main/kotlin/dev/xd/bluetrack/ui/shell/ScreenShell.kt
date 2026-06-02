@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -82,6 +83,10 @@ fun ScreenShell(
     // backdrop blur of whatever scrolls behind it (API 31+).
     val backdrop = remember { BackdropState() }
     val backdropLayer = rememberGraphicsLayer()
+    // Aurora-only layer the cards blur (separate from the content layer
+    // the dock + header use) so a card never blurs its own text.
+    val auroraBackdrop = remember { BackdropState() }
+    val auroraLayer = rememberGraphicsLayer()
     // Slow deep-red radial pulse drawn behind everything — same
     // idiom as the gamepad surface so the main shell shares the
     // ambient warmth. Lower max alpha keeps it from competing
@@ -126,7 +131,9 @@ fun ScreenShell(
                 .captureBackdrop(backdrop, backdropLayer),
         ) {
             AuroraBackground(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .captureBackdrop(auroraBackdrop, auroraLayer),
                 state = auroraState,
                 darkTheme = darkTheme,
                 motionReduced = motionReduced,
@@ -137,40 +144,44 @@ fun ScreenShell(
             // its own bottom contentPadding so content scrolls off the real
             // screen edges (and behind the floating bar) instead of cutting
             // at a rectangle.
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.statusBars),
+            CompositionLocalProvider(
+                LocalCardBackdrop provides CardBackdrop(auroraBackdrop, auroraLayer),
             ) {
-                // Route transitions. Direction follows the dock's
-                // left-to-right enum order so navigating from Hub →
-                // Settings slides in from the right, and Settings →
-                // Hub slides in from the left. Reads as native
-                // tab-bar motion without pulling in
-                // Compose Navigation. Disabled when `motionReduced`
-                // is on — accessibility users get an instant swap.
-                AnimatedContent(
-                    targetState = router.current,
-                    transitionSpec = {
-                        if (motionReduced) {
-                            fadeIn(animationSpec = tween(0)) togetherWith
-                                fadeOut(animationSpec = tween(0))
-                        } else {
-                            val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
-                            val durMs = 260
-                            slideInHorizontally(
-                                animationSpec = tween(durMs, easing = FastOutSlowInEasing),
-                                initialOffsetX = { full -> direction * full / 6 },
-                            ) + fadeIn(animationSpec = tween(durMs)) togetherWith
-                                slideOutHorizontally(
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.statusBars),
+                ) {
+                    // Route transitions. Direction follows the dock's
+                    // left-to-right enum order so navigating from Hub →
+                    // Settings slides in from the right, and Settings →
+                    // Hub slides in from the left. Reads as native
+                    // tab-bar motion without pulling in
+                    // Compose Navigation. Disabled when `motionReduced`
+                    // is on — accessibility users get an instant swap.
+                    AnimatedContent(
+                        targetState = router.current,
+                        transitionSpec = {
+                            if (motionReduced) {
+                                fadeIn(animationSpec = tween(0)) togetherWith
+                                    fadeOut(animationSpec = tween(0))
+                            } else {
+                                val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                                val durMs = 260
+                                slideInHorizontally(
                                     animationSpec = tween(durMs, easing = FastOutSlowInEasing),
-                                    targetOffsetX = { full -> -direction * full / 6 },
-                                ) + fadeOut(animationSpec = tween(durMs))
-                        }
-                    },
-                    label = "route-transition",
-                ) { route ->
-                    content(route)
+                                    initialOffsetX = { full -> direction * full / 6 },
+                                ) + fadeIn(animationSpec = tween(durMs)) togetherWith
+                                    slideOutHorizontally(
+                                        animationSpec = tween(durMs, easing = FastOutSlowInEasing),
+                                        targetOffsetX = { full -> -direction * full / 6 },
+                                    ) + fadeOut(animationSpec = tween(durMs))
+                            }
+                        },
+                        label = "route-transition",
+                    ) { route ->
+                        content(route)
+                    }
                 }
             }
         }

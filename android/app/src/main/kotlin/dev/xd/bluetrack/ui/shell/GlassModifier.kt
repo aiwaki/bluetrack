@@ -38,10 +38,22 @@ fun Modifier.btGlass(
         .RoundedCornerShape(BluetrackTokens.RadiusLg),
 ): Modifier = composed {
     val palette = BluetrackTheme.palette
-    val bg = if (strong) palette.glassBgStrong else palette.glassBg
+    val cardBackdrop = LocalCardBackdrop.current
+    val fill = if (cardBackdrop != null && backdropBlurSupported) {
+        // Real backdrop blur (API 31+) of the aurora shader behind the
+        // card + a translucent tint → the card refracts the colour
+        // behind it (Liquid Glass) instead of a flat fill.
+        Modifier
+            .backdropBlur(cardBackdrop.layer, cardBackdrop.state, shape, 24.dp)
+            .background(palette.glassBlurTint, shape)
+    } else {
+        val bg = if (strong) palette.glassBgStrong else palette.glassBg
+        Modifier
+            .clip(shape)
+            .background(bg, shape)
+    }
     this
-        .clip(shape)
-        .background(bg, shape)
+        .then(fill)
         // Specular top sheen — a faint light wash on the top edge that
         // fades out, giving the flat tint a lit "liquid glass" feel.
         .background(
