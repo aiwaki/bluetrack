@@ -49,9 +49,6 @@ import androidx.compose.ui.unit.Dp
 class BackdropState {
     /** Where the recorded backdrop layer's origin sits in root space. */
     var origin: Offset by mutableStateOf(Offset.Zero)
-
-    /** The shared layer holding the recorded (un-blurred) backdrop. */
-    var layer: GraphicsLayer? by mutableStateOf(null)
 }
 
 val backdropBlurSupported: Boolean
@@ -65,9 +62,10 @@ val backdropBlurSupported: Boolean
  * the visible backdrop is never accidentally blurred by an overlay's
  * leftover effect.
  *
- * The layer reference is published to [state] in composition (see the
- * caller's `SideEffect`), NOT here — writing snapshot state during the
- * draw phase is not reliably committed for same-frame readers.
+ * Records the backdrop origin into [state]. The [layer] itself is
+ * passed directly to [Modifier.backdropBlur] by the caller (not via
+ * snapshot state) — writing a layer reference to state during the draw
+ * phase is not reliably committed for same-frame readers.
  */
 fun Modifier.captureBackdrop(
     state: BackdropState,
@@ -76,29 +74,35 @@ fun Modifier.captureBackdrop(
     this
         .onGloballyPositioned { state.origin = it.positionInRoot() }
         .drawWithContent {
+            // Record the backdrop into the layer for overlays to sample,
+            // then draw the content DIRECTLY (not via drawLayer). The
+            // layer's renderEffect is a single RenderNode property, so if
+            // we drew the bg via the same layer it would inherit whatever
+            // blur an overlay sets on it — drawContent keeps the visible
+            // backdrop crisp regardless of the overlay's blur.
             layer.record { this@drawWithContent.drawContent() }
-            layer.renderEffect = null
-            drawLayer(layer)
+            drawContent()
         }
 
 /**
- * Draw the recorded backdrop, blurred and clipped to [shape], behind
- * this element. Apply BEFORE the translucent tint / border so the
- * blurred content sits under them. No-op (returns `this`) until the
- * backdrop layer exists and the platform supports [BlurEffect].
+ * Draw the recorded backdrop [layer], blurred and clipped to [shape],
+ * behind this element. Apply BEFORE the translucent tint / border so
+ * the blurred content sits under them. Caller gates on
+ * [backdropBlurSupported]; the layer is the same instance handed to
+ * [Modifier.captureBackdrop], and [state] supplies the backdrop origin
+ * for alignment.
  */
 fun Modifier.backdropBlur(
+    layer: GraphicsLayer,
     state: BackdropState,
     shape: Shape,
     blurRadius: Dp,
 ): Modifier = composed {
-    if (!backdropBlurSupported) return@composed this
     var origin by remember { mutableStateOf(Offset.Zero) }
     this
         .onGloballyPositioned { origin = it.positionInRoot() }
         .clip(shape)
         .drawBehind {
-            val layer = state.layer ?: return@drawBehind
             val r = blurRadius.toPx()
             layer.renderEffect = BlurEffect(r, r, TileMode.Clamp)
             val dx = state.origin.x - origin.x

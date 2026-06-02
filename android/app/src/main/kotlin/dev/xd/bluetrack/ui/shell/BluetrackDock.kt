@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import dev.xd.bluetrack.ui.Route
@@ -52,6 +53,7 @@ fun BluetrackDock(
     modifier: Modifier = Modifier,
     @Suppress("UNUSED_PARAMETER") neonStrength: Float = 1f,
     backdrop: BackdropState? = null,
+    backdropLayer: GraphicsLayer? = null,
 ) {
     val palette = BluetrackTheme.palette
     val routes = Route.entries.filter { it != Route.Activity }
@@ -87,9 +89,9 @@ fun BluetrackDock(
                 // Liquid Glass look. Falls back to the opaque frosted
                 // fill wherever blur is unavailable.
                 .then(
-                    if (backdrop != null && backdropBlurSupported) {
+                    if (backdrop != null && backdropLayer != null && backdropBlurSupported) {
                         Modifier
-                            .backdropBlur(backdrop, pill, 26.dp)
+                            .backdropBlur(backdropLayer, backdrop, pill, 26.dp)
                             .background(palette.glassBlurTint)
                     } else {
                         Modifier

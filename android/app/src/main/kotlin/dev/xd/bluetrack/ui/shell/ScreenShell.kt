@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -82,9 +81,6 @@ fun ScreenShell(
     // backdrop blur of whatever scrolls behind it (API 31+).
     val backdrop = remember { BackdropState() }
     val backdropLayer = rememberGraphicsLayer()
-    // Publish the layer in composition (not during draw) so the dock
-    // reads a stable, committed reference for its backdrop blur.
-    SideEffect { backdrop.layer = backdropLayer }
     // Slow deep-red radial pulse drawn behind everything — same
     // idiom as the gamepad surface so the main shell shares the
     // ambient warmth. Lower max alpha keeps it from competing
@@ -210,6 +206,7 @@ fun ScreenShell(
             onSelect = router::navigate,
             neonStrength = neonStrength,
             backdrop = backdrop,
+            backdropLayer = backdropLayer,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
