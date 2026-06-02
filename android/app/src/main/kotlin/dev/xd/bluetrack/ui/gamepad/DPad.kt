@@ -31,7 +31,7 @@ import dev.xd.bluetrack.ui.theme.BluetrackTokens
  * standard composite gamepad report's hat-switch byte (Up = 0,
  * Right = 2, Down = 4, Left = 6, neutral = 8).
  *
- * Each direction is a 32 dp pill positioned 22 dp from centre.
+ * Each direction is a tall pill positioned 34 dp from centre.
  * Press = mint gradient + 18 dp mint glow + filled arrow glyph.
  * Release = dark vertical gradient + outlined arrow.
  *
@@ -51,10 +51,11 @@ fun DPad(
 
     // DualSense-style cross: each arm is a tall pill oriented
     // along its own axis so adjacent arrows share parallel
-    // edges (not corners). Up / Down are 28 dp wide x 40 dp
+    // edges (not corners). Up / Down are 34 dp wide x 48 dp
     // tall, Left / Right swap dimensions. With centres offset
-    // 30 dp from origin, edges just touch — no overlap, all
-    // four reading as one continuous cross.
+    // 34 dp from origin, edges just touch — no overlap, all
+    // four reading as one continuous cross. Enlarged 2026-06
+    // from the old 28×40 / 30 dp set.
     data class Arm(
         val hat: Int,
         val dx: Int,
@@ -69,7 +70,7 @@ fun DPad(
         Arm(hat = 6, dx = -1, dy = 0, glyph = "←", vertical = false),
     )
     Box(
-        modifier = modifier.size(112.dp),
+        modifier = modifier.size(128.dp),
     ) {
         dirs.forEach { arm ->
             val isActive = active == arm.hat
@@ -95,15 +96,15 @@ fun DPad(
             // Outer hit zone is 4 dp wider/taller on each side than
             // the visual pill so taps just outside the arm still
             // register. Stops short of the perpendicular arm's
-            // hit zone because adjacent arms have centres 30 dp
-            // apart and visual half-thickness only 14 dp.
+            // hit zone because adjacent arms have centres 34 dp
+            // apart and visual half-thickness only 17 dp.
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .size(
-                        width = if (arm.vertical) 40.dp else 54.dp,
-                        height = if (arm.vertical) 54.dp else 40.dp,
-                    ).offset(x = (arm.dx * 30).dp, y = (arm.dy * 30).dp)
+                        width = if (arm.vertical) 46.dp else 60.dp,
+                        height = if (arm.vertical) 60.dp else 46.dp,
+                    ).offset(x = (arm.dx * 34).dp, y = (arm.dy * 34).dp)
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = {
@@ -125,8 +126,8 @@ fun DPad(
                 Box(
                     modifier = Modifier
                         .size(
-                            width = if (arm.vertical) 28.dp else 40.dp,
-                            height = if (arm.vertical) 40.dp else 28.dp,
+                            width = if (arm.vertical) 34.dp else 48.dp,
+                            height = if (arm.vertical) 48.dp else 34.dp,
                         ).scale(pressScale)
                         .clip(RoundedCornerShape(BluetrackTokens.RadiusXs))
                         .background(
@@ -152,7 +153,7 @@ fun DPad(
                     Text(
                         text = arm.glyph,
                         color = if (isActive) Color.White else palette.fg1,
-                        fontSize = 18.sp,
+                        fontSize = 21.sp,
                         fontWeight = FontWeight.Bold,
                     )
                 }

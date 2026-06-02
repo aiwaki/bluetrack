@@ -62,19 +62,18 @@ fun FaceButtons(
     val palette = BluetrackTheme.palette
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var active by remember { mutableStateOf<String?>(null) }
-    // Container 108 dp + buttons offset 30 dp from centre. With
-    // 36 dp circles the previous 22 dp offset gave centre-to-
-    // centre distance sqrt(22² + 22²) = 31 dp on adjacent
-    // diagonals — less than the 36 dp sum of radii, so adjacent
-    // buttons clipped into each other. 30 dp clears the diagonal
-    // (centre-to-centre ≈ 42 dp).
+    // Container 128 dp + buttons offset 36 dp from centre. With
+    // 44 dp circles the diagonal centre-to-centre distance is
+    // sqrt(36² + 36²) ≈ 51 dp > the 44 dp sum of radii, so
+    // adjacent buttons clear each other. Enlarged 2026-06 from the
+    // old 108 / 36 / 30 set — the face cluster read too small.
     val buttons = listOf(
-        FaceButton(label = "Y", accent = Color(0xFFFFD23F), dx = 0, dy = -30),
-        FaceButton(label = "X", accent = Color(0xFF3FB6FF), dx = -30, dy = 0),
-        FaceButton(label = "B", accent = Color(0xFFFF4060), dx = 30, dy = 0),
-        FaceButton(label = "A", accent = Color(0xFF3FFF80), dx = 0, dy = 30),
+        FaceButton(label = "Y", accent = Color(0xFFFFD23F), dx = 0, dy = -36),
+        FaceButton(label = "X", accent = Color(0xFF3FB6FF), dx = -36, dy = 0),
+        FaceButton(label = "B", accent = Color(0xFFFF4060), dx = 36, dy = 0),
+        FaceButton(label = "A", accent = Color(0xFF3FFF80), dx = 0, dy = 36),
     )
-    Box(modifier = modifier.size(108.dp)) {
+    Box(modifier = modifier.size(128.dp)) {
         buttons.forEach { btn ->
             val pressed = active == btn.label
             // Press feedback: spring scale 1.0 → 0.88 → 1.0. Down
@@ -93,15 +92,15 @@ fun FaceButtons(
                 },
                 label = "face-button-press-${btn.label}",
             )
-            // Outer hit-area box (42 dp) wraps the visual 36 dp
-            // circle so taps just outside the disc still register.
-            // 42 dp leaves a few dp gap before the next button's
-            // hit zone at the 30 dp offset diagonal distance.
+            // Outer hit-area box (54 dp) wraps the visual 44 dp
+            // circle so taps just outside the disc still register,
+            // with a small gap before the next button's hit zone at
+            // the 36 dp offset diagonal distance.
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .offset(x = btn.dx.dp, y = btn.dy.dp)
-                    .size(48.dp)
+                    .size(54.dp)
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onPress = {
@@ -122,7 +121,7 @@ fun FaceButtons(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(44.dp)
                         .scale(pressScale)
                         .clip(CircleShape)
                         .background(
@@ -156,7 +155,7 @@ fun FaceButtons(
                     Text(
                         text = btn.label,
                         color = if (pressed) Color.White else btn.accent,
-                        fontSize = 14.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.ExtraBold,
                     )
                 }

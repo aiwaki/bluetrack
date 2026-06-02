@@ -347,7 +347,7 @@ private fun LeftThumbStack(
             modifier = Modifier
                 .fillMaxHeight()
                 .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterVertically),
+            verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             HorizontalShoulderPill(
@@ -382,7 +382,7 @@ private fun RightThumbStack(
             modifier = Modifier
                 .fillMaxHeight()
                 .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterVertically),
+            verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             HorizontalShoulderPill(
