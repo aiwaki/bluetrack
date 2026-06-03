@@ -10,6 +10,7 @@ import dev.xd.bluetrack.engine.TranslationEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,6 +81,14 @@ class MainViewModel(
     private var inputPacerJob: Job? = null
     private var hidSenderJob: Job? = null
     private var keepaliveJob: Job? = null
+
+    // Keyboard key queue. Taps from the relay are paced through this
+    // channel so a burst (paste, fast typing, autocorrect churn) is
+    // serialised with a real hold + gap between keys — otherwise the
+    // host drops the first / rapid keys when reports arrive back to
+    // back with no key-down dwell.
+    private val keyChannel = Channel<IntArray>(capacity = Channel.UNLIMITED)
+    private var keyPumpJob: Job? = null
     private val hidOutputBuffer = HidOutputBuffer()
     private val hidTransportGovernor = HidTransportGovernor()
     private val touchMotionPredictor = TouchMotionPredictor()
@@ -323,8 +332,25 @@ class MainViewModel(
         keycode: Int,
     ) {
         recordInputThrottled("Keyboard", SystemClock.elapsedRealtime())
-        engine.tapKey(modifier, keycode) { report ->
-            enqueueHidReport(HidMode.KEYBOARD, report)
+        keyChannel.trySend(intArrayOf(modifier, keycode))
+        ensureKeyPump()
+    }
+
+    private fun ensureKeyPump() {
+        if (keyPumpJob?.isActive == true) return
+        keyPumpJob = viewModelScope.launch(Dispatchers.Default) {
+            for (key in keyChannel) {
+                val modifier = key[0]
+                val keycode = key[1]
+                engine.processKeyDown(modifier, keycode) { report ->
+                    enqueueHidReport(HidMode.KEYBOARD, report)
+                }
+                delay(KEY_HOLD_MS)
+                engine.processKeyUp(modifier, keycode) { report ->
+                    enqueueHidReport(HidMode.KEYBOARD, report)
+                }
+                delay(KEY_GAP_MS)
+            }
         }
     }
 
@@ -700,6 +726,12 @@ class MainViewModel(
         const val INPUT_EPSILON = 0.005f
         const val CLICK_HOLD_MS = 40L
         const val CLICK_GAP_MS = 20L
+
+        // Keyboard key-down dwell + inter-key gap. A real hold +
+        // release window so the host registers each key (incl. repeats)
+        // even when the relay bursts a paste or fast typing.
+        const val KEY_HOLD_MS = 12L
+        const val KEY_GAP_MS = 10L
         const val NANOS_PER_MS = 1_000_000L
         const val TOUCHPAD_SOURCE = "Touchpad"
 

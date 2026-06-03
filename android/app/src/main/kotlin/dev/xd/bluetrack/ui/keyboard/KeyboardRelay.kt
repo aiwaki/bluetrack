@@ -1,5 +1,7 @@
 package dev.xd.bluetrack.ui.keyboard
 
+import android.content.Context
+import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,33 +22,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import dev.xd.bluetrack.engine.HidKeys
 import dev.xd.bluetrack.ui.shell.btGlass
 import dev.xd.bluetrack.ui.theme.BluetrackTheme
 import dev.xd.bluetrack.ui.theme.BluetrackTokens
 
 /**
- * System-keyboard relay. Instead of a bespoke on-screen keyboard, we
- * focus an invisible text field so the user's own OS keyboard (Gboard,
- * etc.) opens — bringing swipe, autocorrect, voice, symbols and
- * languages for free — and forward whatever it produces to the host as
- * HID keyboard reports.
+ * System-keyboard relay. Focuses an invisible [HidRelayEditText] so the
+ * user's own OS keyboard (Gboard, etc.) opens — swipe, autocorrect,
+ * voice, symbols and languages for free — and forwards what it produces
+ * to the host as HID keyboard reports via [onType].
  *
- * Soft keyboards commit *text*, not keystrokes, so we diff the field's
- * value on every change and translate the delta:
- *  - characters appended → tap their keycodes ([charToHid]),
- *  - characters removed → tap Backspace that many times.
- * A zero-width anchor keeps the buffer non-empty so a Backspace at the
- * very start still reaches the host instead of being swallowed.
+ * The EditText's InputConnection reports exact IME operations; here we
+ * only map the resulting text deltas to US-layout keycodes ([charToHid])
+ * and feed them through the paced key queue in the ViewModel.
+ *
+ * Stays open while the touchpad above is used: if focus is lost while
+ * the user still wants the keyboard, it is re-requested so a touchpad
+ * tap never dismisses the IME.
  *
  * Limitation: a boot HID keyboard sends US-layout keycodes, so only
  * ASCII maps. Non-ASCII (Cyrillic, emoji, accents) is dropped — that
@@ -59,10 +57,14 @@ fun KeyboardRelay(
     modifier: Modifier = Modifier,
 ) {
     val palette = BluetrackTheme.palette
-    val focusRequester = remember { FocusRequester() }
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
-    var value by remember { mutableStateOf(ANCHOR) }
+    val context = LocalContext.current
+    val imm = remember {
+        context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+    }
+    var editText by remember { mutableStateOf<HidRelayEditText?>(null) }
+    // True while the user wants the keyboard up; drives focus re-grab so
+    // tapping the touchpad doesn't dismiss the IME.
+    val want = remember { mutableStateOf(false) }
     var active by remember { mutableStateOf(false) }
 
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
@@ -73,12 +75,15 @@ fun KeyboardRelay(
                 .clip(shape)
                 .btGlass(strong = false, shape = shape)
                 .clickable {
+                    val field = editText
                     if (active) {
-                        focusManager.clearFocus()
-                        keyboardController?.hide()
-                    } else {
-                        focusRequester.requestFocus()
-                        keyboardController?.show()
+                        want.value = false
+                        field?.clearFocus()
+                        field?.let { imm.hideSoftInputFromWindow(it.windowToken, 0) }
+                    } else if (field != null) {
+                        want.value = true
+                        field.requestFocus()
+                        field.post { imm.showSoftInput(field, 0) }
                     }
                 }.padding(BluetrackTokens.Sp4),
             verticalAlignment = Alignment.CenterVertically,
@@ -105,7 +110,7 @@ fun KeyboardRelay(
                 )
                 Text(
                     text = if (active) {
-                        "Type on your phone keyboard — keys go to the host"
+                        "Type on your keyboard — keys go to the host (use a US layout)"
                     } else {
                         "Tap to type to the host with your system keyboard"
                     },
@@ -122,61 +127,44 @@ fun KeyboardRelay(
             )
         }
 
-        // Invisible capture field — holds focus so the OS keyboard
-        // stays up; every edit is diffed into HID taps. 1 dp + alpha 0
-        // keeps it off-screen without losing focusability.
-        BasicTextField(
-            value = value,
-            onValueChange = { raw ->
-                if (!raw.startsWith(ANCHOR)) {
-                    // The anchor itself was deleted → Backspace past the
-                    // buffer start; forward it and re-seat the anchor.
-                    onType(0, HidKeys.KC_BACKSPACE)
-                    value = ANCHOR
-                } else {
-                    relayDiff(value, raw, onType)
-                    value = raw
+        // Invisible capture field. 1 dp + alpha 0 keeps it off-screen
+        // without losing focusability / the IME.
+        AndroidView(
+            factory = { ctx ->
+                HidRelayEditText(ctx).apply {
+                    isFocusableInTouchMode = true
+                    onText = { text ->
+                        text.forEach { c ->
+                            charToHid(c)?.let { onType(it[0], it[1]) }
+                        }
+                    }
+                    onBackspace = { n ->
+                        repeat(n) { onType(0, HidKeys.KC_BACKSPACE) }
+                    }
+                    setOnFocusChangeListener { _, hasFocus ->
+                        active = hasFocus
+                        if (!hasFocus && want.value) {
+                            // A touchpad tap stole focus — take it back so
+                            // the keyboard stays up.
+                            post {
+                                requestFocus()
+                                imm.showSoftInput(this, 0)
+                            }
+                        }
+                    }
+                    editText = this
                 }
             },
-            singleLine = false,
             modifier = Modifier
                 .size(1.dp)
-                .alpha(0f)
-                .focusRequester(focusRequester)
-                .onFocusChanged { state ->
-                    active = state.isFocused
-                    if (!state.isFocused) value = ANCHOR
-                },
+                .alpha(0f),
         )
-    }
-}
-
-/** Zero-width space kept at index 0 so the buffer is never empty. */
-private const val ANCHOR = "​"
-
-/**
- * Forward the delta between [old] and [new] as HID taps: Backspace for
- * each trailing character removed past the common prefix, then a tap
- * per character added. Both strings start with [ANCHOR].
- */
-private fun relayDiff(
-    old: String,
-    new: String,
-    onType: (Int, Int) -> Unit,
-) {
-    var common = 0
-    val max = minOf(old.length, new.length)
-    while (common < max && old[common] == new[common]) common++
-    repeat(old.length - common) { onType(0, HidKeys.KC_BACKSPACE) }
-    for (i in common until new.length) {
-        charToHid(new[i])?.let { onType(it[0], it[1]) }
     }
 }
 
 /**
  * Map an ASCII character to `[modifier, keycode]` (US layout), or
- * `null` when it has no boot-keyboard representation (anchor,
- * non-ASCII).
+ * `null` when it has no boot-keyboard representation (non-ASCII).
  */
 private fun charToHid(c: Char): IntArray? {
     val s = HidKeys.MOD_LSHIFT
