@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,6 +63,7 @@ fun KeyboardRelay(
     val imm = remember {
         context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
     }
+    val rootView = LocalView.current
     var editText by remember { mutableStateOf<HidRelayEditText?>(null) }
     // True while the user wants the keyboard up. Drives the bar UI AND
     // the focus re-grab, so a transient focus loss from a touchpad tap
@@ -69,12 +71,14 @@ fun KeyboardRelay(
     val want = remember { mutableStateOf(false) }
 
     // Leaving the Hub (route change) disposes this relay — take the
-    // system keyboard down with it instead of leaving it floating over a
-    // dead capture field.
+    // system keyboard down with it. Hide via the ROOT view's window
+    // token (alive for the whole activity); the EditText is already
+    // detaching at this point so its own windowToken is null and the
+    // hide was a no-op.
     DisposableEffect(Unit) {
         onDispose {
-            editText?.let { imm.hideSoftInputFromWindow(it.windowToken, 0) }
             editText?.clearFocus()
+            imm.hideSoftInputFromWindow(rootView.windowToken, 0)
         }
     }
 
