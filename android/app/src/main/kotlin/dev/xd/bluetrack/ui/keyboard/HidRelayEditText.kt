@@ -44,12 +44,9 @@ class HidRelayEditText(
 
     /** Emit the minimal prefix delta turning [old] into [new]. */
     private fun applyDelta(old: String, new: String) {
-        var common = 0
-        val max = minOf(old.length, new.length)
-        while (common < max && old[common] == new[common]) common++
-        val deleted = old.length - common
-        if (deleted > 0) onBackspace?.invoke(deleted)
-        if (new.length > common) onText?.invoke(new.substring(common))
+        val d = KeyRelayCodec.delta(old, new)
+        if (d.backspaces > 0) onBackspace?.invoke(d.backspaces)
+        if (d.text.isNotEmpty()) onText?.invoke(d.text)
     }
 
     private inner class Relay(

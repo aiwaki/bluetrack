@@ -135,7 +135,7 @@ fun KeyboardRelay(
                     isFocusableInTouchMode = true
                     onText = { text ->
                         text.forEach { c ->
-                            charToHid(c)?.let { onType(it[0], it[1]) }
+                            KeyRelayCodec.charToHid(c)?.let { onType(it[0], it[1]) }
                         }
                     }
                     onBackspace = { n ->
@@ -145,11 +145,12 @@ fun KeyboardRelay(
                         active = hasFocus
                         if (!hasFocus && want.value) {
                             // A touchpad tap stole focus — take it back so
-                            // the keyboard stays up.
-                            post {
-                                requestFocus()
-                                imm.showSoftInput(this, 0)
-                            }
+                            // the keyboard stays up. requestFocus ONLY (no
+                            // showSoftInput): focus returns in the same
+                            // frame so the IME never hides, and not
+                            // re-showing keeps its current panel (e.g. the
+                            // clipboard) instead of snapping back to keys.
+                            post { requestFocus() }
                         }
                     }
                     editText = this
@@ -159,55 +160,5 @@ fun KeyboardRelay(
                 .size(1.dp)
                 .alpha(0f),
         )
-    }
-}
-
-/**
- * Map an ASCII character to `[modifier, keycode]` (US layout), or
- * `null` when it has no boot-keyboard representation (non-ASCII).
- */
-private fun charToHid(c: Char): IntArray? {
-    val s = HidKeys.MOD_LSHIFT
-    return when (c) {
-        in 'a'..'z' -> intArrayOf(0, HidKeys.KC_A + (c - 'a'))
-        in 'A'..'Z' -> intArrayOf(s, HidKeys.KC_A + (c - 'A'))
-        in '1'..'9' -> intArrayOf(0, HidKeys.KC_1 + (c - '1'))
-        '0' -> intArrayOf(0, HidKeys.KC_0)
-        ' ' -> intArrayOf(0, HidKeys.KC_SPACE)
-        '\n' -> intArrayOf(0, HidKeys.KC_ENTER)
-        '\t' -> intArrayOf(0, HidKeys.KC_TAB)
-        '-' -> intArrayOf(0, HidKeys.KC_MINUS)
-        '_' -> intArrayOf(s, HidKeys.KC_MINUS)
-        '=' -> intArrayOf(0, HidKeys.KC_EQUAL)
-        '+' -> intArrayOf(s, HidKeys.KC_EQUAL)
-        '[' -> intArrayOf(0, HidKeys.KC_LBRACKET)
-        '{' -> intArrayOf(s, HidKeys.KC_LBRACKET)
-        ']' -> intArrayOf(0, HidKeys.KC_RBRACKET)
-        '}' -> intArrayOf(s, HidKeys.KC_RBRACKET)
-        '\\' -> intArrayOf(0, HidKeys.KC_BACKSLASH)
-        '|' -> intArrayOf(s, HidKeys.KC_BACKSLASH)
-        ';' -> intArrayOf(0, HidKeys.KC_SEMICOLON)
-        ':' -> intArrayOf(s, HidKeys.KC_SEMICOLON)
-        '\'' -> intArrayOf(0, HidKeys.KC_QUOTE)
-        '"' -> intArrayOf(s, HidKeys.KC_QUOTE)
-        '`' -> intArrayOf(0, HidKeys.KC_GRAVE)
-        '~' -> intArrayOf(s, HidKeys.KC_GRAVE)
-        ',' -> intArrayOf(0, HidKeys.KC_COMMA)
-        '<' -> intArrayOf(s, HidKeys.KC_COMMA)
-        '.' -> intArrayOf(0, HidKeys.KC_PERIOD)
-        '>' -> intArrayOf(s, HidKeys.KC_PERIOD)
-        '/' -> intArrayOf(0, HidKeys.KC_SLASH)
-        '?' -> intArrayOf(s, HidKeys.KC_SLASH)
-        '!' -> intArrayOf(s, HidKeys.KC_1)
-        '@' -> intArrayOf(s, HidKeys.KC_2)
-        '#' -> intArrayOf(s, HidKeys.KC_3)
-        '$' -> intArrayOf(s, HidKeys.KC_4)
-        '%' -> intArrayOf(s, HidKeys.KC_5)
-        '^' -> intArrayOf(s, HidKeys.KC_6)
-        '&' -> intArrayOf(s, HidKeys.KC_7)
-        '*' -> intArrayOf(s, HidKeys.KC_8)
-        '(' -> intArrayOf(s, HidKeys.KC_9)
-        ')' -> intArrayOf(s, HidKeys.KC_0)
-        else -> null
     }
 }
