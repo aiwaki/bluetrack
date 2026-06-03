@@ -310,6 +310,25 @@ class MainViewModel(
     }
 
     /**
+     * Tap a key from the full on-screen keyboard surface. Unlike
+     * [tapHidKey] (a trackpad-gesture chord that only fires in mouse
+     * mode), this has NO mode gate: the keyboard report path uses its
+     * own report ID 3 and is orthogonal to the active mouse/gamepad
+     * mode, so the keyboard surface can type whenever it is open.
+     * [modifier] is an OR of `HidKeys.MOD_*`; [keycode] a Usage-0x07
+     * code.
+     */
+    fun keyboardTap(
+        modifier: Int,
+        keycode: Int,
+    ) {
+        recordInputThrottled("Keyboard", SystemClock.elapsedRealtime())
+        engine.tapKey(modifier, keycode) { report ->
+            enqueueHidReport(HidMode.KEYBOARD, report)
+        }
+    }
+
+    /**
      * Touchpad two-finger scroll → wheel byte. Caller supplies a
      * pre-scaled wheel delta (typically `−touchDy / pxPerTick`).
      * Mouse mode only — gamepad mode silently ignores so a stray

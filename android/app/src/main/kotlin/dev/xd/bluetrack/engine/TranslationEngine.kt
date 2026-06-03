@@ -340,6 +340,65 @@ object HidKeys {
     const val MOD_LALT = 0x04
     const val MOD_LGUI = 0x08
 
+    // Letters — HID Usage page 0x07: A = 0x04 … Z = 0x1D.
+    const val KC_A = 0x04
+    const val KC_B = 0x05
+    const val KC_C = 0x06
+    const val KC_D = 0x07
+    const val KC_E = 0x08
+    const val KC_F = 0x09
+    const val KC_G = 0x0A
+    const val KC_H = 0x0B
+    const val KC_I = 0x0C
+    const val KC_J = 0x0D
+    const val KC_K = 0x0E
+    const val KC_L = 0x0F
+    const val KC_M = 0x10
+    const val KC_N = 0x11
+    const val KC_O = 0x12
+    const val KC_P = 0x13
+    const val KC_Q = 0x14
+    const val KC_R = 0x15
+    const val KC_S = 0x16
+    const val KC_T = 0x17
+    const val KC_U = 0x18
+    const val KC_V = 0x19
+    const val KC_W = 0x1A
+    const val KC_X = 0x1B
+    const val KC_Y = 0x1C
+    const val KC_Z = 0x1D
+
+    // Digits — 1 = 0x1E … 9 = 0x26, 0 = 0x27.
+    const val KC_1 = 0x1E
+    const val KC_2 = 0x1F
+    const val KC_3 = 0x20
+    const val KC_4 = 0x21
+    const val KC_5 = 0x22
+    const val KC_6 = 0x23
+    const val KC_7 = 0x24
+    const val KC_8 = 0x25
+    const val KC_9 = 0x26
+    const val KC_0 = 0x27
+
+    // Whitespace / editing.
+    const val KC_ENTER = 0x28
+    const val KC_ESC = 0x29
+    const val KC_BACKSPACE = 0x2A
+    const val KC_TAB = 0x2B
+    const val KC_SPACE = 0x2C
+
+    // Punctuation.
+    const val KC_LBRACKET = 0x2F
+    const val KC_RBRACKET = 0x30
+    const val KC_BACKSLASH = 0x31
+    const val KC_SEMICOLON = 0x33
+    const val KC_QUOTE = 0x34
+    const val KC_GRAVE = 0x35
+    const val KC_COMMA = 0x36
+    const val KC_PERIOD = 0x37
+    const val KC_SLASH = 0x38
+    const val KC_CAPS = 0x39
+
     const val KC_F3 = 0x3C
     const val KC_F4 = 0x3D
     const val KC_F11 = 0x44

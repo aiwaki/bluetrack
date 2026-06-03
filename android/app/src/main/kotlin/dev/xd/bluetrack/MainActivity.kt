@@ -58,6 +58,7 @@ import dev.xd.bluetrack.ui.hosts.HostsScreen
 import dev.xd.bluetrack.ui.hub.ActivityStrip
 import dev.xd.bluetrack.ui.hub.GamepadShortcut
 import dev.xd.bluetrack.ui.hub.Heartbeat
+import dev.xd.bluetrack.ui.hub.KeyboardShortcut
 import dev.xd.bluetrack.ui.hub.ModeToggle
 import dev.xd.bluetrack.ui.hub.MouseMirrorPanel
 import dev.xd.bluetrack.ui.hub.NeonRibbon
@@ -67,6 +68,7 @@ import dev.xd.bluetrack.ui.hub.TouchpadHintsOverlay
 import dev.xd.bluetrack.ui.hub.TrustCard
 import dev.xd.bluetrack.ui.hub.TrustState
 import dev.xd.bluetrack.ui.hub.toActivityItem
+import dev.xd.bluetrack.ui.keyboard.KeyboardSurface
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.rememberRouter
 import dev.xd.bluetrack.ui.settings.SettingsScreen
@@ -235,6 +237,7 @@ class MainActivity : ComponentActivity() {
             BluetrackTheme(darkTheme = darkTheme) {
                 val router = rememberRouter()
                 var gamepadActive by remember { mutableStateOf(false) }
+                var keyboardActive by remember { mutableStateOf(false) }
                 // Visual tweaks are now fixed at the design baseline
                 // — glass surfaces off (the UI reads cleaner flat),
                 // motion not reduced, no aurora-on-low-battery, neon
@@ -324,6 +327,15 @@ class MainActivity : ComponentActivity() {
                         },
                         nearbyPermissionGranted = hasBluetoothPermissions(),
                         notificationsPermissionGranted = hasNotificationsPermission(),
+                    )
+                    return@BluetrackTheme
+                }
+                if (keyboardActive) {
+                    val kbStatus = vm.status.collectAsState().value
+                    KeyboardSurface(
+                        hostName = kbStatus.host ?: "Bluetrack",
+                        onExit = { keyboardActive = false },
+                        onKey = { mod, code -> vm.keyboardTap(mod, code) },
                     )
                     return@BluetrackTheme
                 }
@@ -443,6 +455,7 @@ class MainActivity : ComponentActivity() {
                                     vm.toggle(true)
                                     gamepadActive = true
                                 },
+                                onEnterKeyboard = { keyboardActive = true },
                                 onShowTrustQR = { showTrustFingerprintToast() },
                             )
                             Route.Hosts -> HostsScreen(
@@ -749,6 +762,7 @@ private fun AppScreen(
     onDismissTouchpadHints: () -> Unit = {},
     onNavigate: (Route) -> Unit = {},
     onEnterGamepad: () -> Unit = {},
+    onEnterKeyboard: () -> Unit = {},
     onShowTrustQR: () -> Unit = {},
 ) {
     val mode by vm.mode.collectAsState()
@@ -936,6 +950,12 @@ private fun AppScreen(
                     .rememberStaggerModifier(index = 6),
             ) {
                 GamepadShortcut(onEnter = onEnterGamepad)
+            }
+            Box(
+                modifier = dev.xd.bluetrack.ui
+                    .rememberStaggerModifier(index = 6),
+            ) {
+                KeyboardShortcut(onEnter = onEnterKeyboard)
             }
             Box(
                 modifier = dev.xd.bluetrack.ui
