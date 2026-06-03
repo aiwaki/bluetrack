@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,10 +63,20 @@ fun KeyboardRelay(
         context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
     }
     var editText by remember { mutableStateOf<HidRelayEditText?>(null) }
-    // True while the user wants the keyboard up; drives focus re-grab so
-    // tapping the touchpad doesn't dismiss the IME.
+    // True while the user wants the keyboard up. Drives the bar UI AND
+    // the focus re-grab, so a transient focus loss from a touchpad tap
+    // neither flickers the label nor dismisses the IME.
     val want = remember { mutableStateOf(false) }
-    var active by remember { mutableStateOf(false) }
+
+    // Leaving the Hub (route change) disposes this relay — take the
+    // system keyboard down with it instead of leaving it floating over a
+    // dead capture field.
+    DisposableEffect(Unit) {
+        onDispose {
+            editText?.let { imm.hideSoftInputFromWindow(it.windowToken, 0) }
+            editText?.clearFocus()
+        }
+    }
 
     val shape = RoundedCornerShape(BluetrackTokens.RadiusMd)
     Box(modifier = modifier.fillMaxWidth()) {
@@ -76,7 +87,7 @@ fun KeyboardRelay(
                 .btGlass(strong = false, shape = shape)
                 .clickable {
                     val field = editText
-                    if (active) {
+                    if (want.value) {
                         want.value = false
                         field?.clearFocus()
                         field?.let { imm.hideSoftInputFromWindow(it.windowToken, 0) }
@@ -103,13 +114,13 @@ fun KeyboardRelay(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = if (active) "Keyboard active" else "Keyboard",
+                    text = if (want.value) "Keyboard active" else "Keyboard",
                     color = palette.fg0,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
                 Text(
-                    text = if (active) {
+                    text = if (want.value) {
                         "Type on your keyboard — keys go to the host (use a US layout)"
                     } else {
                         "Tap to type to the host with your system keyboard"
@@ -119,8 +130,8 @@ fun KeyboardRelay(
                 )
             }
             Text(
-                text = if (active) "HIDE" else "OPEN ↑",
-                color = if (active) palette.crit else palette.mintBright,
+                text = if (want.value) "HIDE" else "OPEN ↑",
+                color = if (want.value) palette.crit else palette.mintBright,
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
                 letterSpacing = 1.2.sp,
@@ -142,7 +153,6 @@ fun KeyboardRelay(
                         repeat(n) { onType(0, HidKeys.KC_BACKSPACE) }
                     }
                     setOnFocusChangeListener { _, hasFocus ->
-                        active = hasFocus
                         if (!hasFocus && want.value) {
                             // A touchpad tap stole focus — take it back so
                             // the keyboard stays up. requestFocus ONLY (no
