@@ -67,6 +67,7 @@ import dev.xd.bluetrack.ui.hub.TouchpadHintsOverlay
 import dev.xd.bluetrack.ui.hub.TrustCard
 import dev.xd.bluetrack.ui.hub.TrustState
 import dev.xd.bluetrack.ui.hub.toActivityItem
+import dev.xd.bluetrack.ui.keyboard.KeyboardRelay
 import dev.xd.bluetrack.ui.relativeAgeLabel
 import dev.xd.bluetrack.ui.rememberRouter
 import dev.xd.bluetrack.ui.settings.SettingsScreen
@@ -917,6 +918,15 @@ private fun AppScreen(
                         )
                     }
                 }
+            }
+            // System-keyboard relay — sits right under the touchpad so
+            // the user can point with one surface and type to the host
+            // with the OS keyboard at the same time.
+            Box(
+                modifier = dev.xd.bluetrack.ui
+                    .rememberStaggerModifier(index = 4),
+            ) {
+                KeyboardRelay(onType = { mod, kc -> vm.keyboardTap(mod, kc) })
             }
             // Stat triplet below the touchpad — mirrors the v2.4
             // reference's `REPORTS · LATENCY · UPTIME` row. Pulls
