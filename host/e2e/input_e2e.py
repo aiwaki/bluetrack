@@ -74,8 +74,11 @@ class Adb:
         return None
 
 
-def build_inspector() -> None:
-    print("• building macos-hid-inspector …")
+def ensure_inspector(force: bool) -> None:
+    if os.path.exists(INSPECTOR_BIN) and not force:
+        print(f"• using existing inspector: {INSPECTOR_BIN}")
+        return
+    print("• building macos-hid-inspector … (one-time; pass --build to force)")
     subprocess.run(
         ["swift", "build", "-c", "debug"],
         cwd=INSPECTOR_DIR,
@@ -133,6 +136,8 @@ def main() -> int:
     ap.add_argument("--seconds", type=float, default=7.0)
     ap.add_argument("--keep-going", action="store_true",
                     help="run all phases even if one fails")
+    ap.add_argument("--build", action="store_true",
+                    help="force-rebuild the inspector (otherwise reuse the binary)")
     args = ap.parse_args()
 
     adb = Adb(args.adb, args.device or None)
@@ -143,7 +148,7 @@ def main() -> int:
         return 2
     print(f"• adb device: {adb.device}")
 
-    build_inspector()
+    ensure_inspector(args.build)
 
     tmp = tempfile.mkdtemp(prefix="bt-e2e-")
     results = []
