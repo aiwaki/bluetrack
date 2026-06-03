@@ -25,14 +25,23 @@ fun primaryStatusLabel(
     isHostConnected(status) -> "Ready"
     status.hid.contains("connecting", ignoreCase = true) ||
         status.pairing.contains("connecting", ignoreCase = true) -> "Connecting"
-    status.pairing.contains("discoverable", ignoreCase = true) ||
+    isDiscoverable(status.pairing) ||
         status.pairing.contains("pairing", ignoreCase = true) -> "Pairing"
     else -> "Preparing"
 }
 
+/**
+ * True only for the active discoverable state. Guards against the idle
+ * default label "Not discoverable", whose "discoverable" substring used
+ * to trip the pairing branch and mislabel an idle gateway as "Pairing".
+ */
+private fun isDiscoverable(pairing: String): Boolean =
+    pairing.contains("discoverable", ignoreCase = true) &&
+        !pairing.contains("not discoverable", ignoreCase = true)
+
 fun hostFallbackLabel(status: GatewayStatus): String = when {
     status.compatibility.bondedDevices.isNotEmpty() -> "Bonded"
-    status.pairing.contains("discoverable", ignoreCase = true) -> "Pairing"
+    isDiscoverable(status.pairing) -> "Pairing"
     else -> "Searching"
 }
 
