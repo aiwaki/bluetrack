@@ -730,8 +730,8 @@ class MainViewModel(
         // Keyboard key-down dwell + inter-key gap. A real hold +
         // release window so the host registers each key (incl. repeats)
         // even when the relay bursts a paste or fast typing.
-        const val KEY_HOLD_MS = 12L
-        const val KEY_GAP_MS = 10L
+        const val KEY_HOLD_MS = 8L
+        const val KEY_GAP_MS = 6L
         const val NANOS_PER_MS = 1_000_000L
         const val TOUCHPAD_SOURCE = "Touchpad"
 

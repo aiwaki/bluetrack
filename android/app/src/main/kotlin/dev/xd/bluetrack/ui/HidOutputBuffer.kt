@@ -4,6 +4,12 @@ import dev.xd.bluetrack.engine.HidMode
 
 internal class HidOutputBuffer(
     private val maxGamepadReports: Int = 8,
+    // Keyboard frames must NOT be dropped on backlog: each is a discrete
+    // press/release edge, and losing one (especially a key-up or a
+    // modifier change) corrupts the rest of the typed stream into
+    // garbage. Keep a generous ceiling so a BLE stall buffers instead of
+    // dropping; the relay's own paced key queue bounds the real rate.
+    private val maxKeyboardReports: Int = 4096,
     private val nowMsProvider: () -> Long = { android.os.SystemClock.elapsedRealtime() },
 ) {
     private val lock = Any()
@@ -159,9 +165,10 @@ internal class HidOutputBuffer(
         report: ByteArray,
         queuedAtMs: Long,
     ) {
-        // Bounded like the gamepad queue so a key-event flood can't grow
-        // the backlog without limit; oldest frame drops first.
-        if (keyboardReports.size >= maxGamepadReports) {
+        // Drop only at an absurd ceiling (a runaway, not normal typing).
+        // Unlike motion, dropping a keystroke edge corrupts the stream,
+        // so we buffer through BLE stalls rather than discard.
+        if (keyboardReports.size >= maxKeyboardReports) {
             keyboardReports.removeFirst()
         }
         keyboardReports.addLast(OutputFrame(HidMode.KEYBOARD, report.copyOf(), queuedAtMs))

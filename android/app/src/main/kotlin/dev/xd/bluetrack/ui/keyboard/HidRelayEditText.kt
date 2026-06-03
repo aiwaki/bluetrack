@@ -75,6 +75,23 @@ class HidRelayEditText(
             return super.finishComposingText()
         }
 
+        override fun setComposingRegion(start: Int, end: Int): Boolean {
+            // The IME re-opens composing over already-committed text
+            // (e.g. backspacing into a word to re-edit it). Seed
+            // [composing] with that region's current text so the next
+            // setComposingText diffs against it instead of re-typing the
+            // whole word (which duplicated it).
+            val src = this@HidRelayEditText.text
+            composing = if (src != null) {
+                val a = start.coerceIn(0, src.length)
+                val b = end.coerceIn(0, src.length)
+                src.substring(minOf(a, b), maxOf(a, b))
+            } else {
+                ""
+            }
+            return super.setComposingRegion(start, end)
+        }
+
         override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
             // Backspaces only matter once there is no composing region —
             // composing edits already go through setComposingText.
